@@ -3,10 +3,14 @@ import { dirname } from 'node:path'
 
 import { montarContexto } from './contexto.mjs'
 import {
+  atualizarMemoria,
   casaDoOmni,
+  consolidarMemorias,
   decidirCandidata,
+  executarManutencaoMemoria,
   lembrarExplicitamente,
   lerMemoria,
+  marcarMemoriaObsoleta,
   proporLicao
 } from './memoria.mjs'
 import { processarExperiencia } from './pipeline-memoria.mjs'
@@ -45,7 +49,9 @@ async function main() {
       memory: {
         schemaVersion: memory.schemaVersion,
         confirmed: memory.confirmed.length,
-        candidates: memory.candidates.length
+        candidates: memory.candidates.length,
+        archived: memory.archive.length,
+        lastMaintenanceAt: memory.store.lastMaintenanceAt
       },
       version,
       context: { schemaVersion: 2, retrieval: 'hybrid-local-v1', projections: ['fast', 'deep'] }
@@ -85,6 +91,28 @@ async function main() {
       }))
     }
   }
+  if (action === 'arquivo') {
+    const memory = await lerMemoria(home)
+    return {
+      ok: true,
+      archived: memory.archive.map((item) => ({
+        id: item.id,
+        memoryId: item.memoryId,
+        action: item.action,
+        reason: item.reason,
+        archivedAt: item.archivedAt,
+        replacementId: item.replacementId
+      }))
+    }
+  }
+  if (action === 'manutencao') {
+    return {
+      ok: true,
+      maintenance: await executarManutencaoMemoria(home, {
+        dryRun: parts.includes('simular') || parts.includes('--dry-run')
+      })
+    }
+  }
   if (action === 'lembrar') {
     if (!text) throw new Error('Informe o que deve ser lembrado.')
     return { ok: true, memory: await lembrarExplicitamente(home, text, memoryType(text)) }
@@ -96,6 +124,29 @@ async function main() {
   if (action === 'confirmar' || action === 'descartar') {
     if (!text) throw new Error('Informe o id da memória candidata.')
     return { ok: true, memory: await decidirCandidata(home, text, action === 'confirmar' ? 'confirm' : 'discard') }
+  }
+  if (action === 'atualizar-memoria') {
+    const [id, ...contentParts] = parts
+    const content = contentParts.filter((part) => part !== '--').join(' ').trim()
+    if (!id || !content) throw new Error('Use: atualizar-memoria <id> <novo texto>.')
+    return { ok: true, memory: await atualizarMemoria(home, id, content) }
+  }
+  if (action === 'obsoleta') {
+    const [id, ...reasonParts] = parts
+    if (!id) throw new Error('Use: obsoleta <id> [razão].')
+    return {
+      ok: true,
+      memory: await marcarMemoriaObsoleta(home, id, reasonParts.join(' ').trim() || 'explicit-owner-obsolete')
+    }
+  }
+  if (action === 'consolidar') {
+    const [idsPart, ...contentParts] = parts
+    const ids = idsPart?.split(',').map((id) => id.trim()).filter(Boolean) ?? []
+    const content = contentParts.filter((part) => part !== '--').join(' ').trim()
+    if (ids.length < 2 || !content) {
+      throw new Error('Use: consolidar <id1,id2> <texto canônico>.')
+    }
+    return { ok: true, memory: await consolidarMemorias(home, ids, content) }
   }
   throw new Error(`Ação desconhecida: ${action}`)
 }

@@ -45,6 +45,16 @@ definida por `OMNI_HOME`.
 Arquivos antigos nunca entram em lote. Cada item deve passar por classificação, escopo, evidência,
 confiança e decisão de importar ou descartar.
 
+## Manutenção
+
+A política `memory-gc-safe-v1` roda de forma conservadora: prazos explícitos podem expirar,
+candidatas antigas de baixo sinal podem sair da fila ativa e duplicatas textuais exatas podem ser
+unidas. Tudo vai para o arquivo local com snapshot completo; não existe exclusão permanente
+automática. Memória confirmada sem prazo só muda por decisão explícita do proprietário.
+
+Semelhança aproximada gera proposta, nunca fusão automática. O texto canônico de um padrão
+semântico ou procedural precisa ser aprovado antes da consolidação.
+
 ## Evolução no Git
 
 O crescimento possui duas trilhas diferentes:

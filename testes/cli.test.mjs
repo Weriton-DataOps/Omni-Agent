@@ -42,3 +42,36 @@ test('operador entrega a personalidade escolhida pelo manifesto', () => {
   assert.match(result.personality.nucleus, /NÃO ANUNCIE/)
   assert.doesNotMatch(result.personality.nucleus, /deixe claro onde a analogia termina/)
 })
+
+test('operador expõe manutenção, consolidação e arquivo sem apagar histórico', async () => {
+  const raiz = await mkdtemp(join(tmpdir(), 'omni-cli-gc-'))
+  const env = { ...process.env, OMNI_HOME: join(raiz, 'home') }
+  try {
+    const first = executar(['lembrar', 'validar', 'o', 'build', 'antes', 'de', 'publicar'], env)
+    const second = executar(['lembrar', 'validar', 'os', 'testes', 'antes', 'de', 'publicar'], env)
+    const simulated = executar(['manutencao', 'simular'], env)
+    assert.equal(simulated.maintenance.result, 'simulated')
+    assert.equal(simulated.maintenance.permanentDeletions, 0)
+
+    const consolidated = executar(
+      [
+        'consolidar',
+        `${first.memory.memory.id},${second.memory.memory.id}`,
+        'antes',
+        'de',
+        'publicar,',
+        'validar',
+        'build',
+        'e',
+        'testes'
+      ],
+      env
+    )
+    assert.equal(consolidated.memory.result, 'consolidated')
+    const archive = executar(['arquivo'], env)
+    assert.equal(archive.archived.length, 2)
+    assert.ok(archive.archived.every((item) => item.action === 'consolidated'))
+  } finally {
+    await rm(raiz, { recursive: true, force: true })
+  }
+})

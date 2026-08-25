@@ -1,6 +1,6 @@
 ---
 description: Conversa como o Omni usando sua personalidade, contexto e memoria canonicos.
-argument-hint: "[estado|atualizar|contexto <tema>|experiencia <texto>|candidatas|lembrar <texto>|licao <texto>|confirmar <id>|descartar <id>|pergunta]"
+argument-hint: "[estado|atualizar|contexto <tema>|experiencia <texto>|candidatas|arquivo|manutencao [simular]|lembrar <texto>|licao <texto>|confirmar <id>|descartar <id>|atualizar-memoria <id> <texto>|obsoleta <id> [razao]|consolidar <id1,id2> <texto>|pergunta]"
 allowed-tools: Bash, Read
 ---
 
@@ -39,9 +39,18 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scrip
 - `contexto <tema>`: execute `contexto`; use a projeção deep como dados relevantes para responder;
 - `experiencia <texto>`: execute `experiencia` e informe classificação, pontuação e destino;
 - `candidatas`: execute `candidatas` e apresente a fila para decisão, sem promovê-la sozinho;
+- `arquivo`: execute `arquivo` e apresente somente metadados de ciclo de vida, salvo se o proprietário
+  pedir explicitamente o conteúdo histórico;
+- `manutencao simular`: execute a simulação e explique o que mudaria sem alterar a memória;
+- `manutencao`: execute apenas por pedido explícito; informe itens arquivados, consolidações exatas e
+  propostas semânticas que ainda exigem decisão;
 - `lembrar <texto>`: execute `lembrar`; é uma declaração explícita e pode ser confirmada;
 - `licao <texto>`: execute `licao`; nasce candidata procedimental;
 - `confirmar <id>` ou `descartar <id>`: execute a decisão pedida;
+- `atualizar-memoria <id> <texto>` ou `obsoleta <id> [razão]`: execute somente quando o proprietário
+  tiver identificado o registro e pedido a alteração; a versão anterior permanece no arquivo local;
+- `consolidar <id1,id2> <texto>`: confirme os IDs e o texto canônico com o proprietário antes de
+  executar; consolidação aproximada nunca é automática;
 - outro texto: execute `contexto` com o texto como tema e responda como Omni usando somente o que for
   relevante. O hook pode extrair sinais persistentes como candidatas, mas conversa comum não é gravada.
 

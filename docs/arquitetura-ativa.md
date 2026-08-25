@@ -12,6 +12,7 @@ Existe uma única fonte para cada responsabilidade:
 | seleção de contexto | `runtime/contexto.mjs` |
 | recuperação e ranking de memória | `runtime/recuperacao.mjs` + `contratos/contexto/recuperacao.json` |
 | escrita de memória | `runtime/memoria.mjs` |
+| manutenção e ciclo de vida | `runtime/memoria.mjs` + `contratos/memoria/garbage-collection.json` |
 | injeção por turno | `hooks/hooks.json` + `runtime/hook-contexto.mjs` |
 | detecção de atualização | `runtime/versao.mjs` |
 | atualização explícita do plugin | `runtime/atualizacao.mjs` |
@@ -65,6 +66,21 @@ candidata ─► proprietário confirma/descarta ─► decisão registrada
 
 O contrato detalhado está em `contratos/memoria/pipeline-escrita.md`. O hook executa a análise, mas
 nunca promove sozinho uma inferência para memória confirmada.
+
+## Ciclo de vida da memória
+
+```text
+ativa ──┬── expirada ───────────────────────────────► arquivo local
+        ├── candidata antiga, fraca e isolada ─────► arquivo local
+        ├── duplicata exata ─► consolida ──────────► arquivo da sobra
+        ├── semelhante ─────────────────────────────► proposta para o proprietário
+        └── decisão explícita ─► atualiza/aposenta/consolida
+```
+
+A manutenção segura é conferida no máximo uma vez por dia ao abrir o store. Memória confirmada sem
+prazo não é aposentada automaticamente, e nenhum registro arquivado sofre exclusão permanente
+automática. Semelhança aproximada apenas gera uma proposta; o runtime não inventa sozinho o padrão
+semântico ou procedural que a substituirá.
 
 ## Versão publicada
 

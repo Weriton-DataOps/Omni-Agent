@@ -65,6 +65,11 @@ A recuperação de memória usa `hybrid-local-v1`: conceitos versionados e simil
 sem embeddings remotos. Um ranking único alimenta fast e deep e registra somente diagnóstico sem o
 texto integral das memórias.
 
+A manutenção usa `memory-gc-safe-v1`: expira prazos explícitos, arquiva candidatas antigas de baixo
+sinal e une duplicatas exatas. Registros retirados da memória ativa permanecem no arquivo local.
+Semelhanças aproximadas só viram propostas; atualização, obsolescência e consolidação exigem pedido
+explícito.
+
 ## Memória
 
 Os dados vivem em `%APPDATA%\omni\memory\memory.json`, fora deste repositório:
@@ -87,8 +92,14 @@ para o Git e sem substituir os registros existentes.
 /omni:omni contexto <tema>
 /omni:omni experiencia <texto>
 /omni:omni candidatas
+/omni:omni arquivo
+/omni:omni manutencao simular
+/omni:omni manutencao
 /omni:omni lembrar <texto>
 /omni:omni licao <texto>
+/omni:omni atualizar-memoria <id> <novo texto>
+/omni:omni obsoleta <id> <razão>
+/omni:omni consolidar <id1,id2> <texto canônico>
 ```
 
 ## Verificação

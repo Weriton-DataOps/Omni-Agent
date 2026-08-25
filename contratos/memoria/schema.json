@@ -1,19 +1,20 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/Weriton-DataOps/Omni-Agent/contratos/memoria/schema.json",
-  "title": "Omni Memory V3",
+  "title": "Omni Memory V4",
   "type": "object",
-  "required": ["schemaVersion", "store", "confirmed", "candidates"],
+  "required": ["schemaVersion", "store", "confirmed", "candidates", "archive"],
   "properties": {
-    "schemaVersion": { "const": 3 },
+    "schemaVersion": { "const": 4 },
     "store": {
       "type": "object",
-      "required": ["id", "createdAt", "updatedAt", "lastMigrationAt"],
+      "required": ["id", "createdAt", "updatedAt", "lastMigrationAt", "lastMaintenanceAt"],
       "properties": {
         "id": { "const": "omni-local-memory" },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" },
-        "lastMigrationAt": { "type": ["string", "null"], "format": "date-time" }
+        "lastMigrationAt": { "type": ["string", "null"], "format": "date-time" },
+        "lastMaintenanceAt": { "type": ["string", "null"], "format": "date-time" }
       },
       "additionalProperties": false
     },
@@ -24,6 +25,10 @@
     "candidates": {
       "type": "array",
       "items": { "$ref": "#/$defs/candidateMemory" }
+    },
+    "archive": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/archivedMemory" }
     }
   },
   "additionalProperties": false,
@@ -93,6 +98,24 @@
         { "$ref": "#/$defs/baseMemory" },
         { "properties": { "status": { "const": "candidate" } } }
       ]
+    },
+    "archivedMemory": {
+      "type": "object",
+      "required": [
+        "id", "memoryId", "action", "reason", "archivedAt", "replacementId", "snapshot"
+      ],
+      "properties": {
+        "id": { "type": "string", "pattern": "^arc-" },
+        "memoryId": { "type": "string", "pattern": "^mem-" },
+        "action": {
+          "enum": ["expired", "stale-candidate", "capacity", "discarded", "obsolete", "updated", "consolidated"]
+        },
+        "reason": { "type": "string", "minLength": 1 },
+        "archivedAt": { "type": "string", "format": "date-time" },
+        "replacementId": { "type": ["string", "null"], "pattern": "^mem-" },
+        "snapshot": { "$ref": "#/$defs/baseMemory" }
+      },
+      "additionalProperties": false
     }
   }
 }

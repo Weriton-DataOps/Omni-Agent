@@ -44,6 +44,20 @@
       "recommended_agent": "omni"
     },
     {
+      "name": "memory-maintenance",
+      "description": "Expirar, atualizar, consolidar e aposentar memória local com histórico auditável.",
+      "when_to_use": ["manutenção periódica", "decisão explícita sobre memória", "duplicata ou obsolescência"],
+      "when_not_to_use": ["exclusão permanente automática", "fusão semântica sem confirmação"],
+      "inputs": ["memoryIds", "policy", "ownerDecision"],
+      "outputs": ["maintenanceReport", "archiveEntries", "consolidationProposals"],
+      "risk": "medium",
+      "permissions": ["read-local-runtime", "write-local-runtime"],
+      "latency": "local",
+      "cost": "none",
+      "required_tools": ["filesystem"],
+      "recommended_agent": "omni"
+    },
+    {
       "name": "plugin-update",
       "description": "Atualizar e validar o plugin do Omni por pedido explícito.",
       "when_to_use": ["comando atualizar explícito"],

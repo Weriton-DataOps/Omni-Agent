@@ -11,7 +11,7 @@ test('marketplace usa o plugin do próprio repositório e versão semântica', a
   const packageManifest = JSON.parse(await readFile(file('package.json'), 'utf8'))
   assert.equal(marketplace.plugins[0].source, './')
   assert.equal(manifest.name, 'omni')
-  assert.equal(manifest.version, '0.8.0')
+  assert.equal(manifest.version, '0.9.0')
   assert.equal(packageManifest.version, manifest.version)
 })
 
@@ -20,12 +20,18 @@ test('runtime, schema e manifesto concordam sobre as versões', async () => {
   const migrations = JSON.parse(await readFile(file('contratos/memoria/migrations.json'), 'utf8'))
   const contextSchema = JSON.parse(await readFile(file('contratos/contexto/schema.json'), 'utf8'))
   const retrieval = JSON.parse(await readFile(file('contratos/contexto/recuperacao.json'), 'utf8'))
-  assert.equal(schema.properties.schemaVersion.const, 3)
-  assert.equal(migrations.currentSchemaVersion, 3)
+  const garbageCollection = JSON.parse(
+    await readFile(file('contratos/memoria/garbage-collection.json'), 'utf8')
+  )
+  assert.equal(schema.properties.schemaVersion.const, 4)
+  assert.equal(migrations.currentSchemaVersion, 4)
   assert.deepEqual(
     migrations.migrations.map((migration) => [migration.from, migration.to]),
-    [[1, 2], [2, 3]]
+    [[1, 2], [2, 3], [3, 4]]
   )
+  assert.equal(garbageCollection.policy, 'memory-gc-safe-v1')
+  assert.equal(garbageCollection.semanticConsolidation.automaticMerge, false)
+  assert.equal(garbageCollection.archive.automaticPermanentDeletion, false)
   assert.equal(contextSchema.properties.schemaVersion.const, 2)
   assert.equal(retrieval.algorithm, 'hybrid-local-v1')
   assert.equal(
@@ -48,6 +54,8 @@ test('plugin contém somente o núcleo declarado', async () => {
   await stat(file('runtime/personalidade.mjs'))
   await stat(file('runtime/versao.mjs'))
   await stat(file('runtime/atualizacao.mjs'))
+  await stat(file('contratos/memoria/garbage-collection.json'))
+  await stat(file('contratos/memoria/garbage-collection.md'))
   await stat(file('hooks/hooks.json'))
   await stat(file('contratos/personalidade/omni-persona-v1.md'))
   await stat(file('contratos/personalidade/omni-persona-v2.md'))
@@ -137,6 +145,8 @@ test('skill começa em pt-BR e não despeja diagnóstico quando chamada vazia', 
   assert.doesNotMatch(skill, /omni-persona-v\d+\.md|personalidade v\d+/)
   assert.match(skill, /`outdated`, avise em uma frase/)
   assert.match(skill, /`atualizar`: execute `atualizar`/)
+  assert.match(skill, /`manutencao simular`/)
+  assert.match(skill, /consolidação aproximada nunca é automática/)
   assert.match(skill, /interface nativa do VS Code/)
   assert.match(skill, /não apresente\s+diagnóstico técnico sem que seja pedido/is)
 })

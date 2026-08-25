@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import test from 'node:test'
@@ -75,6 +75,11 @@ test('atualizacao migra memoria v1 ate a versao atual sem perder registros', asy
     assert.equal(resultado.memory.confirmed[0].projectId, null)
     assert.equal(resultado.memory.store.createdAt, instante)
     assert.ok(resultado.memory.store.lastMigrationAt)
+    assert.equal(resultado.migrationBackupCreated, true)
+
+    const backups = (await readdir(dirname(arquivo))).filter((name) => name.endsWith('.backup'))
+    assert.equal(backups.length, 1)
+    assert.equal(await readFile(join(dirname(arquivo), backups[0]), 'utf8'), `${JSON.stringify({ schemaVersion: 1, confirmed: [registro], candidates: [] }, null, 2)}\n`)
 
     const persistida = JSON.parse(await readFile(arquivo, 'utf8'))
     assert.equal(persistida.schemaVersion, MEMORY_SCHEMA_VERSION)

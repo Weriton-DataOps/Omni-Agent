@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-  [ValidateSet('estado', 'personalidade', 'atualizar', 'contexto', 'experiencia', 'candidatas', 'lembrar', 'licao', 'confirmar', 'descartar')]
+  [ValidateSet('estado', 'personalidade', 'atualizar', 'contexto', 'experiencia', 'candidatas', 'arquivo', 'manutencao', 'lembrar', 'licao', 'confirmar', 'descartar', 'atualizar-memoria', 'obsoleta', 'consolidar')]
   [string]$Acao = 'estado',
   [Parameter(ValueFromRemainingArguments = $true)]
   [string[]]$Argumentos
@@ -17,8 +17,7 @@ if (-not (Test-Path -LiteralPath $cli)) {
   throw "Runtime do plugin ausente: $cli"
 }
 
-$texto = $Argumentos -join ' '
-& node --no-warnings $cli $Acao $texto
+& node --no-warnings $cli $Acao @Argumentos
 if ($LASTEXITCODE -ne 0) {
   throw "O operador do Omni falhou com codigo $LASTEXITCODE."
 }

@@ -1,5 +1,5 @@
 {
-  "currentSchemaVersion": 3,
+  "currentSchemaVersion": 4,
   "migrations": [
     {
       "from": 1,
@@ -10,6 +10,11 @@
       "from": 2,
       "to": 3,
       "description": "Adiciona importância, ocorrências, validação e projeto sem alterar o conteúdo aprendido."
+    },
+    {
+      "from": 3,
+      "to": 4,
+      "description": "Adiciona histórico de ciclo de vida e controle de manutenção sem remover registros ativos."
     }
   ]
 }

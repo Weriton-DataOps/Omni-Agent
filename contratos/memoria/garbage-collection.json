@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "policy": "memory-gc-safe-v1",
+  "automaticIntervalHours": 24,
+  "automatic": {
+    "archiveExpired": true,
+    "consolidateExactDuplicates": true,
+    "staleCandidates": {
+      "enabled": true,
+      "minimumAgeDays": 90,
+      "maximumOccurrences": 1,
+      "maximumImportance": 0.6
+    }
+  },
+  "confirmedMemory": {
+    "neverArchiveWithoutExplicitExpiryOrOwnerDecision": true
+  },
+  "semanticConsolidation": {
+    "similarityThreshold": 0.82,
+    "automaticMerge": false,
+    "requiresExplicitOwnerDecision": true,
+    "maximumProposals": 20
+  },
+  "archive": {
+    "preserveFullSnapshot": true,
+    "automaticPermanentDeletion": false
+  }
+}

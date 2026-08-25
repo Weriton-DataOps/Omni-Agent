@@ -18,6 +18,10 @@
 - recuperação semântica local e lexical por intenção;
 - ranking por escopo, recência, frequência, confiança, importância e contexto atual;
 - seleção única com recortes fast/deep e diagnóstico sem conteúdo pessoal;
+- manutenção automática diária com expiração explícita e triagem conservadora de candidatas;
+- arquivo local auditável, sem exclusão permanente automática;
+- atualização, obsolescência e consolidação explícitas com preservação das versões anteriores;
+- consolidação automática apenas de duplicatas exatas e propostas semânticas sujeitas à decisão humana;
 - fotografia canônica;
 - projeções fast e deep com orçamento;
 - ativação isolada e montagem de contexto em cada turno do Claude Code;
@@ -28,7 +32,6 @@
 
 ## Contratado, ainda incompleto
 
-- consolidação, expiração e aposentadoria de memória;
 - promoção de procedimentos por evidência;
 - promoção segura de aprendizado reutilizável para o Git com eval e aprovação;
 - estado conversacional e histórico de sessões;

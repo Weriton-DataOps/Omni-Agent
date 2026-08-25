@@ -19,7 +19,7 @@ function success(value = '') {
   }
 }
 
-function runner({ before = '0.8.0', after = '0.9.0', marketplace = canonicalMarketplace } = {}) {
+function runner({ before = '0.9.0', after = '0.10.0', marketplace = canonicalMarketplace } = {}) {
   const calls = []
   let pluginListCalls = 0
   return {
@@ -53,12 +53,12 @@ test('atualiza, valida e orienta a aplicação conforme a interface', async () =
     casa: 'C:\\omni-test',
     run: fake.run,
     resolveCli: async () => 'claude-test',
-    checkVersion: async () => ({ latestVersion: '0.9.0', status: 'outdated' })
+    checkVersion: async () => ({ latestVersion: '0.10.0', status: 'outdated' })
   })
 
   assert.equal(result.status, 'updated')
-  assert.equal(result.previousInstalledVersion, '0.8.0')
-  assert.equal(result.installedVersion, '0.9.0')
+  assert.equal(result.previousInstalledVersion, '0.9.0')
+  assert.equal(result.installedVersion, '0.10.0')
   assert.equal(result.reloadRequired, true)
   assert.equal(result.applyInstructions.vscode.command, '/plugin')
   assert.equal(result.applyInstructions.vscode.action, 'Clique em Restart.')
@@ -69,12 +69,12 @@ test('atualiza, valida e orienta a aplicação conforme a interface', async () =
 })
 
 test('versão atual é validada sem pedir nova sessão', async () => {
-  const fake = runner({ before: '0.8.0', after: '0.8.0' })
+  const fake = runner({ before: '0.9.0', after: '0.9.0' })
   const result = await atualizarPlugin({
     casa: 'C:\\omni-test',
     run: fake.run,
     resolveCli: async () => 'claude-test',
-    checkVersion: async () => ({ latestVersion: '0.8.0', status: 'current' })
+    checkVersion: async () => ({ latestVersion: '0.9.0', status: 'current' })
   })
 
   assert.equal(result.status, 'current')
