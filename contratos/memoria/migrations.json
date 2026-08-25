@@ -1,0 +1,10 @@
+{
+  "currentSchemaVersion": 2,
+  "migrations": [
+    {
+      "from": 1,
+      "to": 2,
+      "description": "Adiciona metadados do store local sem alterar registros confirmados ou candidatos."
+    }
+  ]
+}

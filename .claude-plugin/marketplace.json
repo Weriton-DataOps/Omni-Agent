@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-marketplace-manifest.json",
   "name": "omni-hub",
-  "description": "Marketplace privado do sistema cognitivo portátil do Omni",
+  "description": "Marketplace do sistema cognitivo pessoal e portátil do Omni",
   "owner": {
     "name": "Weriton - GR Group"
   },

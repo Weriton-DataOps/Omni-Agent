@@ -38,7 +38,11 @@ async function main() {
         name: persona.name,
         status: persona.status
       },
-      memory: { confirmed: memory.confirmed.length, candidates: memory.candidates.length },
+      memory: {
+        schemaVersion: memory.schemaVersion,
+        confirmed: memory.confirmed.length,
+        candidates: memory.candidates.length
+      },
       context: { schemaVersion: 1, projections: ['fast', 'deep'] }
     }
   }

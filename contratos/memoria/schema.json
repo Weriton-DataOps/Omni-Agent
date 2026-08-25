@@ -1,11 +1,22 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/Weriton-DataOps/Omni-Agent/contratos/memoria/schema.json",
-  "title": "Omni Memory V1",
+  "title": "Omni Memory V2",
   "type": "object",
-  "required": ["schemaVersion", "confirmed", "candidates"],
+  "required": ["schemaVersion", "store", "confirmed", "candidates"],
   "properties": {
-    "schemaVersion": { "const": 1 },
+    "schemaVersion": { "const": 2 },
+    "store": {
+      "type": "object",
+      "required": ["id", "createdAt", "updatedAt", "lastMigrationAt"],
+      "properties": {
+        "id": { "const": "omni-local-memory" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "lastMigrationAt": { "type": ["string", "null"], "format": "date-time" }
+      },
+      "additionalProperties": false
+    },
     "confirmed": {
       "type": "array",
       "items": { "$ref": "#/$defs/confirmedMemory" }

@@ -10,7 +10,7 @@ test('marketplace usa o plugin do próprio repositório e versão semântica', a
   const manifest = JSON.parse(await readFile(file('.claude-plugin/plugin.json'), 'utf8'))
   assert.equal(marketplace.plugins[0].source, './')
   assert.equal(manifest.name, 'omni')
-  assert.equal(manifest.version, '0.1.0')
+  assert.equal(manifest.version, '0.2.0')
 })
 
 test('plugin contém somente o núcleo declarado', async () => {
@@ -18,6 +18,7 @@ test('plugin contém somente o núcleo declarado', async () => {
   await assert.rejects(stat(file('cerebro')), { code: 'ENOENT' })
   await assert.rejects(stat(file('plugin')), { code: 'ENOENT' })
   await assert.rejects(stat(file('.claude')), { code: 'ENOENT' })
+  await assert.rejects(stat(file('memory')), { code: 'ENOENT' })
   await stat(file('runtime/cli.mjs'))
   await stat(file('contratos/personalidade/omni-persona-v1.md'))
 })

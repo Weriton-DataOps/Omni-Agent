@@ -37,6 +37,20 @@ documentação                    dados privados
 Nenhum caminho absoluto da máquina faz parte dos contratos. A skill resolve seus próprios arquivos
 por `${CLAUDE_PLUGIN_ROOT}` e a memória resolve sua casa por `OMNI_HOME` ou `%APPDATA%`.
 
+## Atualização do plugin e memória
+
+```text
+Git / release do plugin                 %APPDATA%\omni
+-----------------------                 --------------
+schema + migrações -------┐
+runtime novo -------------+--> valida versão --> migra atomicamente
+contratos ----------------┘                        └--> preserva os registros
+```
+
+O Git distribui o modo de compreender e migrar a memória, não a memória pessoal. Uma versão antiga
+do plugin recusa um arquivo criado por uma versão futura em vez de sobrescrevê-lo. Memórias antigas
+só entram por importação explícita depois de classificação, escopo, evidência e revisão de segredos.
+
 ## Regra de relevância
 
 Uma resposta só pode introduzir conteúdo vindo de:

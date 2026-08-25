@@ -3,9 +3,24 @@ import { mkdir, open, readFile, rename, stat, unlink, writeFile } from 'node:fs/
 import { homedir } from 'node:os'
 import { isAbsolute, join, resolve } from 'node:path'
 
-const EMPTY = Object.freeze({ schemaVersion: 1, confirmed: [], candidates: [] })
+export const MEMORY_SCHEMA_VERSION = 2
+
 const MAX_CONFIRMED = 500
 const MAX_CANDIDATES = 100
+
+function memoriaVazia(agora = new Date().toISOString()) {
+  return {
+    schemaVersion: MEMORY_SCHEMA_VERSION,
+    store: {
+      id: 'omni-local-memory',
+      createdAt: agora,
+      updatedAt: agora,
+      lastMigrationAt: null
+    },
+    confirmed: [],
+    candidates: []
+  }
+}
 
 export function casaDoOmni(env = process.env) {
   if (env.OMNI_HOME) return resolve(env.OMNI_HOME)
@@ -57,22 +72,82 @@ function registroValido(item, status) {
   )
 }
 
-export async function lerMemoria(casa) {
+function storeValido(store) {
+  return Boolean(
+    store &&
+      store.id === 'omni-local-memory' &&
+      typeof store.createdAt === 'string' &&
+      typeof store.updatedAt === 'string' &&
+      (store.lastMigrationAt === null || typeof store.lastMigrationAt === 'string')
+  )
+}
+
+function validarMemoria(memoria, arquivo) {
+  if (
+    memoria?.schemaVersion !== MEMORY_SCHEMA_VERSION ||
+    !storeValido(memoria.store) ||
+    !Array.isArray(memoria.confirmed) ||
+    !Array.isArray(memoria.candidates) ||
+    !memoria.confirmed.every((item) => registroValido(item, 'confirmed')) ||
+    !memoria.candidates.every((item) => registroValido(item, 'candidate'))
+  ) {
+    throw new Error(`Memória fora do contrato v${MEMORY_SCHEMA_VERSION}: ${arquivo}`)
+  }
+}
+
+function primeiroRegistro(memoria, fallback) {
+  const timestamps = [...memoria.confirmed, ...memoria.candidates]
+    .map((item) => item.createdAt)
+    .filter((value) => Number.isFinite(Date.parse(value)))
+    .sort()
+  return timestamps[0] ?? fallback
+}
+
+function migrarMemoria(memoria, arquivo, agora = new Date().toISOString()) {
+  if (!memoria || typeof memoria !== 'object') throw new Error(`Memória inválida: ${arquivo}`)
+  if (memoria.schemaVersion > MEMORY_SCHEMA_VERSION) {
+    throw new Error(`Memória v${memoria.schemaVersion} é mais nova que este plugin.`)
+  }
+
+  let atual = memoria
+  const origem = atual.schemaVersion
+
+  if (atual.schemaVersion === 1) {
+    if (!Array.isArray(atual.confirmed) || !Array.isArray(atual.candidates)) {
+      throw new Error(`Memória v1 incompleta: ${arquivo}`)
+    }
+    atual = {
+      schemaVersion: 2,
+      store: {
+        id: 'omni-local-memory',
+        createdAt: primeiroRegistro(atual, agora),
+        updatedAt: agora,
+        lastMigrationAt: agora
+      },
+      confirmed: atual.confirmed,
+      candidates: atual.candidates
+    }
+  }
+
+  validarMemoria(atual, arquivo)
+  return { memory: atual, migratedFrom: origem < MEMORY_SCHEMA_VERSION ? origem : null }
+}
+
+async function carregarSemTrava(casa) {
   const arquivo = caminhoDaMemoria(casa)
   try {
-    const dado = JSON.parse(await readFile(arquivo, 'utf8'))
-    if (
-      dado?.schemaVersion !== 1 ||
-      !Array.isArray(dado.confirmed) ||
-      !Array.isArray(dado.candidates) ||
-      !dado.confirmed.every((item) => registroValido(item, 'confirmed')) ||
-      !dado.candidates.every((item) => registroValido(item, 'candidate'))
-    ) {
-      throw new Error(`Memória fora do contrato v1: ${arquivo}`)
+    const original = JSON.parse(await readFile(arquivo, 'utf8'))
+    const migrated = migrarMemoria(original, arquivo)
+    return {
+      memory: migrated.memory,
+      result: migrated.migratedFrom === null ? 'ready' : 'migrated',
+      migratedFrom: migrated.migratedFrom,
+      changed: migrated.migratedFrom !== null
     }
-    return dado
   } catch (erro) {
-    if (erro?.code === 'ENOENT') return structuredClone(EMPTY)
+    if (erro?.code === 'ENOENT') {
+      return { memory: memoriaVazia(), result: 'initialized', migratedFrom: null, changed: true }
+    }
     throw erro
   }
 }
@@ -100,9 +175,30 @@ async function adquirirTrava(casa) {
 async function gravar(casa, memoria) {
   const arquivo = caminhoDaMemoria(casa)
   const temporario = `${arquivo}.${process.pid}.novo`
+  memoria.store.updatedAt = new Date().toISOString()
   await mkdir(join(casa, 'memory'), { recursive: true })
   await writeFile(temporario, `${JSON.stringify(memoria, null, 2)}\n`, 'utf8')
   await rename(temporario, arquivo)
+}
+
+export async function prepararMemoria(casa) {
+  const liberar = await adquirirTrava(casa)
+  try {
+    const carregada = await carregarSemTrava(casa)
+    if (carregada.changed) await gravar(casa, carregada.memory)
+    return {
+      result: carregada.result,
+      migratedFrom: carregada.migratedFrom,
+      schemaVersion: carregada.memory.schemaVersion,
+      memory: carregada.memory
+    }
+  } finally {
+    await liberar()
+  }
+}
+
+export async function lerMemoria(casa) {
+  return (await prepararMemoria(casa)).memory
 }
 
 async function registrar(casa, entrada) {
@@ -114,12 +210,16 @@ async function registrar(casa, entrada) {
 
   const liberar = await adquirirTrava(casa)
   try {
-    const memoria = await lerMemoria(casa)
+    const carregada = await carregarSemTrava(casa)
+    const memoria = carregada.memory
     const key = `${entrada.scope.type}:${entrada.scope.id ?? ''}:${normalizar(text)}`
     const existente = [...memoria.confirmed, ...memoria.candidates].find(
       (item) => `${item.scope.type}:${item.scope.id ?? ''}:${normalizar(item.text)}` === key
     )
-    if (existente) return { result: 'already-exists', memory: existente }
+    if (existente) {
+      if (carregada.changed) await gravar(casa, memoria)
+      return { result: 'already-exists', memory: existente }
+    }
 
     const agora = new Date().toISOString()
     const item = {
@@ -176,9 +276,13 @@ export function proporLicao(casa, text, scope = { type: 'user' }) {
 export async function decidirCandidata(casa, id, decision) {
   const liberar = await adquirirTrava(casa)
   try {
-    const memoria = await lerMemoria(casa)
+    const carregada = await carregarSemTrava(casa)
+    const memoria = carregada.memory
     const candidata = memoria.candidates.find((item) => item.id === id)
-    if (!candidata) return { result: 'not-found', memory: null }
+    if (!candidata) {
+      if (carregada.changed) await gravar(casa, memoria)
+      return { result: 'not-found', memory: null }
+    }
     memoria.candidates = memoria.candidates.filter((item) => item.id !== id)
     if (decision === 'confirm') {
       const agora = new Date().toISOString()

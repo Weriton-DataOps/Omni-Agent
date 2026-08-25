@@ -56,6 +56,10 @@ Os dados vivem em `%APPDATA%\omni\memory\memory.json`, fora deste repositório:
 - possível segredo: recusado;
 - conversa comum: não é gravada automaticamente.
 
+Na primeira ativação, o plugin cria essa casa local. Quando uma atualização altera o formato, o
+runtime aplica as migrações versionadas em `contratos/memoria/migrations.json` sem copiar a memória
+para o Git e sem substituir os registros existentes.
+
 ## Uso
 
 ```text

@@ -1,20 +1,99 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import test from 'node:test'
 
 import {
+  MEMORY_SCHEMA_VERSION,
   caminhoDaMemoria,
   decidirCandidata,
   lembrarExplicitamente,
   lerMemoria,
+  prepararMemoria,
   proporLicao
 } from '../runtime/memoria.mjs'
 
 async function home() {
   return mkdtemp(join(tmpdir(), 'omni-plugin-memory-'))
 }
+
+test('primeira ativacao cria a memoria local v2 e as seguintes preservam a casa', async () => {
+  const casa = await home()
+  try {
+    const primeira = await prepararMemoria(casa)
+    assert.equal(primeira.result, 'initialized')
+    assert.equal(primeira.schemaVersion, MEMORY_SCHEMA_VERSION)
+    assert.equal(primeira.memory.store.id, 'omni-local-memory')
+
+    const criada = JSON.parse(await readFile(caminhoDaMemoria(casa), 'utf8'))
+    const segunda = await prepararMemoria(casa)
+    assert.equal(segunda.result, 'ready')
+    assert.equal(segunda.memory.store.createdAt, criada.store.createdAt)
+    assert.equal(segunda.memory.store.lastMigrationAt, null)
+  } finally {
+    await rm(casa, { recursive: true, force: true })
+  }
+})
+
+test('atualizacao migra memoria v1 para v2 sem perder registros', async () => {
+  const casa = await home()
+  const arquivo = caminhoDaMemoria(casa)
+  const instante = '2026-08-25T12:00:00.000Z'
+  const registro = {
+    id: 'mem-v1-test',
+    type: 'preference',
+    scope: { type: 'user' },
+    text: 'prefiro mapas antes de textos longos',
+    source: 'legacy-test',
+    status: 'confirmed',
+    confidence: 1,
+    evidence: [{ kind: 'explicit-request', recordedAt: instante }],
+    createdAt: instante,
+    updatedAt: instante,
+    lastValidatedAt: instante,
+    usageCount: 2,
+    expiresAt: null
+  }
+  try {
+    await mkdir(dirname(arquivo), { recursive: true })
+    await writeFile(
+      arquivo,
+      `${JSON.stringify({ schemaVersion: 1, confirmed: [registro], candidates: [] }, null, 2)}\n`,
+      'utf8'
+    )
+
+    const resultado = await prepararMemoria(casa)
+    assert.equal(resultado.result, 'migrated')
+    assert.equal(resultado.migratedFrom, 1)
+    assert.equal(resultado.schemaVersion, MEMORY_SCHEMA_VERSION)
+    assert.equal(resultado.memory.confirmed[0].id, registro.id)
+    assert.equal(resultado.memory.confirmed[0].text, registro.text)
+    assert.deepEqual(resultado.memory.confirmed[0].evidence, registro.evidence)
+    assert.equal(resultado.memory.store.createdAt, instante)
+    assert.ok(resultado.memory.store.lastMigrationAt)
+
+    const persistida = JSON.parse(await readFile(arquivo, 'utf8'))
+    assert.equal(persistida.schemaVersion, MEMORY_SCHEMA_VERSION)
+    assert.equal(persistida.confirmed.length, 1)
+  } finally {
+    await rm(casa, { recursive: true, force: true })
+  }
+})
+
+test('plugin antigo recusa memoria de versao futura sem sobrescreve-la', async () => {
+  const casa = await home()
+  const arquivo = caminhoDaMemoria(casa)
+  const futura = '{"schemaVersion":99,"sentinel":"preservar"}\n'
+  try {
+    await mkdir(dirname(arquivo), { recursive: true })
+    await writeFile(arquivo, futura, 'utf8')
+    await assert.rejects(prepararMemoria(casa), /mais nova que este plugin/)
+    assert.equal(await readFile(arquivo, 'utf8'), futura)
+  } finally {
+    await rm(casa, { recursive: true, force: true })
+  }
+})
 
 test('pedido explícito vira memória confirmada no runtime, não no plugin', async () => {
   const casa = await home()

@@ -7,6 +7,8 @@
 - confirmação e descarte de candidatas;
 - recusa de possíveis segredos;
 - escrita atômica e concorrente;
+- inicialização local e migração versionada sem perda;
+- proteção contra downgrade do schema de memória;
 - deduplicação;
 - ranking lexical por intenção;
 - fotografia canônica;
