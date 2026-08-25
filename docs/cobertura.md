@@ -13,6 +13,7 @@
 - ranking lexical por intenção;
 - fotografia canônica;
 - projeções fast e deep com orçamento;
+- ativação isolada e montagem de contexto em cada turno do Claude Code;
 - catálogo mínimo de capacidades;
 - skill do Claude Code.
 

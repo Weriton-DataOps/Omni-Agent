@@ -11,6 +11,7 @@ Existe uma única fonte para cada responsabilidade:
 | memória persistente | `%APPDATA%\omni\memory\memory.json` |
 | seleção de contexto | `runtime/contexto.mjs` |
 | escrita de memória | `runtime/memoria.mjs` |
+| injeção por turno | `hooks/hooks.json` + `runtime/hook-contexto.mjs` |
 | entrada no Claude Code | `skills/omni/SKILL.md` |
 
 ## Contexto de uma resposta
@@ -22,6 +23,23 @@ MEMÓRIA ───────┘                         └─► DEEP
 ```
 
 Fast e deep não são duas memórias. São duas projeções da mesma fotografia, com orçamentos diferentes.
+
+## Ciclo da sessão no Claude Code
+
+```text
+/omni:omni
+    ↓
+ativa a sessão do Omni
+    ↓
+cada UserPromptSubmit
+    ↓
+intenção → memória relevante → projeção deep → contexto adicional → resposta
+    ↓
+SessionEnd remove somente a marca de ativação
+```
+
+O hook só injeta contexto nas sessões em que o Omni foi ativado. Ele não interfere nas demais
+conversas do Claude Code. A memória permanece local quando a sessão termina.
 
 ## Separação entre projeto e dados
 

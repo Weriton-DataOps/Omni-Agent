@@ -20,6 +20,7 @@ Omni/
 │   ├── OMNI-ESPECIFICACAO-MESTRE.md
 │   ├── arquitetura-ativa.md
 │   └── cobertura.md
+├── hooks/                          ciclo de contexto por turno no Claude Code
 ├── runtime/                        memória e montagem de contexto
 ├── scripts/                        operador portátil
 ├── skills/omni/                    entrada `/omni:omni`
@@ -42,6 +43,10 @@ skill Omni
           ↓
        resposta
 ```
+
+Depois de `/omni:omni`, um hook do plugin repete a montagem em cada mensagem da mesma sessão. Assim,
+preferências confirmadas depois de uma atualização ou em outra sessão não dependem de o modelo
+lembrar de chamar manualmente o runtime.
 
 A especificação mestre governa o desenvolvimento, mas não é despejada automaticamente em cada
 conversa. O runtime seleciona apenas o contexto relevante.

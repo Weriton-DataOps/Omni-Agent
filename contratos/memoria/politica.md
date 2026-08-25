@@ -44,3 +44,16 @@ definida por `OMNI_HOME`.
 
 Arquivos antigos nunca entram em lote. Cada item deve passar por classificação, escopo, evidência,
 confiança e decisão de importar ou descartar.
+
+## Evolução no Git
+
+O crescimento possui duas trilhas diferentes:
+
+```text
+experiência pessoal → memória local confirmada ou candidata
+aprendizado reutilizável e seguro → validação → eval → aprovação → contrato/capacidade versionada no Git
+```
+
+Código, schemas, migrações, contratos e aprendizados promovidos crescem no repositório. Conteúdo
+pessoal bruto, conversa, credencial e evidência privada permanecem locais. Promoção nunca é automática:
+ela exige retirar dados pessoais, demonstrar reutilização e passar pelo gate de avaliação.
