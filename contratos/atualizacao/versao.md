@@ -23,6 +23,13 @@ falha de rede, o último resultado válido pode ser usado como cache antigo, ide
 
 - toda alteração funcional do plugin aumenta a versão semântica;
 - documentação sem impacto de execução não exige aumento;
-- a verificação apenas avisa, nunca atualiza nem reinicia o Claude sozinha;
+- a verificação automática apenas avisa, nunca atualiza nem reinicia o Claude sozinha;
+- `/omni:omni atualizar` é a única atualização iniciada pelo Omni e exige pedido explícito;
+- antes de atualizar, o runtime confirma que `omni-hub` aponta para
+  `https://github.com/Weriton-DataOps/Omni-Agent`;
+- o fluxo atualiza o marketplace, atualiza `omni@omni-hub` e valida a versão instalada pela lista
+  do Claude e, quando disponível, pelo manifesto público do GitHub;
+- se o pacote carregado ficou antigo, a única ação solicitada é `/reload-plugins` na mesma sessão;
+- o atualizador não reinicia o Claude, não abre sessão e não lê nem transmite memória pessoal;
 - atualização continua passando por testes, commit, push e atualização do plugin;
 - falha de consulta nunca impede o Omni de conversar.

@@ -8,9 +8,11 @@ const file = (path) => new URL(path, root)
 test('marketplace usa o plugin do próprio repositório e versão semântica', async () => {
   const marketplace = JSON.parse(await readFile(file('.claude-plugin/marketplace.json'), 'utf8'))
   const manifest = JSON.parse(await readFile(file('.claude-plugin/plugin.json'), 'utf8'))
+  const packageManifest = JSON.parse(await readFile(file('package.json'), 'utf8'))
   assert.equal(marketplace.plugins[0].source, './')
   assert.equal(manifest.name, 'omni')
-  assert.equal(manifest.version, '0.5.1')
+  assert.equal(manifest.version, '0.6.0')
+  assert.equal(packageManifest.version, manifest.version)
 })
 
 test('runtime, schema e manifesto concordam sobre as versões', async () => {
@@ -34,6 +36,7 @@ test('plugin contém somente o núcleo declarado', async () => {
   await stat(file('runtime/hook-contexto.mjs'))
   await stat(file('runtime/pipeline-memoria.mjs'))
   await stat(file('runtime/versao.mjs'))
+  await stat(file('runtime/atualizacao.mjs'))
   await stat(file('hooks/hooks.json'))
   await stat(file('contratos/personalidade/omni-persona-v1.md'))
 })
@@ -89,5 +92,7 @@ test('skill começa em pt-BR e não despeja diagnóstico quando chamada vazia', 
   assert.match(skill, /Toda saída visível deve estar em português do Brasil desde a primeira linha/)
   assert.match(skill, /execute `estado` uma única vez e silenciosamente/)
   assert.match(skill, /`outdated`, avise em uma frase/)
+  assert.match(skill, /`atualizar`: execute `atualizar`/)
+  assert.match(skill, /Não peça reinício nem sessão nova/)
   assert.match(skill, /não apresente\s+diagnóstico técnico sem que seja pedido/is)
 })

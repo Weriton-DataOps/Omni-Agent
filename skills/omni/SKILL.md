@@ -1,6 +1,6 @@
 ---
 description: Conversa como o Omni usando sua personalidade, contexto e memoria canonicos.
-argument-hint: "[estado|contexto <tema>|experiencia <texto>|candidatas|lembrar <texto>|licao <texto>|confirmar <id>|descartar <id>|pergunta]"
+argument-hint: "[estado|atualizar|contexto <tema>|experiencia <texto>|candidatas|lembrar <texto>|licao <texto>|confirmar <id>|descartar <id>|pergunta]"
 allowed-tools: Bash, Read
 ---
 
@@ -32,6 +32,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scrip
 - vazio: use o `estado` já consultado e cumprimente de forma natural em uma frase; não apresente
   diagnóstico técnico sem que seja pedido;
 - `estado`: informe identidade, contagem de memórias e situação da versão já consultada;
+- `atualizar`: execute `atualizar`; informe a transição de versão validada e, quando
+  `reloadRequired` for verdadeiro, peça somente que o usuário execute `/reload-plugins` nesta mesma
+  sessão. Não peça reinício nem sessão nova;
 - `contexto <tema>`: execute `contexto`; use a projeção deep como dados relevantes para responder;
 - `experiencia <texto>`: execute `experiencia` e informe classificação, pontuação e destino;
 - `candidatas`: execute `candidatas` e apresente a fila para decisão, sem promovê-la sozinho;

@@ -13,6 +13,7 @@ Existe uma única fonte para cada responsabilidade:
 | escrita de memória | `runtime/memoria.mjs` |
 | injeção por turno | `hooks/hooks.json` + `runtime/hook-contexto.mjs` |
 | detecção de atualização | `runtime/versao.mjs` |
+| atualização explícita do plugin | `runtime/atualizacao.mjs` |
 | entrada no Claude Code | `skills/omni/SKILL.md` |
 
 ## Contexto de uma resposta
@@ -59,9 +60,11 @@ nunca promove sozinho uma inferência para memória confirmada.
 
 ```text
 ativação → estado → versão instalada × manifesto público → silêncio ou aviso
+pedido `atualizar` → validar origem → atualizar marketplace/plugin → validar → `/reload-plugins`
 ```
 
 A consulta usa apenas metadados públicos e possui fallback local. Ela não lê nem transmite memória.
+O atualizador só roda mediante pedido explícito e não reinicia o Claude nem cria outra sessão.
 
 ## Separação entre projeto e dados
 

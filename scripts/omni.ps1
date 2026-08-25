@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-  [ValidateSet('estado', 'contexto', 'lembrar', 'licao', 'confirmar', 'descartar')]
+  [ValidateSet('estado', 'atualizar', 'contexto', 'experiencia', 'candidatas', 'lembrar', 'licao', 'confirmar', 'descartar')]
   [string]$Acao = 'estado',
   [Parameter(ValueFromRemainingArguments = $true)]
   [string[]]$Argumentos

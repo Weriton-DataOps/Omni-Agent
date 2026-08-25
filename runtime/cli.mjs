@@ -12,6 +12,7 @@ import {
 } from './memoria.mjs'
 import { processarExperiencia } from './pipeline-memoria.mjs'
 import { verificarVersao } from './versao.mjs'
+import { atualizarPlugin } from './atualizacao.mjs'
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
 const [action = 'estado', ...parts] = process.argv.slice(2)
@@ -49,6 +50,9 @@ async function main() {
       version,
       context: { schemaVersion: 1, projections: ['fast', 'deep'] }
     }
+  }
+  if (action === 'atualizar') {
+    return { ok: true, update: await atualizarPlugin({ casa: home, pluginRoot: root }) }
   }
   if (action === 'contexto') return { ok: true, context: await montarContexto(home, { intent: text }) }
   if (action === 'experiencia') {

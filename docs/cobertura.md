@@ -20,6 +20,7 @@
 - catálogo mínimo de capacidades;
 - skill do Claude Code.
 - detecção de versão desatualizada com ETag e fallback offline;
+- atualização explícita com validação da origem, da instalação e recarga na mesma sessão;
 
 ## Contratado, ainda incompleto
 

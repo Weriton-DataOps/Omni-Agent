@@ -42,6 +42,20 @@
       "cost": "none",
       "required_tools": ["filesystem"],
       "recommended_agent": "omni"
+    },
+    {
+      "name": "plugin-update",
+      "description": "Atualizar e validar o plugin do Omni por pedido explícito.",
+      "when_to_use": ["comando atualizar explícito"],
+      "when_not_to_use": ["atualização silenciosa", "durante conversa comum"],
+      "inputs": ["marketplace canônico", "plugin instalado"],
+      "outputs": ["versão validada", "necessidade de reload"],
+      "risk": "medium",
+      "permissions": ["network", "write-plugin-cache"],
+      "latency": "network-dependent",
+      "cost": "none",
+      "required_tools": ["claude-code-cli"],
+      "recommended_agent": "omni"
     }
   ]
 }

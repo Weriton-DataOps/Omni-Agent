@@ -52,6 +52,9 @@ lembrar de chamar manualmente o runtime.
 Na ativação, o Omni compara a versão instalada com o manifesto público. Ele avisa quando houver
 versão mais recente e continua normalmente se a rede estiver indisponível.
 
+Por pedido explícito, `/omni:omni atualizar` confere a origem, atualiza e valida o pacote. Quando a
+versão carregada mudar, basta executar `/reload-plugins`: a conversa atual continua aberta.
+
 A especificação mestre governa o desenvolvimento, mas não é despejada automaticamente em cada
 conversa. O runtime seleciona apenas o contexto relevante.
 
@@ -73,6 +76,7 @@ para o Git e sem substituir os registros existentes.
 
 ```text
 /omni:omni
+/omni:omni atualizar
 /omni:omni contexto <tema>
 /omni:omni experiencia <texto>
 /omni:omni candidatas
