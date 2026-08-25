@@ -10,7 +10,18 @@ test('marketplace usa o plugin do próprio repositório e versão semântica', a
   const manifest = JSON.parse(await readFile(file('.claude-plugin/plugin.json'), 'utf8'))
   assert.equal(marketplace.plugins[0].source, './')
   assert.equal(manifest.name, 'omni')
-  assert.equal(manifest.version, '0.3.0')
+  assert.equal(manifest.version, '0.4.0')
+})
+
+test('runtime, schema e manifesto concordam sobre as versões', async () => {
+  const schema = JSON.parse(await readFile(file('contratos/memoria/schema.json'), 'utf8'))
+  const migrations = JSON.parse(await readFile(file('contratos/memoria/migrations.json'), 'utf8'))
+  assert.equal(schema.properties.schemaVersion.const, 3)
+  assert.equal(migrations.currentSchemaVersion, 3)
+  assert.deepEqual(
+    migrations.migrations.map((migration) => [migration.from, migration.to]),
+    [[1, 2], [2, 3]]
+  )
 })
 
 test('plugin contém somente o núcleo declarado', async () => {
@@ -21,6 +32,7 @@ test('plugin contém somente o núcleo declarado', async () => {
   await assert.rejects(stat(file('memory')), { code: 'ENOENT' })
   await stat(file('runtime/cli.mjs'))
   await stat(file('runtime/hook-contexto.mjs'))
+  await stat(file('runtime/pipeline-memoria.mjs'))
   await stat(file('hooks/hooks.json'))
   await stat(file('contratos/personalidade/omni-persona-v1.md'))
 })
@@ -53,6 +65,7 @@ test('contexto ativo não carrega nomes ou caminhos estranhos ao Omni', async ()
     'runtime/cli.mjs',
     'runtime/contexto.mjs',
     'runtime/hook-contexto.mjs',
+    'runtime/pipeline-memoria.mjs',
     'runtime/memoria.mjs',
     'contratos/capacidades/catalogo.json',
     'contratos/personalidade/omni-persona-v1.md'

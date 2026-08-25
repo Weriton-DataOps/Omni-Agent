@@ -18,7 +18,7 @@ async function home() {
   return mkdtemp(join(tmpdir(), 'omni-plugin-memory-'))
 }
 
-test('primeira ativacao cria a memoria local v2 e as seguintes preservam a casa', async () => {
+test('primeira ativacao cria a memoria local atual e as seguintes preservam a casa', async () => {
   const casa = await home()
   try {
     const primeira = await prepararMemoria(casa)
@@ -36,7 +36,7 @@ test('primeira ativacao cria a memoria local v2 e as seguintes preservam a casa'
   }
 })
 
-test('atualizacao migra memoria v1 para v2 sem perder registros', async () => {
+test('atualizacao migra memoria v1 ate a versao atual sem perder registros', async () => {
   const casa = await home()
   const arquivo = caminhoDaMemoria(casa)
   const instante = '2026-08-25T12:00:00.000Z'
@@ -70,6 +70,9 @@ test('atualizacao migra memoria v1 para v2 sem perder registros', async () => {
     assert.equal(resultado.memory.confirmed[0].id, registro.id)
     assert.equal(resultado.memory.confirmed[0].text, registro.text)
     assert.deepEqual(resultado.memory.confirmed[0].evidence, registro.evidence)
+    assert.equal(resultado.memory.confirmed[0].occurrences, 1)
+    assert.equal(resultado.memory.confirmed[0].validation.status, 'confirmed')
+    assert.equal(resultado.memory.confirmed[0].projectId, null)
     assert.equal(resultado.memory.store.createdAt, instante)
     assert.ok(resultado.memory.store.lastMigrationAt)
 
@@ -105,7 +108,25 @@ test('pedido explícito vira memória confirmada no runtime, não no plugin', as
     assert.equal(memory.candidates.length, 0)
     assert.equal(memory.confirmed[0].scope.type, 'user')
     assert.equal(memory.confirmed[0].confidence, 1)
+    assert.equal(memory.confirmed[0].validation.status, 'confirmed')
+    assert.equal(memory.confirmed[0].occurrences, 1)
     assert.match(caminhoDaMemoria(casa), /memory[\\/]memory\.json$/)
+  } finally {
+    await rm(casa, { recursive: true, force: true })
+  }
+})
+
+test('evidencia repetida reforca o registro sem criar duplicata', async () => {
+  const casa = await home()
+  try {
+    const primeira = await proporLicao(casa, 'sempre validar o resultado antes de publicar')
+    const segunda = await proporLicao(casa, 'sempre validar o resultado antes de publicar')
+    assert.equal(primeira.result, 'candidate')
+    assert.equal(segunda.result, 'reinforced')
+    const memory = await lerMemoria(casa)
+    assert.equal(memory.candidates.length, 1)
+    assert.equal(memory.candidates[0].occurrences, 2)
+    assert.equal(memory.candidates[0].evidence.length, 2)
   } finally {
     await rm(casa, { recursive: true, force: true })
   }

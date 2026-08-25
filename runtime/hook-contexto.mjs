@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 
 import { montarContexto } from './contexto.mjs'
 import { casaDoOmni } from './memoria.mjs'
+import { processarExperiencia } from './pipeline-memoria.mjs'
 
 const raiz = dirname(dirname(fileURLToPath(import.meta.url)))
 const caminhoDaPersona = join(raiz, 'contratos', 'personalidade', 'omni-persona-v1.md')
@@ -103,6 +104,7 @@ export async function tratarHook(input, env = process.env) {
   const intencao = typeof input.prompt === 'string' ? input.prompt.trim() : ''
   if (!intencao) return saidaVazia()
 
+  await processarExperiencia(casaDoOmni(env), intencao)
   const [contexto, personaMarkdown] = await Promise.all([
     montarContexto(casaDoOmni(env), { intent: intencao }),
     readFile(caminhoDaPersona, 'utf8')

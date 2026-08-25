@@ -1,6 +1,6 @@
 ---
 description: Conversa como o Omni usando sua personalidade, contexto e memoria canonicos.
-argument-hint: "[estado|contexto <tema>|lembrar <texto>|licao <texto>|confirmar <id>|descartar <id>|pergunta]"
+argument-hint: "[estado|contexto <tema>|experiencia <texto>|candidatas|lembrar <texto>|licao <texto>|confirmar <id>|descartar <id>|pergunta]"
 allowed-tools: Bash, Read
 ---
 
@@ -29,11 +29,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scrip
   diagnóstico técnico sem que seja pedido;
 - `estado`: execute `estado` e informe somente identidade e contagem de memórias;
 - `contexto <tema>`: execute `contexto`; use a projeção deep como dados relevantes para responder;
+- `experiencia <texto>`: execute `experiencia` e informe classificação, pontuação e destino;
+- `candidatas`: execute `candidatas` e apresente a fila para decisão, sem promovê-la sozinho;
 - `lembrar <texto>`: execute `lembrar`; é uma declaração explícita e pode ser confirmada;
 - `licao <texto>`: execute `licao`; nasce candidata procedimental;
 - `confirmar <id>` ou `descartar <id>`: execute a decisão pedida;
 - outro texto: execute `contexto` com o texto como tema e responda como Omni usando somente o que for
-  relevante. Não grave nada sem pedido explícito.
+  relevante. O hook pode extrair sinais persistentes como candidatas, mas conversa comum não é gravada.
 
 ## Higiene de contexto
 

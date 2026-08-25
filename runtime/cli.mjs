@@ -10,6 +10,7 @@ import {
   lerMemoria,
   proporLicao
 } from './memoria.mjs'
+import { processarExperiencia } from './pipeline-memoria.mjs'
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
 const [action = 'estado', ...parts] = process.argv.slice(2)
@@ -47,6 +48,24 @@ async function main() {
     }
   }
   if (action === 'contexto') return { ok: true, context: await montarContexto(home, { intent: text }) }
+  if (action === 'experiencia') {
+    if (!text) throw new Error('Informe a experiência que deve ser analisada.')
+    return { ok: true, pipeline: await processarExperiencia(home, text) }
+  }
+  if (action === 'candidatas') {
+    const memory = await lerMemoria(home)
+    return {
+      ok: true,
+      candidates: memory.candidates.map((item) => ({
+        id: item.id,
+        type: item.type,
+        text: item.text,
+        confidence: item.confidence,
+        importance: item.importance,
+        occurrences: item.occurrences
+      }))
+    }
+  }
   if (action === 'lembrar') {
     if (!text) throw new Error('Informe o que deve ser lembrado.')
     return { ok: true, memory: await lembrarExplicitamente(home, text, memoryType(text)) }

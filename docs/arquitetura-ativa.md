@@ -41,6 +41,19 @@ SessionEnd remove somente a marca de ativação
 O hook só injeta contexto nas sessões em que o Omni foi ativado. Ele não interfere nas demais
 conversas do Claude Code. A memória permanece local quando a sessão termina.
 
+## Escrita de memória
+
+```text
+mensagem comum ───────────────────────────────► descartar
+instrução explicitamente temporária ─────────► usar sem persistir
+sinal persistente ─► validar ─► pontuar ─────► candidata local
+pedido `lembrar` ─► validar ─────────────────► confirmada local
+candidata ─► proprietário confirma/descarta ─► decisão registrada
+```
+
+O contrato detalhado está em `contratos/memoria/pipeline-escrita.md`. O hook executa a análise, mas
+nunca promove sozinho uma inferência para memória confirmada.
+
 ## Separação entre projeto e dados
 
 ```text

@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 
 import { tratarHook } from '../runtime/hook-contexto.mjs'
-import { lembrarExplicitamente } from '../runtime/memoria.mjs'
+import { lembrarExplicitamente, lerMemoria } from '../runtime/memoria.mjs'
 
 const hookCli = fileURLToPath(new URL('../runtime/hook-contexto.mjs', import.meta.url))
 
@@ -115,6 +115,31 @@ test('entrada executável usada pelo Claude Code entrega JSON limpo', async () =
     )
     assert.equal(turno.hookSpecificOutput.hookEventName, 'UserPromptSubmit')
     assert.match(turno.hookSpecificOutput.additionalContext, /analogias concretas/i)
+  } finally {
+    await rm(raiz, { recursive: true, force: true })
+  }
+})
+
+test('hook extrai sinal persistente como candidata sem promovê-lo', async () => {
+  const { raiz, env } = await ambiente()
+  const session_id = 'sessao-aprendizado'
+  try {
+    await tratarHook(
+      { hook_event_name: 'UserPromptSubmit', session_id, prompt: '/omni:omni' },
+      env
+    )
+    await tratarHook(
+      {
+        hook_event_name: 'UserPromptSubmit',
+        session_id,
+        prompt: 'Prefiro mapas antes de explicações longas.'
+      },
+      env
+    )
+    const memory = await lerMemoria(env.OMNI_HOME)
+    assert.equal(memory.confirmed.length, 0)
+    assert.equal(memory.candidates.length, 1)
+    assert.equal(memory.candidates[0].type, 'preference')
   } finally {
     await rm(raiz, { recursive: true, force: true })
   }

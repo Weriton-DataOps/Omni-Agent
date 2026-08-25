@@ -1,10 +1,15 @@
 {
-  "currentSchemaVersion": 2,
+  "currentSchemaVersion": 3,
   "migrations": [
     {
       "from": 1,
       "to": 2,
       "description": "Adiciona metadados do store local sem alterar registros confirmados ou candidatos."
+    },
+    {
+      "from": 2,
+      "to": 3,
+      "description": "Adiciona importância, ocorrências, validação e projeto sem alterar o conteúdo aprendido."
     }
   ]
 }

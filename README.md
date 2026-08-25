@@ -70,6 +70,8 @@ para o Git e sem substituir os registros existentes.
 ```text
 /omni:omni
 /omni:omni contexto <tema>
+/omni:omni experiencia <texto>
+/omni:omni candidatas
 /omni:omni lembrar <texto>
 /omni:omni licao <texto>
 ```

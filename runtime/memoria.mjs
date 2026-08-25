@@ -3,10 +3,13 @@ import { mkdir, open, readFile, rename, stat, unlink, writeFile } from 'node:fs/
 import { homedir } from 'node:os'
 import { isAbsolute, join, resolve } from 'node:path'
 
-export const MEMORY_SCHEMA_VERSION = 2
+export const MEMORY_SCHEMA_VERSION = 3
 
 const MAX_CONFIRMED = 500
 const MAX_CANDIDATES = 100
+const MEMORY_TYPES = new Set(['preference', 'episodic', 'semantic', 'procedural', 'objective', 'capability'])
+const SCOPE_TYPES = new Set(['user', 'project', 'task', 'environment'])
+const VALIDATION_STATUS = new Set(['pending', 'validated', 'confirmed'])
 
 function memoriaVazia(agora = new Date().toISOString()) {
   return {
@@ -56,19 +59,53 @@ export function pareceConterSegredo(texto) {
 }
 
 function registroValido(item, status) {
+  const scopeValid =
+    item?.scope &&
+    SCOPE_TYPES.has(item.scope.type) &&
+    (item.scope.type === 'user' || (typeof item.scope.id === 'string' && item.scope.id.length > 0))
+  const projectValid =
+    item?.scope?.type === 'project'
+      ? item.projectId === item.scope.id
+      : item?.projectId === null
+  const dateOrNull = (value) => value === null || (typeof value === 'string' && Number.isFinite(Date.parse(value)))
   return Boolean(
     item &&
       typeof item === 'object' &&
       typeof item.id === 'string' &&
       typeof item.text === 'string' &&
-      typeof item.type === 'string' &&
+      item.text.length > 0 &&
+      MEMORY_TYPES.has(item.type) &&
       item.status === status &&
-      item.scope &&
-      typeof item.scope.type === 'string' &&
+      scopeValid &&
+      projectValid &&
       typeof item.confidence === 'number' &&
+      item.confidence >= 0 &&
+      item.confidence <= 1 &&
+      typeof item.importance === 'number' &&
+      item.importance >= 0 &&
+      item.importance <= 1 &&
+      Number.isInteger(item.occurrences) &&
+      item.occurrences >= 1 &&
+      item.validation &&
+      VALIDATION_STATUS.has(item.validation.status) &&
+      Array.isArray(item.validation.reasons) &&
+      item.validation.reasons.every((reason) => typeof reason === 'string') &&
       Array.isArray(item.evidence) &&
+      item.evidence.length > 0 &&
+      item.evidence.every(
+        (evidence) =>
+          typeof evidence?.kind === 'string' &&
+          typeof evidence.recordedAt === 'string' &&
+          Number.isFinite(Date.parse(evidence.recordedAt))
+      ) &&
       typeof item.createdAt === 'string' &&
-      typeof item.updatedAt === 'string'
+      Number.isFinite(Date.parse(item.createdAt)) &&
+      typeof item.updatedAt === 'string' &&
+      Number.isFinite(Date.parse(item.updatedAt)) &&
+      dateOrNull(item.lastValidatedAt) &&
+      Number.isInteger(item.usageCount) &&
+      item.usageCount >= 0 &&
+      dateOrNull(item.expiresAt)
   )
 }
 
@@ -103,6 +140,25 @@ function primeiroRegistro(memoria, fallback) {
   return timestamps[0] ?? fallback
 }
 
+function importanciaPadrao(type) {
+  if (type === 'procedural' || type === 'objective') return 0.8
+  if (type === 'preference' || type === 'capability') return 0.7
+  return 0.5
+}
+
+function enriquecerRegistroV3(item) {
+  return {
+    ...item,
+    projectId: item.scope?.type === 'project' ? (item.scope.id ?? null) : null,
+    importance: importanciaPadrao(item.type),
+    occurrences: 1,
+    validation: {
+      status: item.status === 'confirmed' ? 'confirmed' : 'validated',
+      reasons: ['migrated-to-v3']
+    }
+  }
+}
+
 function migrarMemoria(memoria, arquivo, agora = new Date().toISOString()) {
   if (!memoria || typeof memoria !== 'object') throw new Error(`Memória inválida: ${arquivo}`)
   if (memoria.schemaVersion > MEMORY_SCHEMA_VERSION) {
@@ -126,6 +182,16 @@ function migrarMemoria(memoria, arquivo, agora = new Date().toISOString()) {
       },
       confirmed: atual.confirmed,
       candidates: atual.candidates
+    }
+  }
+
+  if (atual.schemaVersion === 2) {
+    atual = {
+      ...atual,
+      schemaVersion: 3,
+      store: { ...atual.store, updatedAt: agora, lastMigrationAt: agora },
+      confirmed: atual.confirmed.map(enriquecerRegistroV3),
+      candidates: atual.candidates.map(enriquecerRegistroV3)
     }
   }
 
@@ -176,6 +242,7 @@ async function gravar(casa, memoria) {
   const arquivo = caminhoDaMemoria(casa)
   const temporario = `${arquivo}.${process.pid}.novo`
   memoria.store.updatedAt = new Date().toISOString()
+  validarMemoria(memoria, arquivo)
   await mkdir(join(casa, 'memory'), { recursive: true })
   await writeFile(temporario, `${JSON.stringify(memoria, null, 2)}\n`, 'utf8')
   await rename(temporario, arquivo)
@@ -217,8 +284,32 @@ async function registrar(casa, entrada) {
       (item) => `${item.scope.type}:${item.scope.id ?? ''}:${normalizar(item.text)}` === key
     )
     if (existente) {
-      if (carregada.changed) await gravar(casa, memoria)
-      return { result: 'already-exists', memory: existente }
+      const agora = new Date().toISOString()
+      existente.occurrences += 1
+      existente.updatedAt = agora
+      existente.confidence = Math.min(1, Math.max(existente.confidence, entrada.confidence) + 0.03)
+      existente.importance = Math.max(existente.importance, entrada.importance ?? 0.5)
+      existente.evidence = [
+        ...existente.evidence,
+        { kind: entrada.evidenceKind, recordedAt: agora }
+      ].slice(-20)
+
+      if (entrada.status === 'confirmed' && existente.status === 'candidate') {
+        memoria.candidates = memoria.candidates.filter((item) => item.id !== existente.id)
+        existente.status = 'confirmed'
+        existente.confidence = 1
+        existente.lastValidatedAt = agora
+        existente.validation = {
+          status: 'confirmed',
+          reasons: [...existente.validation.reasons, 'explicit-owner-confirmation']
+        }
+        memoria.confirmed = [...memoria.confirmed, existente].slice(-MAX_CONFIRMED)
+        await gravar(casa, memoria)
+        return { result: 'confirmed', memory: existente }
+      }
+
+      await gravar(casa, memoria)
+      return { result: 'reinforced', memory: existente }
     }
 
     const agora = new Date().toISOString()
@@ -230,6 +321,13 @@ async function registrar(casa, entrada) {
       source: entrada.source,
       status: entrada.status,
       confidence: entrada.confidence,
+      importance: entrada.importance ?? importanciaPadrao(entrada.type),
+      occurrences: 1,
+      projectId: entrada.scope.type === 'project' ? (entrada.scope.id ?? null) : null,
+      validation: entrada.validation ?? {
+        status: entrada.status === 'confirmed' ? 'confirmed' : 'validated',
+        reasons: []
+      },
       evidence: [{ kind: entrada.evidenceKind, recordedAt: agora }],
       createdAt: agora,
       updatedAt: agora,
@@ -257,6 +355,8 @@ export function lembrarExplicitamente(casa, text, type = 'semantic', scope = { t
     source: 'explicit-plugin-command',
     status: 'confirmed',
     confidence: 1,
+    importance: importanciaPadrao(type),
+    validation: { status: 'confirmed', reasons: ['explicit-owner-request'] },
     evidenceKind: 'explicit-request'
   })
 }
@@ -269,7 +369,23 @@ export function proporLicao(casa, text, scope = { type: 'user' }) {
     source: 'plugin-lesson',
     status: 'candidate',
     confidence: 0.6,
+    importance: 0.8,
+    validation: { status: 'validated', reasons: ['explicit-lesson-proposal'] },
     evidenceKind: 'lesson-proposal'
+  })
+}
+
+export function registrarCandidataAnalisada(casa, analise) {
+  return registrar(casa, {
+    text: analise.text,
+    type: analise.type,
+    scope: analise.scope,
+    source: analise.source,
+    status: 'candidate',
+    confidence: analise.confidence,
+    importance: analise.importance,
+    validation: { status: 'validated', reasons: analise.validationReasons },
+    evidenceKind: analise.evidenceKind
   })
 }
 
@@ -292,6 +408,10 @@ export async function decidirCandidata(casa, id, decision) {
         confidence: Math.max(0.9, candidata.confidence),
         updatedAt: agora,
         lastValidatedAt: agora,
+        validation: {
+          status: 'confirmed',
+          reasons: [...candidata.validation.reasons, 'human-confirmation']
+        },
         evidence: [...candidata.evidence, { kind: 'human-confirmation', recordedAt: agora }]
       }
       memoria.confirmed = [...memoria.confirmed, confirmada].slice(-MAX_CONFIRMED)

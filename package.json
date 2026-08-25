@@ -1,6 +1,6 @@
 {
   "name": "omni-agent",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "description": "Nucleo cognitivo e plugin do Omni",
@@ -8,7 +8,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "check": "node --check runtime/cli.mjs && node --check runtime/memoria.mjs && node --check runtime/contexto.mjs && node --check runtime/hook-contexto.mjs",
+    "check": "node --check runtime/cli.mjs && node --check runtime/memoria.mjs && node --check runtime/contexto.mjs && node --check runtime/pipeline-memoria.mjs && node --check runtime/hook-contexto.mjs",
     "test": "node --test testes/*.test.mjs"
   }
 }

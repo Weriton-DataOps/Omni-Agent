@@ -5,6 +5,9 @@
 - personalidade v1 canônica;
 - memória confirmada e candidata;
 - confirmação e descarte de candidatas;
+- pipeline determinístico de extração, classificação, validação e pontuação;
+- descarte de conversa comum e contexto explicitamente transitório;
+- consolidação de evidências repetidas por ocorrência;
 - recusa de possíveis segredos;
 - escrita atômica e concorrente;
 - inicialização local e migração versionada sem perda;
@@ -22,6 +25,7 @@
 - recuperação semântica;
 - consolidação, expiração e aposentadoria de memória;
 - promoção de procedimentos por evidência;
+- promoção segura de aprendizado reutilizável para o Git com eval e aprovação;
 - estado conversacional e histórico de sessões;
 - catálogo de projetos;
 - eval comportamental e observatório;
