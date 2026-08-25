@@ -38,7 +38,7 @@ test('detecta versão instalada atual', async () => {
     const result = await verificarVersao({
       casa: home,
       pluginRoot,
-      fetchImpl: async () => resposta('0.5.0'),
+      fetchImpl: async () => resposta('0.5.1'),
       now: Date.parse('2026-08-25T20:00:00.000Z')
     })
     assert.equal(result.status, 'current')
@@ -59,12 +59,15 @@ test('detecta atualização e persiste apenas metadados de versão', async () =>
       now: Date.parse('2026-08-25T20:01:00.000Z')
     })
     assert.equal(result.status, 'outdated')
-    assert.equal(result.installedVersion, '0.5.0')
+    assert.equal(result.installedVersion, '0.5.1')
     assert.equal(result.latestVersion, '0.6.0')
     assert.equal(result.updateAvailable, true)
 
     const cache = JSON.parse(await readFile(caminhoDoCacheVersao(home), 'utf8'))
-    assert.deepEqual(Object.keys(cache).sort(), ['checkedAt', 'etag', 'latestVersion', 'schemaVersion'])
+    assert.deepEqual(
+      Object.keys(cache).sort(),
+      ['checkedAt', 'etag', 'latestVersion', 'remoteSha', 'schemaVersion']
+    )
   } finally {
     await rm(home, { recursive: true, force: true })
   }
@@ -99,7 +102,7 @@ test('HTTP 304 renova a conferência usando o ETag armazenado', async () => {
     await verificarVersao({
       casa: home,
       pluginRoot,
-      fetchImpl: async () => resposta('0.5.0'),
+      fetchImpl: async () => resposta('0.5.1'),
       now: Date.parse('2026-08-25T20:10:00.000Z')
     })
     let receivedHeaders
@@ -121,6 +124,40 @@ test('HTTP 304 renova a conferência usando o ETag armazenado', async () => {
   }
 })
 
+test('cache remoto atrás da instalação força segunda consulta sem ETag', async () => {
+  const home = await casa()
+  try {
+    const ahead = await verificarVersao({
+      casa: home,
+      pluginRoot,
+      fetchImpl: async () => resposta('0.5.0'),
+      now: Date.parse('2026-08-25T20:20:00.000Z')
+    })
+    assert.equal(ahead.status, 'ahead')
+
+    const calls = []
+    const refreshed = await verificarVersao({
+      casa: home,
+      pluginRoot,
+      fetchImpl: async (url, options) => {
+        calls.push({ url, options })
+        return calls.length === 1
+          ? resposta(null, { status: 304 })
+          : resposta('0.5.1', { etag: '"etag-novo"' })
+      },
+      now: Date.parse('2026-08-25T20:21:00.000Z')
+    })
+    assert.equal(calls.length, 2)
+    assert.equal(calls[0].options.headers['If-None-Match'], '"etag-teste"')
+    assert.match(calls[1].url, /omni_check=/)
+    assert.equal(calls[1].options.headers['Cache-Control'], 'no-cache')
+    assert.equal(refreshed.status, 'current')
+    assert.equal(refreshed.latestVersion, '0.5.1')
+  } finally {
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
 test('sem rede e sem cache retorna unknown', async () => {
   const home = await casa()
   try {
@@ -133,6 +170,33 @@ test('sem rede e sem cache retorna unknown', async () => {
     })
     assert.equal(result.status, 'unknown')
     assert.equal(result.updateAvailable, false)
+  } finally {
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
+test('lê o formato base64 da API de conteúdo do GitHub', async () => {
+  const home = await casa()
+  try {
+    const manifest = JSON.stringify({ name: 'omni', version: '0.5.1' })
+    const result = await verificarVersao({
+      casa: home,
+      pluginRoot,
+      fetchImpl: async () => ({
+        ok: true,
+        status: 200,
+        headers: { get: () => '"etag-api"' },
+        text: async () =>
+          JSON.stringify({
+            encoding: 'base64',
+            content: Buffer.from(manifest, 'utf8').toString('base64'),
+            sha: 'sha-publicado'
+          })
+      })
+    })
+    assert.equal(result.status, 'current')
+    const cache = JSON.parse(await readFile(caminhoDoCacheVersao(home), 'utf8'))
+    assert.equal(cache.remoteSha, 'sha-publicado')
   } finally {
     await rm(home, { recursive: true, force: true })
   }

@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 
 const raiz = dirname(dirname(fileURLToPath(import.meta.url)))
 const DEFAULT_MANIFEST_URL =
-  'https://raw.githubusercontent.com/Weriton-DataOps/Omni-Agent/main/.claude-plugin/plugin.json'
+  'https://api.github.com/repos/Weriton-DataOps/Omni-Agent/contents/.claude-plugin/plugin.json?ref=main'
 
 function semver(value) {
   const match = /^(\d+)\.(\d+)\.(\d+)(?:-[0-9A-Za-z.-]+)?$/.exec(value ?? '')
@@ -67,6 +67,25 @@ function resultado(installedVersion, latestVersion, source, checkedAt) {
   }
 }
 
+function extrairManifestoRemoto(raw) {
+  const payload = JSON.parse(raw)
+  if (payload?.name === 'omni' && semver(payload.version)) {
+    return { manifest: payload, remoteSha: null }
+  }
+  if (
+    payload?.encoding === 'base64' &&
+    typeof payload.content === 'string' &&
+    typeof payload.sha === 'string'
+  ) {
+    const decoded = Buffer.from(payload.content.replace(/\s+/g, ''), 'base64').toString('utf8')
+    const manifest = JSON.parse(decoded)
+    if (manifest?.name === 'omni' && semver(manifest.version)) {
+      return { manifest, remoteSha: payload.sha }
+    }
+  }
+  throw new Error('Manifest remoto do Omni é inválido.')
+}
+
 function timeoutSignal(timeoutMs) {
   return typeof globalThis.AbortSignal?.timeout === 'function'
     ? globalThis.AbortSignal.timeout(timeoutMs)
@@ -92,31 +111,38 @@ export async function verificarVersao({
   try {
     if (typeof fetchImpl !== 'function') throw new Error('Consulta remota indisponível.')
     const headers = cache?.etag ? { 'If-None-Match': cache.etag } : {}
-    const response = await fetchImpl(manifestUrl, {
+    let response = await fetchImpl(manifestUrl, {
       method: 'GET',
       headers,
       signal: timeoutSignal(timeoutMs)
     })
 
     if (response.status === 304 && cache) {
-      const refreshed = { ...cache, checkedAt }
-      await gravarCache(casa, refreshed)
-      return resultado(installedVersion, cache.latestVersion, 'remote-not-modified', checkedAt)
+      if (compararVersoes(installedVersion, cache.latestVersion) > 0) {
+        const separator = manifestUrl.includes('?') ? '&' : '?'
+        response = await fetchImpl(`${manifestUrl}${separator}omni_check=${encodeURIComponent(checkedAt)}`, {
+          method: 'GET',
+          headers: { 'Cache-Control': 'no-cache' },
+          signal: timeoutSignal(timeoutMs)
+        })
+      } else {
+        const refreshed = { ...cache, checkedAt }
+        await gravarCache(casa, refreshed)
+        return resultado(installedVersion, cache.latestVersion, 'remote-not-modified', checkedAt)
+      }
     }
     if (!response.ok) throw new Error(`Consulta de versão retornou HTTP ${response.status}.`)
 
     const raw = await response.text()
     if (raw.length > 20_000) throw new Error('Manifest remoto excedeu o limite esperado.')
-    const remote = JSON.parse(raw)
-    if (remote.name !== 'omni' || !semver(remote.version)) {
-      throw new Error('Manifest remoto do Omni é inválido.')
-    }
+    const { manifest: remote, remoteSha } = extrairManifestoRemoto(raw)
 
     const nextCache = {
       schemaVersion: 1,
       latestVersion: remote.version,
       checkedAt,
-      etag: response.headers?.get?.('etag') ?? null
+      etag: response.headers?.get?.('etag') ?? null,
+      remoteSha
     }
     await gravarCache(casa, nextCache)
     return resultado(installedVersion, remote.version, 'remote', checkedAt)

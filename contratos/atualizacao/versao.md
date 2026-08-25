@@ -6,7 +6,7 @@ repositório e nunca envia memória, conversa, credencial ou estado pessoal.
 ```text
 manifest instalado
       ↓
-GET manifest público no GitHub
+GET API pública de conteúdo do GitHub
       ↓
 comparar semver
       ├── current  → seguir em silêncio
@@ -15,8 +15,9 @@ comparar semver
       └── unknown  → seguir sem bloquear
 ```
 
-O ETag remoto é guardado em `%APPDATA%\omni\updates\version-check.json`. Em falha de rede, o último
-resultado válido pode ser usado como cache antigo, identificado por `source: stale-cache`.
+O ETag e o SHA do arquivo remoto são guardados em `%APPDATA%\omni\updates\version-check.json`. Em
+falha de rede, o último resultado válido pode ser usado como cache antigo, identificado por
+`source: stale-cache`.
 
 ## Regras
 

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "omni",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "displayName": "Omni",
   "description": "Porta de entrada para o Omni pessoal, sua personalidade, contexto e memoria operacional.",
   "author": {
