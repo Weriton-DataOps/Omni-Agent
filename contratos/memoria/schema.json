@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Weriton-DataOps/Omni-Agent/contratos/memoria/schema.json",
+  "title": "Omni Memory V1",
+  "type": "object",
+  "required": ["schemaVersion", "confirmed", "candidates"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "confirmed": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/confirmedMemory" }
+    },
+    "candidates": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/candidateMemory" }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "scope": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "enum": ["user", "project", "task", "environment"] },
+        "id": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "evidence": {
+      "type": "object",
+      "required": ["kind", "recordedAt"],
+      "properties": {
+        "kind": { "type": "string", "minLength": 1 },
+        "recordedAt": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
+    },
+    "baseMemory": {
+      "type": "object",
+      "required": [
+        "id", "type", "scope", "text", "source", "status", "confidence", "evidence",
+        "createdAt", "updatedAt", "lastValidatedAt", "usageCount", "expiresAt"
+      ],
+      "properties": {
+        "id": { "type": "string", "pattern": "^mem-" },
+        "type": { "enum": ["preference", "episodic", "semantic", "procedural", "objective", "capability"] },
+        "scope": { "$ref": "#/$defs/scope" },
+        "text": { "type": "string", "minLength": 1 },
+        "source": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["confirmed", "candidate"] },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "evidence": { "type": "array", "items": { "$ref": "#/$defs/evidence" }, "minItems": 1 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "lastValidatedAt": { "type": ["string", "null"], "format": "date-time" },
+        "usageCount": { "type": "integer", "minimum": 0 },
+        "expiresAt": { "type": ["string", "null"], "format": "date-time" }
+      },
+      "additionalProperties": false
+    },
+    "confirmedMemory": {
+      "allOf": [
+        { "$ref": "#/$defs/baseMemory" },
+        { "properties": { "status": { "const": "confirmed" } } }
+      ]
+    },
+    "candidateMemory": {
+      "allOf": [
+        { "$ref": "#/$defs/baseMemory" },
+        { "properties": { "status": { "const": "candidate" } } }
+      ]
+    }
+  }
+}

@@ -1,0 +1,49 @@
+# Arquitetura ativa
+
+## Regra central
+
+Existe uma única fonte para cada responsabilidade:
+
+| Responsabilidade | Fonte |
+|---|---|
+| identidade | `contratos/personalidade/omni-persona-v1.md` |
+| catálogo disponível | `contratos/capacidades/catalogo.json` |
+| memória persistente | `%APPDATA%\omni\memory\memory.json` |
+| seleção de contexto | `runtime/contexto.mjs` |
+| escrita de memória | `runtime/memoria.mjs` |
+| entrada no Claude Code | `skills/omni/SKILL.md` |
+
+## Contexto de uma resposta
+
+```text
+PERSONALIDADE ─┐
+CAPACIDADES ───┼─► FOTOGRAFIA CANÔNICA ─┬─► FAST
+MEMÓRIA ───────┘                         └─► DEEP
+```
+
+Fast e deep não são duas memórias. São duas projeções da mesma fotografia, com orçamentos diferentes.
+
+## Separação entre projeto e dados
+
+```text
+Git                              Máquina local
+──────────────────────────       ─────────────────────────
+código e contratos              memória confirmada
+schemas                         candidatas
+testes                          estado operacional
+documentação                    dados privados
+```
+
+Nenhum caminho absoluto da máquina faz parte dos contratos. A skill resolve seus próprios arquivos
+por `${CLAUDE_PLUGIN_ROOT}` e a memória resolve sua casa por `OMNI_HOME` ou `%APPDATA%`.
+
+## Regra de relevância
+
+Uma resposta só pode introduzir conteúdo vindo de:
+
+1. pedido atual;
+2. personalidade canônica;
+3. memória confirmada selecionada;
+4. capacidade declarada relevante.
+
+A especificação mestre orienta a construção, mas não entra inteira no prompt de cada turno.

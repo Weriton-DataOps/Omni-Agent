@@ -1,0 +1,15 @@
+node_modules/
+coverage/
+out/
+.prints/
+*.log
+*.tmp
+.DS_Store
+.claude/
+
+# Estado cognitivo é local e nunca pertence ao pacote instalado.
+.runtime/
+memory/
+sessions/
+audio/
+evidence/

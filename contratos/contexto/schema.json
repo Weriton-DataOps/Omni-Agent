@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Weriton-DataOps/Omni-Agent/contratos/contexto/schema.json",
+  "title": "Omni Context Snapshot V1",
+  "type": "object",
+  "required": ["schemaVersion", "generatedAt", "canonicalSignature", "persona", "sources", "projections"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "canonicalSignature": { "type": "string", "pattern": "^[a-f0-9]{16}$" },
+    "persona": { "type": "string", "minLength": 1 },
+    "sources": { "type": "array", "items": { "type": "object" } },
+    "projections": {
+      "type": "object",
+      "required": ["fast", "deep"],
+      "properties": {
+        "fast": { "$ref": "#/$defs/projection" },
+        "deep": { "$ref": "#/$defs/projection" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "projection": {
+      "type": "object",
+      "required": ["path", "signature", "text", "budgetCharacters", "characters", "truncated", "selected"],
+      "properties": {
+        "path": { "enum": ["fast", "deep"] },
+        "signature": { "type": "string", "pattern": "^[a-f0-9]{16}$" },
+        "text": { "type": "string" },
+        "budgetCharacters": { "type": "integer", "minimum": 1 },
+        "characters": { "type": "integer", "minimum": 0 },
+        "truncated": { "type": "boolean" },
+        "selected": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    }
+  }
+}

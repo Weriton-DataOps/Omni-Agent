@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "omni",
+  "version": "0.1.0",
+  "displayName": "Omni",
+  "description": "Porta de entrada para o Omni pessoal, sua personalidade, contexto e memoria operacional.",
+  "author": {
+    "name": "Weriton - GR Group"
+  },
+  "homepage": "https://github.com/Weriton-DataOps/Omni-Agent",
+  "repository": "https://github.com/Weriton-DataOps/Omni-Agent",
+  "keywords": ["omni", "context-engineering", "memoria", "realtime", "assistente"]
+}

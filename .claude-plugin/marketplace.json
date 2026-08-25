@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace-manifest.json",
+  "name": "omni-hub",
+  "description": "Marketplace privado do sistema cognitivo portátil do Omni",
+  "owner": {
+    "name": "Weriton - GR Group"
+  },
+  "plugins": [
+    {
+      "name": "omni",
+      "displayName": "Omni",
+      "source": "./",
+      "description": "Personalidade, contexto e memória operacional do Omni, sem acoplar a interface.",
+      "homepage": "https://github.com/Weriton-DataOps/Omni-Agent",
+      "repository": "https://github.com/Weriton-DataOps/Omni-Agent",
+      "keywords": ["omni", "context-engineering", "memory", "personal-agent"],
+      "category": "productivity"
+    }
+  ]
+}

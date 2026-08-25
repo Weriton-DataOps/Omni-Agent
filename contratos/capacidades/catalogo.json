@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "capabilities": [
+    {
+      "name": "conversation",
+      "description": "Conversar como o Omni usando a personalidade canonica e contexto relevante.",
+      "when_to_use": ["pergunta", "explicacao", "conversa"],
+      "when_not_to_use": ["acao que exige uma capacidade nao declarada"],
+      "inputs": ["texto"],
+      "outputs": ["resposta"],
+      "risk": "low",
+      "permissions": [],
+      "latency": "model-dependent",
+      "cost": "model-dependent",
+      "required_tools": [],
+      "recommended_agent": "omni"
+    },
+    {
+      "name": "context-retrieval",
+      "description": "Selecionar memoria confirmada e capacidades relevantes para um turno.",
+      "when_to_use": ["antes de responder", "consulta de contexto"],
+      "when_not_to_use": ["nunca carregar toda a memoria"],
+      "inputs": ["intent"],
+      "outputs": ["fastProjection", "deepProjection"],
+      "risk": "low",
+      "permissions": ["read-local-runtime"],
+      "latency": "local",
+      "cost": "none",
+      "required_tools": ["filesystem"],
+      "recommended_agent": "omni"
+    },
+    {
+      "name": "memory-write",
+      "description": "Registrar pedido explicito ou aprendizagem candidata no runtime local.",
+      "when_to_use": ["lembrar explicito", "licao observada"],
+      "when_not_to_use": ["fala comum", "segredo", "inferencia sem evidencia"],
+      "inputs": ["text", "type", "scope", "evidence"],
+      "outputs": ["memoryRecord"],
+      "risk": "medium",
+      "permissions": ["write-local-runtime"],
+      "latency": "local",
+      "cost": "none",
+      "required_tools": ["filesystem"],
+      "recommended_agent": "omni"
+    }
+  ]
+}
