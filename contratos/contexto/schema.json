@@ -1,15 +1,36 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/Weriton-DataOps/Omni-Agent/contratos/contexto/schema.json",
-  "title": "Omni Context Snapshot V1",
+  "title": "Omni Context Snapshot V2",
   "type": "object",
-  "required": ["schemaVersion", "generatedAt", "canonicalSignature", "persona", "sources", "projections"],
+  "required": ["schemaVersion", "generatedAt", "canonicalSignature", "persona", "sources", "retrieval", "projections"],
   "properties": {
-    "schemaVersion": { "const": 1 },
+    "schemaVersion": { "const": 2 },
     "generatedAt": { "type": "string", "format": "date-time" },
     "canonicalSignature": { "type": "string", "pattern": "^[a-f0-9]{16}$" },
     "persona": { "type": "string", "minLength": 1 },
     "sources": { "type": "array", "items": { "type": "object" } },
+    "retrieval": {
+      "type": "object",
+      "required": ["schemaVersion", "algorithm", "considered", "eligible", "excluded", "selected"],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "algorithm": { "const": "hybrid-local-v1" },
+        "considered": { "type": "integer", "minimum": 0 },
+        "eligible": { "type": "integer", "minimum": 0 },
+        "excluded": { "type": "array", "items": { "type": "object" } },
+        "selected": {
+          "type": "object",
+          "required": ["fast", "deep"],
+          "properties": {
+            "fast": { "type": "array", "items": { "$ref": "#/$defs/rankedMemory" } },
+            "deep": { "type": "array", "items": { "$ref": "#/$defs/rankedMemory" } }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
     "projections": {
       "type": "object",
       "required": ["fast", "deep"],
@@ -22,6 +43,17 @@
   },
   "additionalProperties": false,
   "$defs": {
+    "rankedMemory": {
+      "type": "object",
+      "required": ["id", "score", "intentMatch", "components"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^mem-" },
+        "score": { "type": "number", "minimum": 0, "maximum": 1 },
+        "intentMatch": { "type": "number", "minimum": 0, "maximum": 1 },
+        "components": { "type": "object" }
+      },
+      "additionalProperties": false
+    },
     "projection": {
       "type": "object",
       "required": ["path", "signature", "text", "budgetCharacters", "characters", "truncated", "selected"],

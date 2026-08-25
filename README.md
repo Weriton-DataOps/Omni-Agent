@@ -36,7 +36,9 @@ pedido
 skill Omni
   ├── personalidade escolhida pelo manifesto
   ├── capacidades declaradas
-  └── memória confirmada relevante
+  └── recuperação híbrida da memória confirmada
+          ├── semântica local + lexical
+          └── escopo + recência + frequência + confiança + importância
           ↓
    fotografia canônica
       ├── fast
@@ -58,6 +60,10 @@ versão carregada mudar, a interface nativa do VS Code usa `/plugin` → **Resta
 
 A especificação mestre governa o desenvolvimento, mas não é despejada automaticamente em cada
 conversa. O runtime seleciona apenas o contexto relevante.
+
+A recuperação de memória usa `hybrid-local-v1`: conceitos versionados e similaridade textual local,
+sem embeddings remotos. Um ranking único alimenta fast e deep e registra somente diagnóstico sem o
+texto integral das memórias.
 
 ## Memória
 

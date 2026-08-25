@@ -11,18 +11,26 @@ test('marketplace usa o plugin do próprio repositório e versão semântica', a
   const packageManifest = JSON.parse(await readFile(file('package.json'), 'utf8'))
   assert.equal(marketplace.plugins[0].source, './')
   assert.equal(manifest.name, 'omni')
-  assert.equal(manifest.version, '0.7.0')
+  assert.equal(manifest.version, '0.8.0')
   assert.equal(packageManifest.version, manifest.version)
 })
 
 test('runtime, schema e manifesto concordam sobre as versões', async () => {
   const schema = JSON.parse(await readFile(file('contratos/memoria/schema.json'), 'utf8'))
   const migrations = JSON.parse(await readFile(file('contratos/memoria/migrations.json'), 'utf8'))
+  const contextSchema = JSON.parse(await readFile(file('contratos/contexto/schema.json'), 'utf8'))
+  const retrieval = JSON.parse(await readFile(file('contratos/contexto/recuperacao.json'), 'utf8'))
   assert.equal(schema.properties.schemaVersion.const, 3)
   assert.equal(migrations.currentSchemaVersion, 3)
   assert.deepEqual(
     migrations.migrations.map((migration) => [migration.from, migration.to]),
     [[1, 2], [2, 3]]
+  )
+  assert.equal(contextSchema.properties.schemaVersion.const, 2)
+  assert.equal(retrieval.algorithm, 'hybrid-local-v1')
+  assert.equal(
+    Object.values(retrieval.weights).reduce((sum, value) => sum + value, 0),
+    1
   )
 })
 
@@ -35,6 +43,8 @@ test('plugin contém somente o núcleo declarado', async () => {
   await stat(file('runtime/cli.mjs'))
   await stat(file('runtime/hook-contexto.mjs'))
   await stat(file('runtime/pipeline-memoria.mjs'))
+  await stat(file('runtime/recuperacao.mjs'))
+  await stat(file('runtime/eval-personalidade.mjs'))
   await stat(file('runtime/personalidade.mjs'))
   await stat(file('runtime/versao.mjs'))
   await stat(file('runtime/atualizacao.mjs'))
@@ -100,6 +110,7 @@ test('contexto ativo não carrega nomes ou caminhos estranhos ao Omni', async ()
     'runtime/contexto.mjs',
     'runtime/hook-contexto.mjs',
     'runtime/pipeline-memoria.mjs',
+    'runtime/recuperacao.mjs',
     'runtime/versao.mjs',
     'runtime/memoria.mjs',
     'contratos/capacidades/catalogo.json',

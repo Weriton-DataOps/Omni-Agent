@@ -48,7 +48,7 @@ async function main() {
         candidates: memory.candidates.length
       },
       version,
-      context: { schemaVersion: 1, projections: ['fast', 'deep'] }
+      context: { schemaVersion: 2, retrieval: 'hybrid-local-v1', projections: ['fast', 'deep'] }
     }
   }
   if (action === 'personalidade') {

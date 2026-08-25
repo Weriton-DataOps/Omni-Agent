@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "algorithm": "hybrid-local-v1",
+  "minimumIntentMatch": 0.1,
+  "recencyHalfLifeDays": 120,
+  "frequencySaturation": 4,
+  "limits": {
+    "fast": 4,
+    "deep": 10
+  },
+  "weights": {
+    "semantic": 0.32,
+    "lexical": 0.18,
+    "scope": 0.15,
+    "recency": 0.08,
+    "frequency": 0.07,
+    "confidence": 0.08,
+    "importance": 0.08,
+    "context": 0.04
+  },
+  "concepts": [
+    {
+      "id": "visual-structure",
+      "terms": ["mapa", "diagrama", "esquema", "fluxograma", "desenho", "visual"]
+    },
+    {
+      "id": "concise-expression",
+      "terms": ["curto", "conciso", "resumido", "breve", "poucas palavras", "sem texto longo"]
+    },
+    {
+      "id": "memory",
+      "terms": ["memória", "lembrança", "lembrar", "recordar", "guardar", "persistir"]
+    },
+    {
+      "id": "procedure",
+      "terms": ["procedimento", "processo", "passo a passo", "como fazer", "rotina", "verbo"]
+    },
+    {
+      "id": "objective",
+      "terms": ["objetivo", "meta", "resultado desejado", "chegar", "construir"]
+    },
+    {
+      "id": "problem",
+      "terms": ["erro", "falha", "defeito", "bug", "problema", "não funciona"]
+    },
+    {
+      "id": "software-project",
+      "terms": ["projeto", "sistema", "arquitetura", "aplicação", "código", "plugin"]
+    },
+    {
+      "id": "evaluation",
+      "terms": ["eval", "avaliação", "teste", "medição", "desempenho", "ranking"]
+    }
+  ]
+}
+

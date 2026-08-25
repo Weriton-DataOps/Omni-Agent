@@ -3,6 +3,8 @@
 ## Funcional e testado
 
 - personalidade v2 candidata ativa, com v1 preservada como linha de base;
+- suíte de eval de personalidade versionada, com camada automática determinística sobre respostas
+  capturadas e revisão humana obrigatória antes de qualquer promoção;
 - memória confirmada e candidata;
 - confirmação e descarte de candidatas;
 - pipeline determinístico de extração, classificação, validação e pontuação;
@@ -13,7 +15,9 @@
 - inicialização local e migração versionada sem perda;
 - proteção contra downgrade do schema de memória;
 - deduplicação;
-- ranking lexical por intenção;
+- recuperação semântica local e lexical por intenção;
+- ranking por escopo, recência, frequência, confiança, importância e contexto atual;
+- seleção única com recortes fast/deep e diagnóstico sem conteúdo pessoal;
 - fotografia canônica;
 - projeções fast e deep com orçamento;
 - ativação isolada e montagem de contexto em cada turno do Claude Code;
@@ -24,13 +28,12 @@
 
 ## Contratado, ainda incompleto
 
-- recuperação semântica;
 - consolidação, expiração e aposentadoria de memória;
 - promoção de procedimentos por evidência;
 - promoção segura de aprendizado reutilizável para o Git com eval e aprovação;
 - estado conversacional e histórico de sessões;
 - catálogo de projetos;
-- eval comportamental e observatório;
+- geração das respostas de eval por modelo, registro da revisão humana e observatório;
 - adaptação para outros canais.
 
 Nada desta segunda lista deve ser apresentado como funcional antes de possuir código, teste e

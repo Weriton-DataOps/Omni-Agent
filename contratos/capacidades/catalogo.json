@@ -17,11 +17,11 @@
     },
     {
       "name": "context-retrieval",
-      "description": "Selecionar memoria confirmada e capacidades relevantes para um turno.",
+      "description": "Selecionar e ranquear memória confirmada por relevância híbrida para um turno.",
       "when_to_use": ["antes de responder", "consulta de contexto"],
       "when_not_to_use": ["nunca carregar toda a memoria"],
       "inputs": ["intent"],
-      "outputs": ["fastProjection", "deepProjection"],
+      "outputs": ["rankedMemory", "fastProjection", "deepProjection"],
       "risk": "low",
       "permissions": ["read-local-runtime"],
       "latency": "local",

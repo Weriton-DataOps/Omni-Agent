@@ -10,11 +10,13 @@ Existe uma única fonte para cada responsabilidade:
 | catálogo disponível | `contratos/capacidades/catalogo.json` |
 | memória persistente | `%APPDATA%\omni\memory\memory.json` |
 | seleção de contexto | `runtime/contexto.mjs` |
+| recuperação e ranking de memória | `runtime/recuperacao.mjs` + `contratos/contexto/recuperacao.json` |
 | escrita de memória | `runtime/memoria.mjs` |
 | injeção por turno | `hooks/hooks.json` + `runtime/hook-contexto.mjs` |
 | detecção de atualização | `runtime/versao.mjs` |
 | atualização explícita do plugin | `runtime/atualizacao.mjs` |
 | entrada no Claude Code | `skills/omni/SKILL.md` |
+| gate de promoção da personalidade | `contratos/eval/personalidade.json` + `runtime/eval-personalidade.mjs` |
 
 ## Contexto de uma resposta
 
@@ -25,6 +27,14 @@ MEMÓRIA ───────┘                         └─► DEEP
 ```
 
 Fast e deep não são duas memórias. São duas projeções da mesma fotografia, com orçamentos diferentes.
+
+```text
+intenção → filtro de escopo → semântica local + lexical → ranking híbrido → top 4 fast / top 10 deep
+```
+
+O ranking só considera memória confirmada e exige relação mínima com a intenção antes de aplicar
+recência, frequência, confiança e importância. Assim, metadados fortes não empurram lembranças sem
+relação para o prompt.
 
 ## Ciclo da sessão no Claude Code
 

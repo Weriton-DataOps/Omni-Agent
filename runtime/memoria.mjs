@@ -268,6 +268,25 @@ export async function lerMemoria(casa) {
   return (await prepararMemoria(casa)).memory
 }
 
+export async function registrarUsoMemorias(casa, ids) {
+  const wanted = new Set(ids)
+  if (!wanted.size) return { result: 'unchanged', updated: 0 }
+  const liberar = await adquirirTrava(casa)
+  try {
+    const carregada = await carregarSemTrava(casa)
+    let updated = 0
+    for (const memory of carregada.memory.confirmed) {
+      if (!wanted.has(memory.id)) continue
+      memory.usageCount += 1
+      updated += 1
+    }
+    if (updated > 0 || carregada.changed) await gravar(casa, carregada.memory)
+    return { result: updated > 0 ? 'updated' : 'unchanged', updated }
+  } finally {
+    await liberar()
+  }
+}
+
 async function registrar(casa, entrada) {
   const text = entrada.text.trim()
   if (!text) return { result: 'ignored', memory: null }
