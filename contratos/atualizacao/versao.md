@@ -29,7 +29,8 @@ falha de rede, o último resultado válido pode ser usado como cache antigo, ide
   `https://github.com/Weriton-DataOps/Omni-Agent`;
 - o fluxo atualiza o marketplace, atualiza `omni@omni-hub` e valida a versão instalada pela lista
   do Claude e, quando disponível, pelo manifesto público do GitHub;
-- se o pacote carregado ficou antigo, a única ação solicitada é `/reload-plugins` na mesma sessão;
+- se o pacote carregado ficou antigo, a interface nativa do VS Code usa `/plugin` → **Restart** e o
+  terminal usa `/reload-plugins`; ambos preservam a sessão;
 - o atualizador não reinicia o Claude, não abre sessão e não lê nem transmite memória pessoal;
 - atualização continua passando por testes, commit, push e atualização do plugin;
 - falha de consulta nunca impede o Omni de conversar.

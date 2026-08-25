@@ -6,7 +6,7 @@ Existe uma única fonte para cada responsabilidade:
 
 | Responsabilidade | Fonte |
 |---|---|
-| identidade | `contratos/personalidade/omni-persona-v1.md` |
+| identidade ativa | `contratos/personalidade/manifest.json` → contrato versionado |
 | catálogo disponível | `contratos/capacidades/catalogo.json` |
 | memória persistente | `%APPDATA%\omni\memory\memory.json` |
 | seleção de contexto | `runtime/contexto.mjs` |
@@ -60,11 +60,12 @@ nunca promove sozinho uma inferência para memória confirmada.
 
 ```text
 ativação → estado → versão instalada × manifesto público → silêncio ou aviso
-pedido `atualizar` → validar origem → atualizar marketplace/plugin → validar → `/reload-plugins`
+pedido `atualizar` → validar origem → atualizar marketplace/plugin → validar → aplicar na interface
 ```
 
 A consulta usa apenas metadados públicos e possui fallback local. Ela não lê nem transmite memória.
 O atualizador só roda mediante pedido explícito e não reinicia o Claude nem cria outra sessão.
+No VS Code, a aplicação acontece por `/plugin` → **Restart**; no terminal, por `/reload-plugins`.
 
 ## Separação entre projeto e dados
 

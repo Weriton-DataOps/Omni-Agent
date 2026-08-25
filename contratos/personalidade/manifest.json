@@ -1,9 +1,13 @@
 {
   "schemaVersion": 1,
-  "id": "omni-persona-v1-candidate",
+  "id": "omni-persona-v2-candidate",
   "name": "Inventor Cumplice",
-  "status": "approved-base-pending-evals",
-  "contract": "./omni-persona-v1.md",
+  "status": "active-candidate-pending-evals",
+  "contract": "./omni-persona-v2.md",
+  "supersedes": {
+    "id": "omni-persona-v1-candidate",
+    "contract": "./omni-persona-v1.md"
+  },
   "channels": {
     "plugin": "active",
     "chat": "planned",

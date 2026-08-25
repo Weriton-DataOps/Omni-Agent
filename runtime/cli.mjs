@@ -1,6 +1,5 @@
-import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
-import { dirname, join } from 'node:path'
+import { dirname } from 'node:path'
 
 import { montarContexto } from './contexto.mjs'
 import {
@@ -13,6 +12,7 @@ import {
 import { processarExperiencia } from './pipeline-memoria.mjs'
 import { verificarVersao } from './versao.mjs'
 import { atualizarPlugin } from './atualizacao.mjs'
+import { lerPersonalidadeAtiva } from './personalidade.mjs'
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
 const [action = 'estado', ...parts] = process.argv.slice(2)
@@ -32,15 +32,15 @@ async function main() {
   if (action === 'estado') {
     const [memory, persona, version] = await Promise.all([
       lerMemoria(home),
-      readFile(join(root, 'contratos', 'personalidade', 'manifest.json'), 'utf8').then(JSON.parse),
+      lerPersonalidadeAtiva({ pluginRoot: root }),
       verificarVersao({ casa: home, pluginRoot: root })
     ])
     return {
       ok: true,
       identity: {
-        id: persona.id,
-        name: persona.name,
-        status: persona.status
+        id: persona.manifest.id,
+        name: persona.manifest.name,
+        status: persona.manifest.status
       },
       memory: {
         schemaVersion: memory.schemaVersion,
@@ -49,6 +49,18 @@ async function main() {
       },
       version,
       context: { schemaVersion: 1, projections: ['fast', 'deep'] }
+    }
+  }
+  if (action === 'personalidade') {
+    const persona = await lerPersonalidadeAtiva({ pluginRoot: root })
+    return {
+      ok: true,
+      personality: {
+        id: persona.manifest.id,
+        name: persona.manifest.name,
+        status: persona.manifest.status,
+        nucleus: persona.nucleus
+      }
     }
   }
   if (action === 'atualizar') {

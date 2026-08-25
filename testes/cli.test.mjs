@@ -35,3 +35,10 @@ test('operador lista e decide candidata criada pelo pipeline', async () => {
     await rm(raiz, { recursive: true, force: true })
   }
 })
+
+test('operador entrega a personalidade escolhida pelo manifesto', () => {
+  const result = executar(['personalidade'], process.env)
+  assert.equal(result.personality.id, 'omni-persona-v2-candidate')
+  assert.match(result.personality.nucleus, /NÃO ANUNCIE/)
+  assert.doesNotMatch(result.personality.nucleus, /deixe claro onde a analogia termina/)
+})

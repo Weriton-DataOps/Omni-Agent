@@ -11,7 +11,7 @@ test('marketplace usa o plugin do próprio repositório e versão semântica', a
   const packageManifest = JSON.parse(await readFile(file('package.json'), 'utf8'))
   assert.equal(marketplace.plugins[0].source, './')
   assert.equal(manifest.name, 'omni')
-  assert.equal(manifest.version, '0.6.0')
+  assert.equal(manifest.version, '0.7.0')
   assert.equal(packageManifest.version, manifest.version)
 })
 
@@ -35,10 +35,12 @@ test('plugin contém somente o núcleo declarado', async () => {
   await stat(file('runtime/cli.mjs'))
   await stat(file('runtime/hook-contexto.mjs'))
   await stat(file('runtime/pipeline-memoria.mjs'))
+  await stat(file('runtime/personalidade.mjs'))
   await stat(file('runtime/versao.mjs'))
   await stat(file('runtime/atualizacao.mjs'))
   await stat(file('hooks/hooks.json'))
   await stat(file('contratos/personalidade/omni-persona-v1.md'))
+  await stat(file('contratos/personalidade/omni-persona-v2.md'))
 })
 
 test('hook injeta contexto por turno somente após ativação do Omni', async () => {
@@ -52,15 +54,43 @@ test('hook injeta contexto por turno somente após ativação do Omni', async ()
   assert.deepEqual(command.args, ['${CLAUDE_PLUGIN_ROOT}/runtime/hook-contexto.mjs'])
 })
 
-test('personalidade v1 é a fonte aprovada e canais externos continuam planejados', async () => {
+test('personalidade v2 é a fonte ativa e canais externos continuam planejados', async () => {
   const persona = JSON.parse(await readFile(file('contratos/personalidade/manifest.json'), 'utf8'))
-  const contract = await readFile(file('contratos/personalidade/omni-persona-v1.md'), 'utf8')
-  assert.equal(persona.id, 'omni-persona-v1-candidate')
+  const contract = await readFile(
+    new URL(persona.contract, file('contratos/personalidade/manifest.json')),
+    'utf8'
+  )
+  assert.equal(persona.id, 'omni-persona-v2-candidate')
+  assert.equal(persona.status, 'active-candidate-pending-evals')
+  assert.equal(persona.supersedes.id, 'omni-persona-v1-candidate')
   assert.equal(persona.channels.plugin, 'active')
   assert.equal(persona.channels.chat, 'planned')
   assert.equal(persona.channels.realtime, 'planned')
-  assert.match(contract, /Inventor Cúmplice/)
-  assert.match(contract, /INDEPENDÊNCIA INTELECTUAL/)
+  const nucleo = contract.match(/## Núcleo textual\s+```text\s*([\s\S]*?)```/i)[1]
+  assert.match(nucleo, /Inventor Cúmplice/)
+  assert.match(nucleo, /INDEPENDÊNCIA INTELECTUAL/)
+  assert.match(nucleo, /NÃO ANUNCIE/)
+  assert.match(nucleo, /ENTREGA DA IDEIA/)
+  assert.doesNotMatch(nucleo, /deixe claro onde a analogia termina/)
+})
+
+test('o contrato declarado no manifesto é o que o hook consegue injetar', async () => {
+  const manifestUrl = file('contratos/personalidade/manifest.json')
+  const persona = JSON.parse(await readFile(manifestUrl, 'utf8'))
+  const contract = await readFile(new URL(persona.contract, manifestUrl), 'utf8')
+  const nucleo = contract.match(/## Núcleo textual\s+```text\s*([\s\S]*?)```/i)
+  assert.ok(nucleo, 'núcleo textual do contrato ativo não casa com o extrator do hook')
+  assert.match(nucleo[1], new RegExp(`PERSONALIDADE ${persona.id}`))
+
+  const hook = await readFile(file('runtime/hook-contexto.mjs'), 'utf8')
+  assert.doesNotMatch(hook, /omni-persona-v\d+\.md/, 'hook não pode fixar o contrato por caminho')
+})
+
+test('a linha de base v1 permanece disponível para eval comparativo', async () => {
+  const persona = JSON.parse(await readFile(file('contratos/personalidade/manifest.json'), 'utf8'))
+  const baseline = await readFile(file('contratos/personalidade/omni-persona-v1.md'), 'utf8')
+  assert.equal(persona.supersedes.contract, './omni-persona-v1.md')
+  assert.match(baseline, /PERSONALIDADE omni-persona-v1-candidate/)
 })
 
 test('contexto ativo não carrega nomes ou caminhos estranhos ao Omni', async () => {
@@ -73,7 +103,8 @@ test('contexto ativo não carrega nomes ou caminhos estranhos ao Omni', async ()
     'runtime/versao.mjs',
     'runtime/memoria.mjs',
     'contratos/capacidades/catalogo.json',
-    'contratos/personalidade/omni-persona-v1.md'
+    'contratos/personalidade/omni-persona-v1.md',
+    'contratos/personalidade/omni-persona-v2.md'
   ]
   const active = (
     await Promise.all(activeFiles.map((path) => readFile(file(path), 'utf8')))
@@ -91,8 +122,10 @@ test('skill começa em pt-BR e não despeja diagnóstico quando chamada vazia', 
   const skill = await readFile(file('skills/omni/SKILL.md'), 'utf8')
   assert.match(skill, /Toda saída visível deve estar em português do Brasil desde a primeira linha/)
   assert.match(skill, /execute `estado` uma única vez e silenciosamente/)
+  assert.match(skill, /execute `personalidade` silenciosamente/)
+  assert.doesNotMatch(skill, /omni-persona-v\d+\.md|personalidade v\d+/)
   assert.match(skill, /`outdated`, avise em uma frase/)
   assert.match(skill, /`atualizar`: execute `atualizar`/)
-  assert.match(skill, /Não peça reinício nem sessão nova/)
+  assert.match(skill, /interface nativa do VS Code/)
   assert.match(skill, /não apresente\s+diagnóstico técnico sem que seja pedido/is)
 })

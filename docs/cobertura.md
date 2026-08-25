@@ -2,7 +2,7 @@
 
 ## Funcional e testado
 
-- personalidade v1 canônica;
+- personalidade v2 candidata ativa, com v1 preservada como linha de base;
 - memória confirmada e candidata;
 - confirmação e descarte de candidatas;
 - pipeline determinístico de extração, classificação, validação e pontuação;

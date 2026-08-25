@@ -19,7 +19,7 @@ function success(value = '') {
   }
 }
 
-function runner({ before = '0.6.0', after = '0.7.0', marketplace = canonicalMarketplace } = {}) {
+function runner({ before = '0.7.0', after = '0.8.0', marketplace = canonicalMarketplace } = {}) {
   const calls = []
   let pluginListCalls = 0
   return {
@@ -47,36 +47,39 @@ function runner({ before = '0.6.0', after = '0.7.0', marketplace = canonicalMark
   }
 }
 
-test('atualiza, valida e pede apenas reload na mesma sessão', async () => {
+test('atualiza, valida e orienta a aplicação conforme a interface', async () => {
   const fake = runner()
   const result = await atualizarPlugin({
     casa: 'C:\\omni-test',
     run: fake.run,
     resolveCli: async () => 'claude-test',
-    checkVersion: async () => ({ latestVersion: '0.7.0', status: 'outdated' })
+    checkVersion: async () => ({ latestVersion: '0.8.0', status: 'outdated' })
   })
 
   assert.equal(result.status, 'updated')
-  assert.equal(result.previousInstalledVersion, '0.6.0')
-  assert.equal(result.installedVersion, '0.7.0')
+  assert.equal(result.previousInstalledVersion, '0.7.0')
+  assert.equal(result.installedVersion, '0.8.0')
   assert.equal(result.reloadRequired, true)
-  assert.equal(result.nextCommand, '/reload-plugins')
+  assert.equal(result.applyInstructions.vscode.command, '/plugin')
+  assert.equal(result.applyInstructions.vscode.action, 'Clique em Restart.')
+  assert.equal(result.applyInstructions.terminal.command, '/reload-plugins')
+  assert.equal(result.applyInstructions.preservesSession, true)
   assert.deepEqual(result.verifiedBy, ['claude-plugin-list', 'github-manifest'])
   assert.ok(fake.calls.some(({ args }) => args.includes('update') && args.includes('omni@omni-hub')))
 })
 
 test('versão atual é validada sem pedir nova sessão', async () => {
-  const fake = runner({ before: '0.6.0', after: '0.6.0' })
+  const fake = runner({ before: '0.7.0', after: '0.7.0' })
   const result = await atualizarPlugin({
     casa: 'C:\\omni-test',
     run: fake.run,
     resolveCli: async () => 'claude-test',
-    checkVersion: async () => ({ latestVersion: '0.6.0', status: 'current' })
+    checkVersion: async () => ({ latestVersion: '0.7.0', status: 'current' })
   })
 
   assert.equal(result.status, 'current')
   assert.equal(result.reloadRequired, false)
-  assert.equal(result.nextCommand, null)
+  assert.equal(result.applyInstructions, null)
 })
 
 test('recusa marketplace com a identidade certa apontando para outro repositório', async () => {
@@ -106,4 +109,3 @@ test('localizador respeita executável explícito validado', async () => {
   assert.equal(executable, 'C:\\Claude\\claude.exe')
   assert.deepEqual(calls[0].args, ['--version'])
 })
-

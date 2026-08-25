@@ -4,10 +4,10 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
 import { lerMemoria } from './memoria.mjs'
+import { lerPersonalidadeAtiva } from './personalidade.mjs'
 
 const raiz = dirname(dirname(fileURLToPath(import.meta.url)))
 const catalogPath = join(raiz, 'contratos', 'capacidades', 'catalogo.json')
-const personaManifestPath = join(raiz, 'contratos', 'personalidade', 'manifest.json')
 const BUDGET = { fast: 1_800, deep: 5_200 }
 const MEMORY_LIMIT = { fast: 4, deep: 10 }
 
@@ -74,11 +74,12 @@ function project(path, rules, capabilities, memories) {
 }
 
 export async function montarContexto(casa, { intent = '', projectId } = {}) {
-  const [memory, catalog, persona] = await Promise.all([
+  const [memory, catalog, activePersona] = await Promise.all([
     lerMemoria(casa),
     readFile(catalogPath, 'utf8').then(JSON.parse),
-    readFile(personaManifestPath, 'utf8').then(JSON.parse)
+    lerPersonalidadeAtiva({ pluginRoot: raiz })
   ])
+  const persona = activePersona.manifest
   const now = Date.now()
   const relevant = memory.confirmed
     .filter((item) => item.expiresAt === null || Date.parse(item.expiresAt) > now)

@@ -162,7 +162,12 @@ export async function atualizarPlugin({
     latestVersion: remote.latestVersion,
     verifiedBy: remote.latestVersion ? ['claude-plugin-list', 'github-manifest'] : ['claude-plugin-list'],
     reloadRequired,
-    nextCommand: reloadRequired ? '/reload-plugins' : null
+    applyInstructions: reloadRequired
+      ? {
+          vscode: { command: '/plugin', action: 'Clique em Restart.' },
+          terminal: { command: '/reload-plugins' },
+          preservesSession: true
+        }
+      : null
   }
 }
-

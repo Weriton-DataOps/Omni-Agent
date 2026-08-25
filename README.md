@@ -12,7 +12,7 @@ pertencem ao Git.
 Omni/
 ├── .claude-plugin/                 manifestos do Claude Code
 ├── contratos/
-│   ├── personalidade/              identidade canônica v1
+│   ├── personalidade/              identidade canônica versionada
 │   ├── memoria/                    formato dos registros persistentes
 │   ├── contexto/                   formato das projeções fast e deep
 │   ├── capacidades/                capacidades realmente disponíveis
@@ -34,7 +34,7 @@ Omni/
 pedido
   ↓
 skill Omni
-  ├── personalidade v1
+  ├── personalidade escolhida pelo manifesto
   ├── capacidades declaradas
   └── memória confirmada relevante
           ↓
@@ -53,7 +53,8 @@ Na ativação, o Omni compara a versão instalada com o manifesto público. Ele 
 versão mais recente e continua normalmente se a rede estiver indisponível.
 
 Por pedido explícito, `/omni:omni atualizar` confere a origem, atualiza e valida o pacote. Quando a
-versão carregada mudar, basta executar `/reload-plugins`: a conversa atual continua aberta.
+versão carregada mudar, a interface nativa do VS Code usa `/plugin` → **Restart**; no terminal,
+`/reload-plugins`. A conversa atual continua aberta nos dois casos.
 
 A especificação mestre governa o desenvolvimento, mas não é despejada automaticamente em cada
 conversa. O runtime seleciona apenas o contexto relevante.

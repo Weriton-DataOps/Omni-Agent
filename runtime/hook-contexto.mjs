@@ -6,9 +6,9 @@ import { fileURLToPath } from 'node:url'
 import { montarContexto } from './contexto.mjs'
 import { casaDoOmni } from './memoria.mjs'
 import { processarExperiencia } from './pipeline-memoria.mjs'
+import { lerPersonalidadeAtiva } from './personalidade.mjs'
 
 const raiz = dirname(dirname(fileURLToPath(import.meta.url)))
-const caminhoDaPersona = join(raiz, 'contratos', 'personalidade', 'omni-persona-v1.md')
 
 function saidaVazia() {
   return { suppressOutput: true }
@@ -62,12 +62,6 @@ async function encerrar(input, env) {
   if (arquivo) await rm(arquivo, { force: true })
 }
 
-function nucleoDaPersona(markdown) {
-  const bloco = markdown.match(/## Núcleo textual\s+```text\s*([\s\S]*?)```/i)
-  if (!bloco) throw new Error('Núcleo textual da personalidade não encontrado.')
-  return bloco[1].trim()
-}
-
 function contextoAdicional(persona, projecao) {
   return [
     '<omni-contexto-interno>',
@@ -105,16 +99,16 @@ export async function tratarHook(input, env = process.env) {
   if (!intencao) return saidaVazia()
 
   await processarExperiencia(casaDoOmni(env), intencao)
-  const [contexto, personaMarkdown] = await Promise.all([
+  const [contexto, persona] = await Promise.all([
     montarContexto(casaDoOmni(env), { intent: intencao }),
-    readFile(caminhoDaPersona, 'utf8')
+    lerPersonalidadeAtiva({ pluginRoot: raiz })
   ])
   return {
     suppressOutput: true,
     hookSpecificOutput: {
       hookEventName: 'UserPromptSubmit',
       additionalContext: contextoAdicional(
-        nucleoDaPersona(personaMarkdown),
+        persona.nucleus,
         contexto.projections.deep.text
       )
     }
