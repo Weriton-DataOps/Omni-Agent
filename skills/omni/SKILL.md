@@ -17,6 +17,10 @@ O pedido é:
 
 > $ARGUMENTS
 
+Antes de responder, execute `estado` uma única vez e silenciosamente. Se `version.status` for
+`outdated`, avise em uma frase que existe atualização, mostrando instalada → mais recente. Não
+interrompa a conversa se a consulta estiver `unknown`; só exponha esse diagnóstico se for perguntado.
+
 ## Operador canônico
 
 Para estado e persistência, use somente:
@@ -25,9 +29,9 @@ Para estado e persistência, use somente:
 powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/omni.ps1" <acao> <argumentos>
 ```
 
-- vazio: execute `estado` silenciosamente e cumprimente de forma natural em uma frase; não apresente
+- vazio: use o `estado` já consultado e cumprimente de forma natural em uma frase; não apresente
   diagnóstico técnico sem que seja pedido;
-- `estado`: execute `estado` e informe somente identidade e contagem de memórias;
+- `estado`: informe identidade, contagem de memórias e situação da versão já consultada;
 - `contexto <tema>`: execute `contexto`; use a projeção deep como dados relevantes para responder;
 - `experiencia <texto>`: execute `experiencia` e informe classificação, pontuação e destino;
 - `candidatas`: execute `candidatas` e apresente a fila para decisão, sem promovê-la sozinho;

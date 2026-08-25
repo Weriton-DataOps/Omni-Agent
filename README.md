@@ -15,7 +15,8 @@ Omni/
 │   ├── personalidade/              identidade canônica v1
 │   ├── memoria/                    formato dos registros persistentes
 │   ├── contexto/                   formato das projeções fast e deep
-│   └── capacidades/                capacidades realmente disponíveis
+│   ├── capacidades/                capacidades realmente disponíveis
+│   └── atualizacao/                detecção segura da versão publicada
 ├── docs/
 │   ├── OMNI-ESPECIFICACAO-MESTRE.md
 │   ├── arquitetura-ativa.md
@@ -47,6 +48,9 @@ skill Omni
 Depois de `/omni:omni`, um hook do plugin repete a montagem em cada mensagem da mesma sessão. Assim,
 preferências confirmadas depois de uma atualização ou em outra sessão não dependem de o modelo
 lembrar de chamar manualmente o runtime.
+
+Na ativação, o Omni compara a versão instalada com o manifesto público. Ele avisa quando houver
+versão mais recente e continua normalmente se a rede estiver indisponível.
 
 A especificação mestre governa o desenvolvimento, mas não é despejada automaticamente em cada
 conversa. O runtime seleciona apenas o contexto relevante.

@@ -11,6 +11,7 @@ import {
   proporLicao
 } from './memoria.mjs'
 import { processarExperiencia } from './pipeline-memoria.mjs'
+import { verificarVersao } from './versao.mjs'
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
 const [action = 'estado', ...parts] = process.argv.slice(2)
@@ -28,9 +29,10 @@ function memoryType(value) {
 
 async function main() {
   if (action === 'estado') {
-    const [memory, persona] = await Promise.all([
+    const [memory, persona, version] = await Promise.all([
       lerMemoria(home),
-      readFile(join(root, 'contratos', 'personalidade', 'manifest.json'), 'utf8').then(JSON.parse)
+      readFile(join(root, 'contratos', 'personalidade', 'manifest.json'), 'utf8').then(JSON.parse),
+      verificarVersao({ casa: home, pluginRoot: root })
     ])
     return {
       ok: true,
@@ -44,6 +46,7 @@ async function main() {
         confirmed: memory.confirmed.length,
         candidates: memory.candidates.length
       },
+      version,
       context: { schemaVersion: 1, projections: ['fast', 'deep'] }
     }
   }

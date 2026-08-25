@@ -12,6 +12,7 @@ Existe uma única fonte para cada responsabilidade:
 | seleção de contexto | `runtime/contexto.mjs` |
 | escrita de memória | `runtime/memoria.mjs` |
 | injeção por turno | `hooks/hooks.json` + `runtime/hook-contexto.mjs` |
+| detecção de atualização | `runtime/versao.mjs` |
 | entrada no Claude Code | `skills/omni/SKILL.md` |
 
 ## Contexto de uma resposta
@@ -53,6 +54,14 @@ candidata ─► proprietário confirma/descarta ─► decisão registrada
 
 O contrato detalhado está em `contratos/memoria/pipeline-escrita.md`. O hook executa a análise, mas
 nunca promove sozinho uma inferência para memória confirmada.
+
+## Versão publicada
+
+```text
+ativação → estado → versão instalada × manifesto público → silêncio ou aviso
+```
+
+A consulta usa apenas metadados públicos e possui fallback local. Ela não lê nem transmite memória.
 
 ## Separação entre projeto e dados
 
