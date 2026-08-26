@@ -11,7 +11,7 @@ test('marketplace usa o plugin do próprio repositório e versão semântica', a
   const packageManifest = JSON.parse(await readFile(file('package.json'), 'utf8'))
   assert.equal(marketplace.plugins[0].source, './')
   assert.equal(manifest.name, 'omni')
-  assert.equal(manifest.version, '0.12.0')
+  assert.equal(manifest.version, '0.13.0')
   assert.equal(packageManifest.version, manifest.version)
 })
 
@@ -67,7 +67,7 @@ test('runtime, schema e manifesto concordam sobre as versões', async () => {
   assert.equal(failurePolicy.storeRawTestOutcome, false)
   assert.equal(promotionResultSchema.properties.schemaVersion.const, 1)
   assert.equal(promotionResultSchema.additionalProperties, false)
-  assert.equal(contextSchema.properties.schemaVersion.const, 2)
+  assert.equal(contextSchema.properties.schemaVersion.const, 3)
   assert.equal(retrieval.algorithm, 'hybrid-local-v1')
   assert.equal(
     Object.values(retrieval.weights).reduce((sum, value) => sum + value, 0),
@@ -92,6 +92,8 @@ test('plugin contém somente o núcleo declarado', async () => {
   await stat(file('runtime/falhas.mjs'))
   await stat(file('runtime/versao.mjs'))
   await stat(file('runtime/atualizacao.mjs'))
+  await stat(file('runtime/historico-evals.mjs'))
+  await stat(file('runtime/persistencia-contexto.mjs'))
   await stat(file('contratos/memoria/garbage-collection.json'))
   await stat(file('contratos/memoria/garbage-collection.md'))
   await stat(file('contratos/aprendizado/atalhos.json'))
@@ -105,9 +107,28 @@ test('plugin contém somente o núcleo declarado', async () => {
   await stat(file('contratos/aprendizado/falhas.md'))
   await stat(file('contratos/eval/resultado-personalidade.schema.json'))
   await stat(file('contratos/eval/resultados/README.md'))
+  await stat(file('contratos/eval/omni-core.json'))
+  await stat(file('contratos/eval/historico.schema.json'))
+  await stat(file('contratos/contexto/orcamento.json'))
+  await stat(file('contratos/contexto/persistencia.json'))
+  await stat(file('contratos/arquitetura/escopo.json'))
+  await stat(file('contratos/arquitetura/invariantes.json'))
   await stat(file('hooks/hooks.json'))
   await stat(file('contratos/personalidade/omni-persona-v1.md'))
   await stat(file('contratos/personalidade/omni-persona-v2.md'))
+})
+
+test('fronteiras impedem interface e iniciativas externas de virarem funcionalidade do Omni', async () => {
+  const scope = JSON.parse(await readFile(file('contratos/arquitetura/escopo.json'), 'utf8'))
+  const invariants = JSON.parse(await readFile(file('contratos/arquitetura/invariantes.json'), 'utf8'))
+  assert.deepEqual(scope.activeAgents, ['omni'])
+  assert.deepEqual(scope.embeddedInitiatives, [])
+  assert.equal(scope.sections['31'], 'out-of-scope-agent-selection')
+  assert.equal(scope.sections['35'], 'deferred-interface')
+  assert.equal(invariants.identity.agentCount, 1)
+  assert.equal(invariants.availability.implemented, false)
+  assert.equal(invariants.completion.conversationValidationRequiredBeforeInterface, true)
+  assert.equal(invariants.scope.automaticImplementationFromBacklog, false)
 })
 
 test('hook injeta contexto por turno somente após ativação do Omni', async () => {

@@ -42,11 +42,16 @@
 - formação de padrão somente após três ocorrências, com deduplicação e escrita concorrente;
 - análise separada de causa raiz e hipótese, seguida de dois testes consistentes da correção;
 - eval de padrão de falha, invalidação por recorrência e encaminhamento seguro ao pipeline 25;
+- suíte comparável do único agente Omni, com histórico local de qualidade, segurança, latência e custo;
+- comparação antes/depois que bloqueia regressão de segurança;
+- seleção de capacidades por intenção, orçamento por categoria e diagnóstico de descarte;
+- checkpoint estruturado, comprimido e sem conversa bruta;
+- backlog explícito para descobertas fora da Definition of Done;
+- invariantes verificáveis de identidade, contexto, escopo e fechamento;
 
 ## Contratado, ainda incompleto
 
 - gates de versão, commit e publicação dos artefatos materializados;
-- melhoria mensurável de agentes da seção 27;
 - estado conversacional e histórico de sessões;
 - catálogo de projetos;
 - geração das respostas de eval por modelo, registro da revisão humana e observatório;
@@ -54,3 +59,11 @@
 
 Nada desta segunda lista deve ser apresentado como funcional antes de possuir código, teste e
 evidência repetível.
+
+## Deliberadamente fora ou adiado
+
+- seção 31: seleção entre agentes; não se aplica ao Omni, que é um único agente;
+- seção 35: interface; adiada pelo proprietário até ampla validação conversacional;
+- seções 36–37: pertencem à iniciativa independente OverCore;
+- seção 38: pertence à iniciativa independente Oracle;
+- seção 39: presença contínua é requisito, mas depende da interface e ainda não é funcional.

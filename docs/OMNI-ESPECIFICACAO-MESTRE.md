@@ -1,5 +1,9 @@
 # OMNI — ESPECIFICAÇÃO MESTRE DE CONTEXT ENGINEERING, MEMORY E INTELIGÊNCIA OPERACIONAL
 
+> **Decisão de escopo vigente:** o [ADR-001](decisoes/ADR-001-fronteiras-iniciativas.md) prevalece na
+> aplicação desta especificação. Omni, Oracle e OverCore são iniciativas independentes; as seções
+> 31 e 36–38 não fazem parte do núcleo do Omni, e a seção 35 está adiada por decisão do proprietário.
+
 ## 1. Objetivo
 
 O objetivo desta fase é construir o **Omni como um agente pessoal inteligente, leve, persistente e onipresente**, capaz de conversar naturalmente, compreender contexto, acessar capacidades distribuídas, delegar trabalho e aprender continuamente sem transformar a própria janela de contexto em um depósito gigantesco de informações.

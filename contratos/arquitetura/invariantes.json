@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "contract": "omni-core-invariants-v1",
+  "identity": {
+    "agent": "omni",
+    "agentCount": 1,
+    "coordinatesButDoesNotCentralizeExternalInitiatives": true,
+    "externalCoordinationStatus": "future-contract-only"
+  },
+  "context": {
+    "classifyBeforePersisting": true,
+    "loadOnlyRelevantSources": true,
+    "neverFillBudgetJustBecauseSpaceExists": true,
+    "recoveryOrder": ["task-state", "personality", "relevant-memory", "relevant-capabilities", "procedures", "tools"]
+  },
+  "scope": {
+    "discoveriesOutsideDefinitionOfDoneGoToBacklog": true,
+    "automaticImplementationFromBacklog": false,
+    "requiredDefinitionOfDoneFields": [
+      "objective", "scope", "nonGoals", "requirements", "successCriteria", "definitionOfDone", "knownConstraints"
+    ]
+  },
+  "availability": {
+    "continuousPresence": "requirement-deferred-interface",
+    "implemented": false,
+    "reason": "section-35-deferred-by-owner"
+  },
+  "excludedOrDeferredSections": {
+    "31": "out-of-scope-agent-selection",
+    "35": "deferred-interface",
+    "36": "external-overcore",
+    "37": "external-overcore",
+    "38": "external-oracle",
+    "39": "requirement-not-yet-functional"
+  },
+  "completion": {
+    "mayClaimFunctionalOnlyWithCodeContractTestAndRepeatableEvidence": true,
+    "conversationValidationRequiredBeforeInterface": true
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "decision": "independent-initiatives-v1",
+  "activeInitiative": "omni",
+  "activeAgents": ["omni"],
+  "embeddedInitiatives": [],
+  "externalInitiatives": ["oracle", "overcore"],
+  "futureIntegration": "contracts-events-adapters",
+  "interface": {
+    "chat": "deferred-until-conversation-validation",
+    "realtime": "deferred-until-conversation-validation",
+    "section35": "deferred-by-owner"
+  },
+  "sections": {
+    "27-30": "omni-active",
+    "31": "out-of-scope-agent-selection",
+    "32-34": "omni-active",
+    "35": "deferred-interface",
+    "36-37": "external-overcore",
+    "38": "external-oracle",
+    "39": "omni-requirement-interface-dependent",
+    "40-46": "omni-invariants"
+  }
+}

@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Weriton-DataOps/Omni-Agent/contratos/contexto/persistencia.schema.json",
+  "title": "Omni Structured Context Store V1",
+  "type": "object",
+  "required": ["schemaVersion", "store", "checkpoints", "backlog"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "store": {
+      "type": "object",
+      "required": ["id", "createdAt", "updatedAt"],
+      "properties": {
+        "id": { "const": "omni-local-structured-context" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
+    },
+    "checkpoints": { "type": "array", "maxItems": 50, "items": { "$ref": "#/$defs/checkpoint" } },
+    "backlog": { "type": "array", "maxItems": 100, "items": { "$ref": "#/$defs/discovery" } }
+  },
+  "$defs": {
+    "textList": {
+      "type": "array",
+      "maxItems": 30,
+      "items": { "type": "string", "minLength": 1, "maxLength": 240 }
+    },
+    "task": {
+      "type": "object",
+      "required": ["objective", "scope", "nonGoals", "requirements", "successCriteria", "definitionOfDone", "knownConstraints"],
+      "properties": {
+        "objective": { "type": "string", "minLength": 3, "maxLength": 500 },
+        "scope": { "$ref": "#/$defs/textList" },
+        "nonGoals": { "$ref": "#/$defs/textList" },
+        "requirements": { "$ref": "#/$defs/textList" },
+        "successCriteria": { "$ref": "#/$defs/textList" },
+        "definitionOfDone": { "$ref": "#/$defs/textList" },
+        "knownConstraints": { "$ref": "#/$defs/textList" }
+      },
+      "additionalProperties": false
+    },
+    "state": {
+      "type": "object",
+      "required": ["summary", "decisions", "openTasks", "eventRefs", "artifactRefs", "memoryRefs"],
+      "properties": {
+        "summary": { "type": "string", "minLength": 3, "maxLength": 800 },
+        "decisions": { "$ref": "#/$defs/textList" },
+        "openTasks": { "$ref": "#/$defs/textList" },
+        "eventRefs": { "$ref": "#/$defs/textList" },
+        "artifactRefs": { "$ref": "#/$defs/textList" },
+        "memoryRefs": { "$ref": "#/$defs/textList" }
+      },
+      "additionalProperties": false
+    },
+    "compression": {
+      "type": "object",
+      "required": ["policy", "summaryCharactersBefore", "summaryCharactersAfter", "droppedItems", "rawConversationStored"],
+      "properties": {
+        "policy": { "const": "structured-context-persistence-v1" },
+        "summaryCharactersBefore": { "type": "integer", "minimum": 0 },
+        "summaryCharactersAfter": { "type": "integer", "minimum": 0, "maximum": 800 },
+        "droppedItems": { "type": "integer", "minimum": 0 },
+        "rawConversationStored": { "const": false }
+      },
+      "additionalProperties": false
+    },
+    "checkpoint": {
+      "type": "object",
+      "required": ["id", "runFingerprint", "task", "state", "compression", "createdAt"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^checkpoint-" },
+        "runFingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "task": { "$ref": "#/$defs/task" },
+        "state": { "$ref": "#/$defs/state" },
+        "compression": { "$ref": "#/$defs/compression" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
+    },
+    "discovery": {
+      "type": "object",
+      "required": ["id", "title", "reason", "source", "decision", "implemented", "recordedAt"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^discovery-" },
+        "title": { "type": "string", "minLength": 3, "maxLength": 240 },
+        "reason": { "type": "string", "minLength": 3, "maxLength": 500 },
+        "source": { "type": "string", "minLength": 2, "maxLength": 240 },
+        "decision": { "enum": ["backlog", "required-for-dod"] },
+        "implemented": { "const": false },
+        "recordedAt": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

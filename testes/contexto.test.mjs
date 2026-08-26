@@ -21,6 +21,22 @@ test('fast e deep nascem da mesma fotografia e respeitam orçamento', async () =
     assert.match(context.projections.deep.text, /contexto montado por turno/)
     assert.equal(context.projections.fast.path, 'fast')
     assert.equal(context.projections.deep.path, 'deep')
+    assert.equal(context.schemaVersion, 3)
+    assert.equal(context.projections.fast.budget.policy, 'context-budget-v1')
+    assert.ok(context.sources.find((source) => source.name === 'capabilities').items <= 6)
+    assert.ok(context.projections.fast.selected.every((id) => context.projections.deep.selected.includes(id)))
+  } finally {
+    await rm(casa, { recursive: true, force: true })
+  }
+})
+
+test('catálogo é filtrado por intenção e não despejado inteiro no contexto', async () => {
+  const casa = await mkdtemp(join(tmpdir(), 'omni-plugin-context-'))
+  try {
+    const context = await montarContexto(casa, { intent: 'como atualizar o plugin?' })
+    assert.ok(context.sources.find((source) => source.name === 'capabilities').items <= 6)
+    assert.doesNotMatch(context.projections.deep.text, /failure-learning/i)
+    assert.ok(context.projections.deep.budget.unusedCharacters >= 0)
   } finally {
     await rm(casa, { recursive: true, force: true })
   }

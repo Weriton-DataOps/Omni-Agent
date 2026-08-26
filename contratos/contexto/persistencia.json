@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "policy": "structured-context-persistence-v1",
+  "maximumCheckpoints": 50,
+  "maximumBacklogItems": 100,
+  "budgets": {
+    "summaryCharacters": 800,
+    "decisionItems": 12,
+    "openTaskItems": 12,
+    "referenceItemsPerType": 20,
+    "itemCharacters": 240
+  },
+  "requiredTaskFields": [
+    "objective",
+    "scope",
+    "nonGoals",
+    "requirements",
+    "successCriteria",
+    "definitionOfDone",
+    "knownConstraints"
+  ],
+  "forbiddenFields": ["rawConversation", "transcript", "messages"],
+  "storeRawConversation": false
+}

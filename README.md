@@ -2,6 +2,15 @@
 
 Fonte única do núcleo cognitivo do Omni.
 
+Este repositório contém uma única iniciativa e um único agente: **Omni**. Oracle e OverCore são
+iniciativas externas, com evolução independente. A fronteira aprovada está no
+[`ADR-001`](docs/decisoes/ADR-001-fronteiras-iniciativas.md). Chat, Realtime e a seção 35 permanecem
+adiados até a validação conversacional do núcleo.
+
+A fase atual fecha e valida o núcleo: personalidade, memória, recuperação, orçamento de contexto,
+aprendizado, evals comparáveis e checkpoints estruturados. A interface continua bloqueada até o Omni
+ser exercitado em muitas conversas reais e receber aprovação explícita do proprietário.
+
 Este repositório contém somente o que governa sua identidade, memória, montagem de contexto e entrada
 no Claude Code. Estado pessoal, conversas, credenciais, áudio, aplicações e artefatos de execução não
 pertencem ao Git.

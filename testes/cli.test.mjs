@@ -171,3 +171,32 @@ test('operador aprende padrão de falha sem transformar ocorrência isolada em r
     await rm(raiz, { recursive: true, force: true })
   }
 })
+
+test('operador expõe evals, checkpoints e backlog sem executar melhoria sozinho', async () => {
+  const raiz = await mkdtemp(join(tmpdir(), 'omni-cli-governance-'))
+  const env = { ...process.env, OMNI_HOME: join(raiz, 'home') }
+  try {
+    const suite = executar(['eval-suite'], env)
+    assert.equal(suite.suite.id, 'omni-core-v1')
+    assert.equal(suite.suite.target, 'omni')
+
+    const discovery = executar([
+      'descoberta-registrar',
+      '--titulo', 'interface futura',
+      '--motivo', 'fora do objetivo atual',
+      '--origem', 'conversa'
+    ], env)
+    assert.equal(discovery.persistence.result, 'backlog')
+    assert.equal(discovery.persistence.discovery.implemented, false)
+
+    const backlog = executar(['backlog'], env)
+    assert.equal(backlog.discoveries.length, 1)
+    assert.equal(backlog.automaticImplementation, false)
+
+    const state = executar(['estado'], env)
+    assert.equal(state.evaluation.automaticExecution, false)
+    assert.equal(state.structuredContext.rawConversationStored, false)
+  } finally {
+    await rm(raiz, { recursive: true, force: true })
+  }
+})

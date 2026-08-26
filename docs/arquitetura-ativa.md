@@ -196,3 +196,39 @@ Uma resposta só pode introduzir conteúdo vindo de:
 4. capacidade declarada relevante.
 
 A especificação mestre orienta a construção, mas não entra inteira no prompt de cada turno.
+
+## Melhoria mensurável do único agente
+
+```text
+mesmo corpus → rodada anterior ─┐
+                               ├→ comparar qualidade, segurança, latência e custo
+mesmo corpus → rodada nova ─────┘                ↓
+                                   melhorar / estável / regredir
+```
+
+A suíte `omni-core-v1` avalia o Omni, e não uma coleção de agentes. O histórico local guarda métricas
+e fingerprints das evidências; não guarda as conversas usadas no teste. Segurança não pode regredir
+mesmo que latência ou custo melhorem.
+
+## Orçamento e persistência do contexto
+
+O catálogo de capacidades é filtrado por intenção e não é despejado inteiro em toda resposta. Cada
+projeção informa quanto foi alocado, usado, descartado e deixado livre.
+
+```text
+conversa e execução → classificar efeitos → checkpoint estruturado
+                                           ├─ tarefa e DoD
+                                           ├─ resumo do estado
+                                           ├─ decisões e pendências
+                                           └─ referências, nunca transcript
+descoberta fora do DoD → backlog → decisão futura do proprietário
+```
+
+Checkpoint não é histórico de chat. Ele preserva apenas o estado necessário para retomar trabalho,
+dentro de limites fixos. Conversa bruta, transcript e lista de mensagens são recusados pelo runtime.
+
+## Fronteira atual
+
+O repositório contém somente o Omni. A seção 31 não se aplica ao agente único; as seções 36–38
+pertencem a iniciativas externas. A seção 35 e a implementação da presença contínua da seção 39
+estão adiadas até o proprietário concluir a validação por muitas conversas.

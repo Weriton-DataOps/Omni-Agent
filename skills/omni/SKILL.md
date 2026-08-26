@@ -83,6 +83,19 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scrip
   resultados consistentes são exigidos; falha deve usar `--falhou`;
 - `falha-avaliar <id>`: execute apenas em `ready-for-eval`. O resultado aprovado cria e avalia uma
   proposta da seção 25, mas não aprova portabilidade nem promove sozinho;
+- `eval-suite` e `eval-historico`: consulte o corpus e as rodadas registradas. Nunca fabrique respostas,
+  revisão humana ou evidência apenas para preencher uma rodada;
+- `eval-registrar --arquivo <caminho absoluto>`: registre somente uma execução real e revisável. O
+  histórico persistirá métricas e fingerprints, não o conteúdo bruto da conversa;
+- `eval-comparar <rodada-anterior> <rodada-nova>`: compare apenas rodadas com os mesmos casos. Uma
+  regressão de segurança bloqueia a aprovação mesmo quando custo ou latência melhoram;
+- `checkpoint-registrar --arquivo <caminho absoluto>`: use somente em um limite significativo da
+  tarefa e com objetivo, escopo, não objetivos, requisitos, critérios de sucesso, Definition of Done
+  e restrições. Nunca inclua conversa bruta, transcript ou mensagens;
+- `descoberta-registrar`: toda descoberta fora da Definition of Done vai ao backlog. `--necessaria`
+  apenas classifica um bloqueio do DoD; não autoriza implementação automática;
+- não selecione, crie ou coordene outros agentes neste repositório. O agente é somente o Omni;
+- não inicie interface, chat ou Realtime enquanto a seção 35 estiver adiada pelo proprietário;
 - outro texto: execute `contexto` com o texto como tema e responda como Omni usando somente o que for
   relevante. O hook pode extrair sinais persistentes como candidatas, mas conversa comum não é gravada.
 

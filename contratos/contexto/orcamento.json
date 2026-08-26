@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "policy": "context-budget-v1",
+  "paths": {
+    "fast": {
+      "totalCharacters": 1800,
+      "capabilityLimit": 3,
+      "categories": { "mandatory": 500, "highPriority": 600, "relevant": 600, "optional": 100 }
+    },
+    "deep": {
+      "totalCharacters": 5200,
+      "capabilityLimit": 6,
+      "categories": { "mandatory": 800, "highPriority": 1500, "relevant": 2400, "optional": 500 }
+    }
+  },
+  "order": ["mandatory", "highPriority", "relevant", "optional"],
+  "neverFillForAvailableSpace": true,
+  "dropUnrelatedBeforeTruncatingRelevant": true
+}

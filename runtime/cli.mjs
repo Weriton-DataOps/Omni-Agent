@@ -1,5 +1,6 @@
 import { fileURLToPath } from 'node:url'
-import { dirname } from 'node:path'
+import { readFile } from 'node:fs/promises'
+import { dirname, isAbsolute } from 'node:path'
 
 import { montarContexto } from './contexto.mjs'
 import {
@@ -33,6 +34,17 @@ import {
   registrarFalha,
   testarCorrecaoFalha
 } from './falhas.mjs'
+import {
+  compararRodadasEval,
+  lerHistoricoEval,
+  lerSuiteOmni,
+  registrarRodadaEval
+} from './historico-evals.mjs'
+import {
+  lerPersistenciaContexto,
+  registrarCheckpoint,
+  registrarDescoberta
+} from './persistencia-contexto.mjs'
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
 const [action = 'estado', ...parts] = process.argv.slice(2)
@@ -58,7 +70,7 @@ function lerOpcoes(argumentos) {
       continue
     }
     const key = part.slice(2)
-    if (key === 'falhou' || key === 'portavel') {
+    if (key === 'falhou' || key === 'portavel' || key === 'necessaria') {
       options[key] = true
       continue
     }
@@ -68,6 +80,13 @@ function lerOpcoes(argumentos) {
     index += 1
   }
   return { options, positionals }
+}
+
+async function lerEntradaJson(caminho) {
+  if (!isAbsolute(caminho ?? '')) throw new Error('O arquivo de entrada precisa usar caminho absoluto.')
+  const raw = await readFile(caminho, 'utf8')
+  if (raw.length > 1_000_000) throw new Error('O arquivo de entrada excede 1 MB.')
+  return JSON.parse(raw)
 }
 
 function lerPassos(value, label) {
@@ -122,13 +141,15 @@ function resumirFalha(item) {
 
 async function main() {
   if (action === 'estado') {
-    const [memory, persona, version, shortcutStore, improvementStore, failureStore] = await Promise.all([
+    const [memory, persona, version, shortcutStore, improvementStore, failureStore, evalStore, contextStore] = await Promise.all([
       lerMemoria(home),
       lerPersonalidadeAtiva({ pluginRoot: root }),
       verificarVersao({ casa: home, pluginRoot: root }),
       lerAtalhos(home),
       lerAutoaperfeicoamento(home),
-      lerFalhas(home)
+      lerFalhas(home),
+      lerHistoricoEval(home),
+      lerPersistenciaContexto(home)
     ])
     return {
       ok: true,
@@ -169,8 +190,18 @@ async function main() {
         automaticGlobalRule: false,
         automaticPromotion: false
       },
+      evaluation: {
+        suite: 'omni-core-v1',
+        recordedRuns: evalStore.runs.length,
+        automaticExecution: false
+      },
+      structuredContext: {
+        checkpoints: contextStore.checkpoints.length,
+        backlog: contextStore.backlog.length,
+        rawConversationStored: false
+      },
       version,
-      context: { schemaVersion: 2, retrieval: 'hybrid-local-v1', projections: ['fast', 'deep'] }
+      context: { schemaVersion: 3, retrieval: 'hybrid-local-v1', projections: ['fast', 'deep'] }
     }
   }
   if (action === 'personalidade') {
@@ -187,6 +218,49 @@ async function main() {
   }
   if (action === 'atualizar') {
     return { ok: true, update: await atualizarPlugin({ casa: home, pluginRoot: root }) }
+  }
+  if (action === 'eval-suite') {
+    const suite = await lerSuiteOmni()
+    return { ok: true, suite: { id: suite.suite, target: suite.target, cases: suite.cases } }
+  }
+  if (action === 'eval-historico') {
+    const store = await lerHistoricoEval(home)
+    return { ok: true, runs: store.runs, automaticExecution: false }
+  }
+  if (action === 'eval-registrar') {
+    const { options } = lerOpcoes(parts)
+    if (!options.arquivo) throw new Error('Use: eval-registrar --arquivo <caminho absoluto>.')
+    return { ok: true, evaluation: await registrarRodadaEval(home, await lerEntradaJson(options.arquivo)) }
+  }
+  if (action === 'eval-comparar') {
+    const { positionals } = lerOpcoes(parts)
+    if (positionals.length !== 2) throw new Error('Use: eval-comparar <rodada-anterior> <rodada-nova>.')
+    return { ok: true, evaluation: await compararRodadasEval(home, positionals[0], positionals[1]) }
+  }
+  if (action === 'checkpoints') {
+    const store = await lerPersistenciaContexto(home)
+    return { ok: true, checkpoints: store.checkpoints, rawConversationStored: false }
+  }
+  if (action === 'checkpoint-registrar') {
+    const { options } = lerOpcoes(parts)
+    if (!options.arquivo) throw new Error('Use: checkpoint-registrar --arquivo <caminho absoluto>.')
+    return { ok: true, persistence: await registrarCheckpoint(home, await lerEntradaJson(options.arquivo)) }
+  }
+  if (action === 'backlog') {
+    const store = await lerPersistenciaContexto(home)
+    return { ok: true, discoveries: store.backlog, automaticImplementation: false }
+  }
+  if (action === 'descoberta-registrar') {
+    const { options } = lerOpcoes(parts)
+    return {
+      ok: true,
+      persistence: await registrarDescoberta(home, {
+        title: options.titulo,
+        reason: options.motivo,
+        source: options.origem,
+        requiredForDefinitionOfDone: options.necessaria === true
+      })
+    }
   }
   if (action === 'atalhos') {
     const store = await lerAtalhos(home)
