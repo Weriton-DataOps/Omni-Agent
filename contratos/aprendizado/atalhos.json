@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "policy": "shortcut-learning-v1",
+  "minimumConsecutiveSuccesses": 3,
+  "validationRunsRequired": 1,
+  "maximumObservationsPerShortcut": 20,
+  "minimumRemovedSteps": 1,
+  "automaticPromotion": false,
+  "storeRawOutcome": false
+}

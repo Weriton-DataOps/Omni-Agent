@@ -1,6 +1,6 @@
 ---
 description: Conversa como o Omni usando sua personalidade, contexto e memoria canonicos.
-argument-hint: "[estado|atualizar|contexto <tema>|experiencia <texto>|candidatas|arquivo|manutencao [simular]|lembrar <texto>|licao <texto>|confirmar <id>|descartar <id>|atualizar-memoria <id> <texto>|obsoleta <id> [razao]|consolidar <id1,id2> <texto>|pergunta]"
+argument-hint: "[estado|atualizar|contexto <tema>|experiencia <texto>|candidatas|arquivo|manutencao [simular]|lembrar <texto>|licao <texto>|confirmar <id>|descartar <id>|atualizar-memoria <id> <texto>|obsoleta <id> [razao]|consolidar <id1,id2> <texto>|atalhos|atalho-observar ...|atalho-validar ...|pergunta]"
 allowed-tools: Bash, Read
 ---
 
@@ -51,6 +51,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scrip
   tiver identificado o registro e pedido a alteração; a versão anterior permanece no arquivo local;
 - `consolidar <id1,id2> <texto>`: confirme os IDs e o texto canônico com o proprietário antes de
   executar; consolidação aproximada nunca é automática;
+- `atalhos`: execute `atalhos` e mostre o estado das observações, candidatas e validadas;
+- `atalho-observar`: execute somente depois de uma tarefa realmente concluída e cujo resultado tenha
+  sido verificado. Plano, hipótese, exemplo, intenção ou relato sem evidência não são observações. Use
+  `--objetivo`, `--base`, `--atalho` e `--resultado`; acrescente `--falhou` quando a execução falhar;
+- `atalho-validar <id>`: execute somente para uma candidata e depois de outra execução real,
+  independente e verificada. Use `--resultado` e acrescente `--falhou` se a validação falhar;
+- um atalho `validated` continua sendo aprendizado local. Nunca o transforme automaticamente em
+  memória, verbo, skill, capacidade ou alteração no Git;
 - outro texto: execute `contexto` com o texto como tema e responda como Omni usando somente o que for
   relevante. O hook pode extrair sinais persistentes como candidatas, mas conversa comum não é gravada.
 

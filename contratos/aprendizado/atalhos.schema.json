@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Weriton-DataOps/Omni-Agent/contratos/aprendizado/atalhos.schema.json",
+  "title": "Omni Shortcut Learning Store V1",
+  "type": "object",
+  "required": ["schemaVersion", "store", "shortcuts"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "store": {
+      "type": "object",
+      "required": ["id", "createdAt", "updatedAt"],
+      "properties": {
+        "id": { "const": "omni-local-shortcut-learning" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
+    },
+    "shortcuts": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/shortcut" }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "scope": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "enum": ["user", "project", "task", "environment"] },
+        "id": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "observation": {
+      "type": "object",
+      "required": ["id", "recordedAt", "success", "consistent", "outcomeFingerprint", "durationMs"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^obs-" },
+        "recordedAt": { "type": "string", "format": "date-time" },
+        "success": { "type": "boolean" },
+        "consistent": { "type": "boolean" },
+        "outcomeFingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "durationMs": { "type": ["integer", "null"], "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "validation": {
+      "type": ["object", "null"],
+      "required": ["status", "validatedAt", "observationId"],
+      "properties": {
+        "status": { "enum": ["passed", "failed"] },
+        "validatedAt": { "type": "string", "format": "date-time" },
+        "observationId": { "type": "string", "pattern": "^obs-" }
+      },
+      "additionalProperties": false
+    },
+    "shortcut": {
+      "type": "object",
+      "required": [
+        "id", "goal", "scope", "baselineSteps", "shortcutSteps", "status", "outcomeFingerprint",
+        "consecutiveSuccesses", "successCount", "failureCount", "inconsistentCount", "observations",
+        "validation", "createdAt", "updatedAt"
+      ],
+      "properties": {
+        "id": { "type": "string", "pattern": "^shortcut-" },
+        "goal": { "type": "string", "minLength": 1 },
+        "scope": { "$ref": "#/$defs/scope" },
+        "baselineSteps": {
+          "type": "array",
+          "minItems": 2,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "shortcutSteps": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "status": { "enum": ["observing", "candidate", "validated"] },
+        "outcomeFingerprint": { "type": ["string", "null"], "pattern": "^[a-f0-9]{64}$" },
+        "consecutiveSuccesses": { "type": "integer", "minimum": 0 },
+        "successCount": { "type": "integer", "minimum": 0 },
+        "failureCount": { "type": "integer", "minimum": 0 },
+        "inconsistentCount": { "type": "integer", "minimum": 0 },
+        "observations": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/observation" }
+        },
+        "validation": { "$ref": "#/$defs/validation" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

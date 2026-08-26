@@ -31,10 +31,13 @@
 - skill do Claude Code.
 - detecção de versão desatualizada com ETag e fallback offline;
 - atualização explícita com validação da origem, da instalação e recarga na mesma sessão;
+- aprendizado local de atalhos com três sucessos consecutivos, validação independente e regressão
+  segura diante de falha ou resultado inconsistente;
+- armazenamento de atalhos sem resultado bruto, sem segredo e sem promoção automática;
 
 ## Contratado, ainda incompleto
 
-- promoção de procedimentos por evidência;
+- promoção de atalhos validados para procedimentos, verbos, skills ou capacidades;
 - promoção segura de aprendizado reutilizável para o Git com eval e aprovação;
 - estado conversacional e histórico de sessões;
 - catálogo de projetos;

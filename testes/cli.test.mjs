@@ -75,3 +75,40 @@ test('operador expõe manutenção, consolidação e arquivo sem apagar históri
     await rm(raiz, { recursive: true, force: true })
   }
 })
+
+test('operador observa, lista e valida atalho sem promove-lo', async () => {
+  const raiz = await mkdtemp(join(tmpdir(), 'omni-cli-shortcut-'))
+  const env = { ...process.env, OMNI_HOME: join(raiz, 'home') }
+  const observe = [
+    'atalho-observar',
+    '--objetivo', 'diagnosticar conexoes do Postgres',
+    '--base', 'CPU > RAM > Processos > Postgres > Conexoes',
+    '--atalho', 'Postgres > Conexoes',
+    '--resultado', 'gargalo de conexoes confirmado'
+  ]
+  try {
+    executar(observe, env)
+    executar(observe, env)
+    const candidate = executar(observe, env)
+    assert.equal(candidate.learning.result, 'candidate')
+    assert.equal(candidate.learning.promotion, 'not-performed')
+
+    const listed = executar(['atalhos'], env)
+    assert.equal(listed.shortcuts.length, 1)
+    assert.equal(listed.shortcuts[0].status, 'candidate')
+    assert.equal(listed.automaticPromotion, false)
+
+    const validated = executar([
+      'atalho-validar', listed.shortcuts[0].id,
+      '--resultado', 'gargalo de conexoes confirmado'
+    ], env)
+    assert.equal(validated.learning.result, 'validated')
+    assert.equal(validated.learning.promotion, 'not-performed')
+
+    const state = executar(['estado'], env)
+    assert.equal(state.learning.validated, 1)
+    assert.equal(state.learning.automaticPromotion, false)
+  } finally {
+    await rm(raiz, { recursive: true, force: true })
+  }
+})

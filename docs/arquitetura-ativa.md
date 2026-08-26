@@ -13,6 +13,7 @@ Existe uma única fonte para cada responsabilidade:
 | recuperação e ranking de memória | `runtime/recuperacao.mjs` + `contratos/contexto/recuperacao.json` |
 | escrita de memória | `runtime/memoria.mjs` |
 | manutenção e ciclo de vida | `runtime/memoria.mjs` + `contratos/memoria/garbage-collection.json` |
+| aprendizado local de atalhos | `runtime/atalhos.mjs` + `contratos/aprendizado/atalhos.json` |
 | injeção por turno | `hooks/hooks.json` + `runtime/hook-contexto.mjs` |
 | detecção de atualização | `runtime/versao.mjs` |
 | atualização explícita do plugin | `runtime/atualizacao.mjs` |
@@ -81,6 +82,24 @@ A manutenção segura é conferida no máximo uma vez por dia ao abrir o store. 
 prazo não é aposentada automaticamente, e nenhum registro arquivado sofre exclusão permanente
 automática. Semelhança aproximada apenas gera uma proposta; o runtime não inventa sozinho o padrão
 semântico ou procedural que a substituirá.
+
+## Aprendizado de atalhos
+
+```text
+execução real + resultado verificado
+              ↓
+        observação local ── falha/inconsistência ──► reiniciar evidência
+              ↓ 3 sucessos consecutivos
+          candidata
+              ↓ nova execução independente
+           validada
+              ╳ não promove nesta etapa
+```
+
+O store `%APPDATA%\omni\learning\shortcuts.json` guarda a sequência, os contadores e somente o hash
+do resultado. O conteúdo bruto do resultado não é persistido. Um atalho validado não entra nas
+projeções de contexto e não altera o Git: essa separação impede que repetição aparente se torne uma
+capacidade falsa.
 
 ## Versão publicada
 

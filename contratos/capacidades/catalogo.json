@@ -70,6 +70,20 @@
       "cost": "none",
       "required_tools": ["claude-code-cli"],
       "recommended_agent": "omni"
+    },
+    {
+      "name": "shortcut-learning",
+      "description": "Observar repetição de um caminho menor, acumular evidência e validar o atalho localmente.",
+      "when_to_use": ["execução real concluída", "resultado verificável", "validação independente de candidata"],
+      "when_not_to_use": ["plano", "hipótese", "exemplo", "resultado não verificado", "promoção automática"],
+      "inputs": ["goal", "baselineSteps", "shortcutSteps", "verifiedOutcome"],
+      "outputs": ["observation", "shortcutState", "validationState"],
+      "risk": "medium",
+      "permissions": ["write-local-runtime"],
+      "latency": "local",
+      "cost": "none",
+      "required_tools": ["filesystem"],
+      "recommended_agent": "omni"
     }
   ]
 }

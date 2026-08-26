@@ -15,6 +15,7 @@ Omni/
 │   ├── personalidade/              identidade canônica versionada
 │   ├── memoria/                    formato dos registros persistentes
 │   ├── contexto/                   formato das projeções fast e deep
+│   ├── aprendizado/                observação e validação de atalhos
 │   ├── capacidades/                capacidades realmente disponíveis
 │   └── atualizacao/                detecção segura da versão publicada
 ├── docs/
@@ -75,6 +76,11 @@ sinal e une duplicatas exatas. Registros retirados da memória ativa permanecem 
 Semelhanças aproximadas só viram propostas; atualização, obsolescência e consolidação exigem pedido
 explícito.
 
+O aprendizado de atalhos usa `shortcut-learning-v1`: registra somente execuções reais com resultado
+verificado. Três sucessos consecutivos tornam o caminho candidato; uma nova execução independente
+pode validá-lo. Falha ou resultado diferente reinicia a evidência. Mesmo validado, o atalho permanece
+local e não vira memória, verbo, skill, capacidade ou commit automaticamente.
+
 ## Memória
 
 Os dados vivem em `%APPDATA%\omni\memory\memory.json`, fora deste repositório:
@@ -105,6 +111,9 @@ para o Git e sem substituir os registros existentes.
 /omni:omni atualizar-memoria <id> <novo texto>
 /omni:omni obsoleta <id> <razão>
 /omni:omni consolidar <id1,id2> <texto canônico>
+/omni:omni atalhos
+/omni:omni atalho-observar --objetivo "..." --base "A > B > C" --atalho "B > C" --resultado "..."
+/omni:omni atalho-validar <id> --resultado "..."
 ```
 
 ## Verificação

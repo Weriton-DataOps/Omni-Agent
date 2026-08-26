@@ -17,6 +17,7 @@ import { processarExperiencia } from './pipeline-memoria.mjs'
 import { verificarVersao } from './versao.mjs'
 import { atualizarPlugin } from './atualizacao.mjs'
 import { lerPersonalidadeAtiva } from './personalidade.mjs'
+import { lerAtalhos, registrarObservacaoAtalho, validarAtalho } from './atalhos.mjs'
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
 const [action = 'estado', ...parts] = process.argv.slice(2)
@@ -32,12 +33,56 @@ function memoryType(value) {
   return 'semantic'
 }
 
+function lerOpcoes(argumentos) {
+  const options = {}
+  const positionals = []
+  for (let index = 0; index < argumentos.length; index += 1) {
+    const part = argumentos[index]
+    if (!part.startsWith('--')) {
+      positionals.push(part)
+      continue
+    }
+    const key = part.slice(2)
+    if (key === 'falhou') {
+      options.falhou = true
+      continue
+    }
+    const value = argumentos[index + 1]
+    if (!value || value.startsWith('--')) throw new Error(`A opção --${key} exige um valor.`)
+    options[key] = value
+    index += 1
+  }
+  return { options, positionals }
+}
+
+function lerPassos(value, label) {
+  if (!value) throw new Error(`Informe --${label} com etapas separadas por >.`)
+  return value.split(/\s*(?:>|→)\s*/u).map((step) => step.trim()).filter(Boolean)
+}
+
+function resumirAtalho(item) {
+  return {
+    id: item.id,
+    goal: item.goal,
+    scope: item.scope,
+    baselineSteps: item.baselineSteps,
+    shortcutSteps: item.shortcutSteps,
+    status: item.status,
+    consecutiveSuccesses: item.consecutiveSuccesses,
+    successCount: item.successCount,
+    failureCount: item.failureCount,
+    inconsistentCount: item.inconsistentCount,
+    validation: item.validation
+  }
+}
+
 async function main() {
   if (action === 'estado') {
-    const [memory, persona, version] = await Promise.all([
+    const [memory, persona, version, shortcutStore] = await Promise.all([
       lerMemoria(home),
       lerPersonalidadeAtiva({ pluginRoot: root }),
-      verificarVersao({ casa: home, pluginRoot: root })
+      verificarVersao({ casa: home, pluginRoot: root }),
+      lerAtalhos(home)
     ])
     return {
       ok: true,
@@ -52,6 +97,13 @@ async function main() {
         candidates: memory.candidates.length,
         archived: memory.archive.length,
         lastMaintenanceAt: memory.store.lastMaintenanceAt
+      },
+      learning: {
+        shortcutSchemaVersion: shortcutStore.schemaVersion,
+        observing: shortcutStore.shortcuts.filter((item) => item.status === 'observing').length,
+        candidates: shortcutStore.shortcuts.filter((item) => item.status === 'candidate').length,
+        validated: shortcutStore.shortcuts.filter((item) => item.status === 'validated').length,
+        automaticPromotion: false
       },
       version,
       context: { schemaVersion: 2, retrieval: 'hybrid-local-v1', projections: ['fast', 'deep'] }
@@ -71,6 +123,40 @@ async function main() {
   }
   if (action === 'atualizar') {
     return { ok: true, update: await atualizarPlugin({ casa: home, pluginRoot: root }) }
+  }
+  if (action === 'atalhos') {
+    const store = await lerAtalhos(home)
+    return { ok: true, shortcuts: store.shortcuts.map(resumirAtalho), automaticPromotion: false }
+  }
+  if (action === 'atalho-observar') {
+    const { options } = lerOpcoes(parts)
+    const observation = await registrarObservacaoAtalho(home, {
+      goal: options.objetivo,
+      baselineSteps: lerPassos(options.base, 'base'),
+      shortcutSteps: lerPassos(options.atalho, 'atalho'),
+      outcome: options.resultado,
+      success: options.falhou !== true,
+      durationMs: options.duracao === undefined ? undefined : Number(options.duracao),
+      scope: { type: 'user' }
+    })
+    return { ok: true, learning: { ...observation, shortcut: resumirAtalho(observation.shortcut) } }
+  }
+  if (action === 'atalho-validar') {
+    const { options, positionals } = lerOpcoes(parts)
+    const id = positionals[0]
+    if (!id) throw new Error('Use: atalho-validar <id> --resultado <resultado verificado>.')
+    const validation = await validarAtalho(home, id, {
+      outcome: options.resultado,
+      success: options.falhou !== true,
+      durationMs: options.duracao === undefined ? undefined : Number(options.duracao)
+    })
+    return {
+      ok: true,
+      learning: {
+        ...validation,
+        shortcut: validation.shortcut ? resumirAtalho(validation.shortcut) : null
+      }
+    }
   }
   if (action === 'contexto') return { ok: true, context: await montarContexto(home, { intent: text }) }
   if (action === 'experiencia') {
