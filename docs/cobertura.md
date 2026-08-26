@@ -34,11 +34,15 @@
 - aprendizado local de atalhos com três sucessos consecutivos, validação independente e regressão
   segura diante de falha ou resultado inconsistente;
 - armazenamento de atalhos sem resultado bruto, sem segredo e sem promoção automática;
+- classificação de autoaperfeiçoamento entre descarte, memória e capacidade;
+- proposta de capacidade a partir de atalho validado, com eval repetível e revalidação contra regressão;
+- aprovação explícita de portabilidade e materialização auditável de skill e capacidade na árvore-fonte;
+- proibição estrutural de commit, push e promoção automática pelo runtime;
 
 ## Contratado, ainda incompleto
 
-- promoção de atalhos validados para procedimentos, verbos, skills ou capacidades;
-- promoção segura de aprendizado reutilizável para o Git com eval e aprovação;
+- gates de versão, commit e publicação dos artefatos materializados;
+- captura e análise especializada de bugs e padrões de falha da seção 26;
 - estado conversacional e histórico de sessões;
 - catálogo de projetos;
 - geração das respostas de eval por modelo, registro da revisão humana e observatório;

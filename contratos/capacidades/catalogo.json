@@ -84,6 +84,20 @@
       "cost": "none",
       "required_tools": ["filesystem"],
       "recommended_agent": "omni"
+    },
+    {
+      "name": "self-improvement-pipeline",
+      "description": "Classificar aprendizado, avaliar proposta reutilizável e materializar artefatos somente após aprovação explícita.",
+      "when_to_use": ["atalho validado", "aprendizado reutilizável comprovado", "decisão explícita do proprietário"],
+      "when_not_to_use": ["experiência transitória", "memória pessoal", "evidência incompleta", "promoção automática"],
+      "inputs": ["validatedSource", "evaluation", "ownerDecision", "portableConfirmation"],
+      "outputs": ["promotionProposal", "evaluationReport", "versionableArtifacts"],
+      "risk": "high",
+      "permissions": ["read-local-runtime", "write-local-runtime", "write-source-tree-on-explicit-approval"],
+      "latency": "local",
+      "cost": "none",
+      "required_tools": ["filesystem", "git-readonly-status"],
+      "recommended_agent": "omni"
     }
   ]
 }

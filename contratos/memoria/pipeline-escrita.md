@@ -61,5 +61,7 @@ aprendizado reutilizável
     └─► contrato, capacidade ou procedimento versionado no Git
 ```
 
-O pipeline de promoção pertence à seção 25 e não está ativo nesta versão. Nenhuma candidata executa
-`git commit` ou `git push`.
+O pipeline da seção 25 está ativo em `self-improvement-v1`. Ele aceita fonte reutilizável já validada,
+executa eval, exige confirmação explícita de portabilidade e pode materializar artefatos revisáveis na
+árvore-fonte. Nenhuma candidata executa `git commit` ou `git push`; versão e publicação continuam como
+gates separados.

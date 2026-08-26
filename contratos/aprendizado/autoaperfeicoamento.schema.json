@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Weriton-DataOps/Omni-Agent/contratos/aprendizado/autoaperfeicoamento.schema.json",
+  "title": "Omni Self Improvement Store V1",
+  "type": "object",
+  "required": ["schemaVersion", "store", "proposals"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "store": {
+      "type": "object",
+      "required": ["id", "createdAt", "updatedAt"],
+      "properties": {
+        "id": { "const": "omni-local-self-improvement" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
+    },
+    "proposals": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id", "category", "destination", "status", "source", "draft", "evaluation",
+          "approval", "promotion", "createdAt", "updatedAt"
+        ],
+        "properties": {
+          "id": { "type": "string", "pattern": "^improvement-" },
+          "category": {
+            "enum": ["learning", "shortcut", "bug-fix", "new-knowledge", "new-procedure", "new-capability", "failure-pattern", "agent-improvement"]
+          },
+          "destination": { "enum": ["discard", "memory", "capability"] },
+          "status": { "enum": ["draft", "evaluated", "approved", "rejected", "materialized-pending-version"] },
+          "source": { "type": "object" },
+          "draft": { "type": "object" },
+          "evaluation": { "type": ["object", "null"] },
+          "approval": { "type": ["object", "null"] },
+          "promotion": { "type": ["object", "null"] },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

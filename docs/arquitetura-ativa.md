@@ -14,6 +14,7 @@ Existe uma única fonte para cada responsabilidade:
 | escrita de memória | `runtime/memoria.mjs` |
 | manutenção e ciclo de vida | `runtime/memoria.mjs` + `contratos/memoria/garbage-collection.json` |
 | aprendizado local de atalhos | `runtime/atalhos.mjs` + `contratos/aprendizado/atalhos.json` |
+| pipeline de autoaperfeiçoamento | `runtime/autoaperfeicoamento.mjs` + contrato versionado |
 | injeção por turno | `hooks/hooks.json` + `runtime/hook-contexto.mjs` |
 | detecção de atualização | `runtime/versao.mjs` |
 | atualização explícita do plugin | `runtime/atualizacao.mjs` |
@@ -100,6 +101,29 @@ O store `%APPDATA%\omni\learning\shortcuts.json` guarda a sequência, os contado
 do resultado. O conteúdo bruto do resultado não é persistido. Um atalho validado não entra nas
 projeções de contexto e não altera o Git: essa separação impede que repetição aparente se torne uma
 capacidade falsa.
+
+## Promoção do aprendizado
+
+```text
+experiência ─► analisar ─┬─► descartar
+                        ├─► memória
+                        └─► capacidade proposta
+                                  ↓
+                           skill em rascunho
+                                  ↓
+                           eval determinístico
+                                  ↓
+                    confirmação humana de portabilidade
+                                  ↓
+                    materialized-pending-version
+                                  ↓
+                     gates + versão + commit + publicação
+```
+
+O pipeline local nunca transforma observação em capacidade por conta própria. A materialização ainda
+não é publicação: ela cria alterações revisáveis na árvore-fonte e para. O fluxo recusa cache e pacote
+instalado como destino, reavalia a evidência imediatamente antes da escrita e preserva commit e push
+como ações separadas do desenvolvimento.
 
 ## Versão publicada
 

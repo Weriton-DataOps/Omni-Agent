@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "pipeline": "self-improvement-v1",
+  "categories": [
+    "learning",
+    "shortcut",
+    "bug-fix",
+    "new-knowledge",
+    "new-procedure",
+    "new-capability",
+    "failure-pattern",
+    "agent-improvement"
+  ],
+  "destinations": ["discard", "memory", "capability"],
+  "minimumSuccessfulRuns": 4,
+  "requiresIndependentValidation": true,
+  "requiresOwnerApproval": true,
+  "requiresPortableConfirmation": true,
+  "automaticPromotion": false,
+  "automaticGitCommit": false,
+  "automaticGitPush": false,
+  "storeRawOutcome": false
+}

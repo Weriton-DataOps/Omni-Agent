@@ -81,6 +81,11 @@ verificado. Três sucessos consecutivos tornam o caminho candidato; uma nova exe
 pode validá-lo. Falha ou resultado diferente reinicia a evidência. Mesmo validado, o atalho permanece
 local e não vira memória, verbo, skill, capacidade ou commit automaticamente.
 
+O pipeline `self-improvement-v1` separa descarte, memória e capacidade. Um atalho validado gera apenas
+uma proposta e um eval local. Para sair do estado pessoal, o proprietário precisa confirmar que o
+conteúdo é portátil. A materialização cria skill, entrada de capacidade e auditoria na árvore-fonte,
+mas não incrementa versão, não faz commit e não publica sozinha.
+
 ## Memória
 
 Os dados vivem em `%APPDATA%\omni\memory\memory.json`, fora deste repositório:
@@ -114,6 +119,11 @@ para o Git e sem substituir os registros existentes.
 /omni:omni atalhos
 /omni:omni atalho-observar --objetivo "..." --base "A > B > C" --atalho "B > C" --resultado "..."
 /omni:omni atalho-validar <id> --resultado "..."
+/omni:omni melhorias
+/omni:omni melhoria-avaliar <id>
+/omni:omni melhoria-aprovar <id> --portavel
+/omni:omni melhoria-rejeitar <id>
+/omni:omni melhoria-promover <id> --repo <caminho-absoluto-da-fonte>
 ```
 
 ## Verificação

@@ -1,6 +1,6 @@
 ---
 description: Conversa como o Omni usando sua personalidade, contexto e memoria canonicos.
-argument-hint: "[estado|atualizar|contexto <tema>|experiencia <texto>|candidatas|arquivo|manutencao [simular]|lembrar <texto>|licao <texto>|confirmar <id>|descartar <id>|atualizar-memoria <id> <texto>|obsoleta <id> [razao]|consolidar <id1,id2> <texto>|atalhos|atalho-observar ...|atalho-validar ...|pergunta]"
+argument-hint: "[estado|atualizar|contexto <tema>|experiencia <texto>|candidatas|arquivo|manutencao [simular]|lembrar <texto>|licao <texto>|confirmar <id>|descartar <id>|atualizar-memoria <id> <texto>|obsoleta <id> [razao]|consolidar <id1,id2> <texto>|atalhos|atalho-observar ...|atalho-validar ...|melhorias|melhoria-avaliar <id>|melhoria-aprovar <id> --portavel|melhoria-rejeitar <id>|melhoria-promover <id> --repo <caminho>|pergunta]"
 allowed-tools: Bash, Read
 ---
 
@@ -59,6 +59,17 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scrip
   independente e verificada. Use `--resultado` e acrescente `--falhou` se a validação falhar;
 - um atalho `validated` continua sendo aprendizado local. Nunca o transforme automaticamente em
   memória, verbo, skill, capacidade ou alteração no Git;
+- quando `atalho-validar` retornar uma melhoria `evaluated`, informe que existe uma proposta, mas não
+  a aprove nem a materialize sem decisão explícita do proprietário;
+- `melhorias`: liste somente estado, destino, capacidade proposta, eval e decisão;
+- `melhoria-avaliar <id>`: pode executar por pedido do proprietário; é um eval local e não promove;
+- `melhoria-aprovar <id> --portavel`: execute apenas quando o proprietário disser explicitamente que
+  o conteúdo pode sair do estado pessoal e entrar no Git. Não infira portabilidade pelo conteúdo;
+- `melhoria-rejeitar <id>`: execute por decisão explícita;
+- `melhoria-promover <id> --repo <caminho>`: execute somente por pedido explícito e apontando para uma
+  árvore-fonte canônica e revisável. Nunca use `${CLAUDE_PLUGIN_ROOT}`, cache ou pasta instalada como
+  destino. A saída ainda exige gates, incremento de versão, commit e publicação;
+- nunca faça commit ou push como efeito implícito do pipeline de melhoria;
 - outro texto: execute `contexto` com o texto como tema e responda como Omni usando somente o que for
   relevante. O hook pode extrair sinais persistentes como candidatas, mas conversa comum não é gravada.
 

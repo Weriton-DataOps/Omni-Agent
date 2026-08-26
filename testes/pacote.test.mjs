@@ -11,7 +11,7 @@ test('marketplace usa o plugin do próprio repositório e versão semântica', a
   const packageManifest = JSON.parse(await readFile(file('package.json'), 'utf8'))
   assert.equal(marketplace.plugins[0].source, './')
   assert.equal(manifest.name, 'omni')
-  assert.equal(manifest.version, '0.10.0')
+  assert.equal(manifest.version, '0.11.0')
   assert.equal(packageManifest.version, manifest.version)
 })
 
@@ -25,6 +25,9 @@ test('runtime, schema e manifesto concordam sobre as versões', async () => {
   )
   const shortcutPolicy = JSON.parse(
     await readFile(file('contratos/aprendizado/atalhos.json'), 'utf8')
+  )
+  const improvementPolicy = JSON.parse(
+    await readFile(file('contratos/aprendizado/autoaperfeicoamento.json'), 'utf8')
   )
   const promotionResultSchema = JSON.parse(
     await readFile(file('contratos/eval/resultado-personalidade.schema.json'), 'utf8')
@@ -43,6 +46,13 @@ test('runtime, schema e manifesto concordam sobre as versões', async () => {
   assert.equal(shortcutPolicy.validationRunsRequired, 1)
   assert.equal(shortcutPolicy.automaticPromotion, false)
   assert.equal(shortcutPolicy.storeRawOutcome, false)
+  assert.equal(improvementPolicy.pipeline, 'self-improvement-v1')
+  assert.deepEqual(improvementPolicy.destinations, ['discard', 'memory', 'capability'])
+  assert.equal(improvementPolicy.requiresOwnerApproval, true)
+  assert.equal(improvementPolicy.requiresPortableConfirmation, true)
+  assert.equal(improvementPolicy.automaticPromotion, false)
+  assert.equal(improvementPolicy.automaticGitCommit, false)
+  assert.equal(improvementPolicy.automaticGitPush, false)
   assert.equal(promotionResultSchema.properties.schemaVersion.const, 1)
   assert.equal(promotionResultSchema.additionalProperties, false)
   assert.equal(contextSchema.properties.schemaVersion.const, 2)
@@ -66,6 +76,7 @@ test('plugin contém somente o núcleo declarado', async () => {
   await stat(file('runtime/eval-personalidade.mjs'))
   await stat(file('runtime/personalidade.mjs'))
   await stat(file('runtime/atalhos.mjs'))
+  await stat(file('runtime/autoaperfeicoamento.mjs'))
   await stat(file('runtime/versao.mjs'))
   await stat(file('runtime/atualizacao.mjs'))
   await stat(file('contratos/memoria/garbage-collection.json'))
@@ -73,6 +84,9 @@ test('plugin contém somente o núcleo declarado', async () => {
   await stat(file('contratos/aprendizado/atalhos.json'))
   await stat(file('contratos/aprendizado/atalhos.schema.json'))
   await stat(file('contratos/aprendizado/atalhos.md'))
+  await stat(file('contratos/aprendizado/autoaperfeicoamento.json'))
+  await stat(file('contratos/aprendizado/autoaperfeicoamento.schema.json'))
+  await stat(file('contratos/aprendizado/autoaperfeicoamento.md'))
   await stat(file('contratos/eval/resultado-personalidade.schema.json'))
   await stat(file('contratos/eval/resultados/README.md'))
   await stat(file('hooks/hooks.json'))
@@ -140,6 +154,7 @@ test('contexto ativo não carrega nomes ou caminhos estranhos ao Omni', async ()
     'runtime/hook-contexto.mjs',
     'runtime/pipeline-memoria.mjs',
     'runtime/recuperacao.mjs',
+    'runtime/autoaperfeicoamento.mjs',
     'runtime/versao.mjs',
     'runtime/memoria.mjs',
     'contratos/capacidades/catalogo.json',
@@ -168,6 +183,9 @@ test('skill começa em pt-BR e não despeja diagnóstico quando chamada vazia', 
   assert.match(skill, /`atualizar`: execute `atualizar`/)
   assert.match(skill, /`manutencao simular`/)
   assert.match(skill, /consolidação aproximada nunca é automática/)
+  assert.match(skill, /Não infira portabilidade pelo conteúdo/)
+  assert.match(skill, /Nunca use `\$\{CLAUDE_PLUGIN_ROOT\}`/)
+  assert.match(skill, /nunca faça commit ou push como efeito implícito/)
   assert.match(skill, /interface nativa do VS Code/)
   assert.match(skill, /não apresente\s+diagnóstico técnico sem que seja pedido/is)
 })

@@ -104,10 +104,23 @@ test('operador observa, lista e valida atalho sem promove-lo', async () => {
     ], env)
     assert.equal(validated.learning.result, 'validated')
     assert.equal(validated.learning.promotion, 'not-performed')
+    assert.equal(validated.selfImprovement.status, 'evaluated')
+    assert.equal(validated.selfImprovement.evaluationPassed, true)
+
+    const improvements = executar(['melhorias'], env)
+    assert.equal(improvements.proposals.length, 1)
+    const approval = executar(
+      ['melhoria-aprovar', improvements.proposals[0].id, '--portavel'],
+      env
+    )
+    assert.equal(approval.improvement.status, 'approved')
+    assert.equal(approval.improvement.portable, true)
 
     const state = executar(['estado'], env)
     assert.equal(state.learning.validated, 1)
     assert.equal(state.learning.automaticPromotion, false)
+    assert.equal(state.selfImprovement.approved, 1)
+    assert.equal(state.selfImprovement.automaticGitPush, false)
   } finally {
     await rm(raiz, { recursive: true, force: true })
   }

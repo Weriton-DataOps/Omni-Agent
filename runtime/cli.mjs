@@ -18,6 +18,13 @@ import { verificarVersao } from './versao.mjs'
 import { atualizarPlugin } from './atualizacao.mjs'
 import { lerPersonalidadeAtiva } from './personalidade.mjs'
 import { lerAtalhos, registrarObservacaoAtalho, validarAtalho } from './atalhos.mjs'
+import {
+  avaliarMelhoria,
+  decidirMelhoria,
+  lerAutoaperfeicoamento,
+  promoverMelhoria,
+  proporMelhoriaDeAtalho
+} from './autoaperfeicoamento.mjs'
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
 const [action = 'estado', ...parts] = process.argv.slice(2)
@@ -43,8 +50,8 @@ function lerOpcoes(argumentos) {
       continue
     }
     const key = part.slice(2)
-    if (key === 'falhou') {
-      options.falhou = true
+    if (key === 'falhou' || key === 'portavel') {
+      options[key] = true
       continue
     }
     const value = argumentos[index + 1]
@@ -76,13 +83,28 @@ function resumirAtalho(item) {
   }
 }
 
+function resumirMelhoria(item) {
+  return {
+    id: item.id,
+    category: item.category,
+    destination: item.destination,
+    status: item.status,
+    capability: item.draft.capability.name,
+    evaluationPassed: item.evaluation?.passed ?? null,
+    ownerDecision: item.approval?.decision ?? null,
+    portable: item.approval?.portable ?? false,
+    promotion: item.promotion?.status ?? null
+  }
+}
+
 async function main() {
   if (action === 'estado') {
-    const [memory, persona, version, shortcutStore] = await Promise.all([
+    const [memory, persona, version, shortcutStore, improvementStore] = await Promise.all([
       lerMemoria(home),
       lerPersonalidadeAtiva({ pluginRoot: root }),
       verificarVersao({ casa: home, pluginRoot: root }),
-      lerAtalhos(home)
+      lerAtalhos(home),
+      lerAutoaperfeicoamento(home)
     ])
     return {
       ok: true,
@@ -104,6 +126,15 @@ async function main() {
         candidates: shortcutStore.shortcuts.filter((item) => item.status === 'candidate').length,
         validated: shortcutStore.shortcuts.filter((item) => item.status === 'validated').length,
         automaticPromotion: false
+      },
+      selfImprovement: {
+        pipelineVersion: improvementStore.schemaVersion,
+        drafts: improvementStore.proposals.filter((item) => item.status === 'draft').length,
+        evaluated: improvementStore.proposals.filter((item) => item.status === 'evaluated').length,
+        approved: improvementStore.proposals.filter((item) => item.status === 'approved').length,
+        materialized: improvementStore.proposals.filter((item) => item.status === 'materialized-pending-version').length,
+        automaticPromotion: false,
+        automaticGitPush: false
       },
       version,
       context: { schemaVersion: 2, retrieval: 'hybrid-local-v1', projections: ['fast', 'deep'] }
@@ -150,13 +181,52 @@ async function main() {
       success: options.falhou !== true,
       durationMs: options.duracao === undefined ? undefined : Number(options.duracao)
     })
+    let improvement = null
+    if (validation.result === 'validated') {
+      const proposed = await proporMelhoriaDeAtalho(home, validation.shortcut.id)
+      improvement = proposed.proposal ? await avaliarMelhoria(home, proposed.proposal.id) : proposed
+    }
     return {
       ok: true,
       learning: {
         ...validation,
         shortcut: validation.shortcut ? resumirAtalho(validation.shortcut) : null
-      }
+      },
+      selfImprovement: improvement?.proposal ? resumirMelhoria(improvement.proposal) : improvement
     }
+  }
+  if (action === 'melhorias') {
+    const store = await lerAutoaperfeicoamento(home)
+    return { ok: true, proposals: store.proposals.map(resumirMelhoria), automaticPromotion: false }
+  }
+  if (action === 'melhoria-propor') {
+    if (!parts[0]) throw new Error('Use: melhoria-propor <id-do-atalho-validado>.')
+    const proposal = await proporMelhoriaDeAtalho(home, parts[0])
+    return { ok: true, improvement: proposal.proposal ? resumirMelhoria(proposal.proposal) : proposal }
+  }
+  if (action === 'melhoria-avaliar') {
+    if (!parts[0]) throw new Error('Use: melhoria-avaliar <id>.')
+    const evaluation = await avaliarMelhoria(home, parts[0])
+    return { ok: true, improvement: evaluation.proposal ? resumirMelhoria(evaluation.proposal) : evaluation }
+  }
+  if (action === 'melhoria-aprovar' || action === 'melhoria-rejeitar') {
+    const { options, positionals } = lerOpcoes(parts)
+    const id = positionals[0]
+    if (!id) throw new Error(`Use: ${action} <id>${action === 'melhoria-aprovar' ? ' --portavel' : ''}.`)
+    const decision = await decidirMelhoria(
+      home,
+      id,
+      action === 'melhoria-aprovar' ? 'approve' : 'reject',
+      { portable: options.portavel === true }
+    )
+    return { ok: true, improvement: decision.proposal ? resumirMelhoria(decision.proposal) : decision }
+  }
+  if (action === 'melhoria-promover') {
+    const { options, positionals } = lerOpcoes(parts)
+    const id = positionals[0]
+    if (!id || !options.repo) throw new Error('Use: melhoria-promover <id> --repo <caminho absoluto>.')
+    const promotion = await promoverMelhoria(home, id, options.repo)
+    return { ok: true, improvement: promotion.proposal ? resumirMelhoria(promotion.proposal) : promotion }
   }
   if (action === 'contexto') return { ok: true, context: await montarContexto(home, { intent: text }) }
   if (action === 'experiencia') {
