@@ -1,7 +1,15 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { fileURLToPath } from 'node:url'
 
-import { atualizarPlugin, localizarClaudeCli } from '../runtime/atualizacao.mjs'
+import {
+  atualizarPlugin,
+  lerMudancasAtualizacao,
+  localizarClaudeCli,
+  resumirAtualizacaoPublica
+} from '../runtime/atualizacao.mjs'
+
+const pluginRoot = fileURLToPath(new URL('../', import.meta.url))
 
 const canonicalMarketplace = [
   {
@@ -53,7 +61,8 @@ test('atualiza, valida e orienta a aplicação conforme a interface', async () =
     casa: 'C:\\omni-test',
     run: fake.run,
     resolveCli: async () => 'claude-test',
-    checkVersion: async () => ({ latestVersion: '0.14.0', status: 'outdated' })
+    checkVersion: async () => ({ latestVersion: '0.14.0', status: 'outdated' }),
+    readChanges: async () => [{ version: '0.14.0', change: 'Mudança testada.' }]
   })
 
   assert.equal(result.status, 'updated')
@@ -65,21 +74,53 @@ test('atualiza, valida e orienta a aplicação conforme a interface', async () =
   assert.equal(result.applyInstructions.terminal.command, '/reload-plugins')
   assert.equal(result.applyInstructions.preservesSession, true)
   assert.deepEqual(result.verifiedBy, ['claude-plugin-list', 'github-manifest'])
+  assert.deepEqual(result.changes, [{ version: '0.14.0', change: 'Mudança testada.' }])
   assert.ok(fake.calls.some(({ args }) => args.includes('update') && args.includes('omni@omni-hub')))
 })
 
 test('versão atual é validada sem pedir nova sessão', async () => {
-  const fake = runner({ before: '0.13.0', after: '0.13.0' })
+  const fake = runner({ before: '0.13.1', after: '0.13.1' })
   const result = await atualizarPlugin({
     casa: 'C:\\omni-test',
     run: fake.run,
     resolveCli: async () => 'claude-test',
-    checkVersion: async () => ({ latestVersion: '0.13.0', status: 'current' })
+    checkVersion: async () => ({ latestVersion: '0.13.1', status: 'current' })
   })
 
   assert.equal(result.status, 'current')
   assert.equal(result.reloadRequired, false)
   assert.equal(result.applyInstructions, null)
+  assert.deepEqual(result.changes, [])
+})
+
+test('registro retorna somente mudanças entre a versão anterior e a instalada', async () => {
+  const changes = await lerMudancasAtualizacao(pluginRoot, '0.13.0', '0.13.1')
+  assert.deepEqual(changes, [
+    {
+      version: '0.13.1',
+      change: 'O comando atualizar agora mostra somente a versão e o que foi atualizado.'
+    }
+  ])
+})
+
+test('resumo público contém somente transição, mudanças e recarga necessária', () => {
+  const summary = resumirAtualizacaoPublica({
+    status: 'updated',
+    previousInstalledVersion: '0.13.0',
+    installedVersion: '0.13.1',
+    changes: [{ version: '0.13.1', change: 'Saída de atualização simplificada.' }],
+    reloadRequired: true,
+    repository: 'não deve aparecer',
+    verifiedBy: ['interno']
+  })
+  assert.deepEqual(Object.keys(summary), ['status', 'transition', 'changes', 'reload'])
+  assert.equal(JSON.stringify(summary).includes('não deve aparecer'), false)
+  assert.deepEqual(summary.changes, ['Saída de atualização simplificada.'])
+  assert.equal(summary.reload.preservesSession, true)
+  assert.deepEqual(
+    resumirAtualizacaoPublica({ status: 'current' }),
+    { status: 'current', message: 'Nenhuma atualização disponível.' }
+  )
 })
 
 test('recusa marketplace com a identidade certa apontando para outro repositório', async () => {

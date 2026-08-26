@@ -25,6 +25,9 @@ falha de rede, o último resultado válido pode ser usado como cache antigo, ide
 - documentação sem impacto de execução não exige aumento;
 - a verificação automática apenas avisa, nunca atualiza nem reinicia o Claude sozinha;
 - `/omni:omni atualizar` é a única atualização iniciada pelo Omni e exige pedido explícito;
+- a saída visível desse comando contém somente a transição de versão, os itens versionados em
+  `releases.json` e, quando indispensável, a instrução de recarga;
+- estado, personalidade, diagnóstico, caminhos, repositório e detalhes internos não aparecem nessa saída;
 - antes de atualizar, o runtime confirma que `omni-hub` aponta para
   `https://github.com/Weriton-DataOps/Omni-Agent`;
 - o fluxo atualiza o marketplace, atualiza `omni@omni-hub` e valida a versão instalada pela lista

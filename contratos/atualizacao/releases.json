@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "releases": [
+    {
+      "version": "0.13.0",
+      "changes": [
+        "Adicionou a suíte histórica de evals do núcleo do Omni.",
+        "Adicionou orçamento de contexto e seleção de capacidades por relevância.",
+        "Adicionou checkpoints estruturados e backlog sem conversa bruta."
+      ]
+    },
+    {
+      "version": "0.13.1",
+      "changes": [
+        "O comando atualizar agora mostra somente a versão e o que foi atualizado."
+      ]
+    }
+  ]
+}

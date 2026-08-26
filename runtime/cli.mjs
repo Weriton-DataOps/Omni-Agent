@@ -16,7 +16,7 @@ import {
 } from './memoria.mjs'
 import { processarExperiencia } from './pipeline-memoria.mjs'
 import { verificarVersao } from './versao.mjs'
-import { atualizarPlugin } from './atualizacao.mjs'
+import { atualizarPlugin, resumirAtualizacaoPublica } from './atualizacao.mjs'
 import { lerPersonalidadeAtiva } from './personalidade.mjs'
 import { lerAtalhos, registrarObservacaoAtalho, validarAtalho } from './atalhos.mjs'
 import {
@@ -217,7 +217,8 @@ async function main() {
     }
   }
   if (action === 'atualizar') {
-    return { ok: true, update: await atualizarPlugin({ casa: home, pluginRoot: root }) }
+    const update = await atualizarPlugin({ casa: home, pluginRoot: root })
+    return { ok: true, update: resumirAtualizacaoPublica(update) }
   }
   if (action === 'eval-suite') {
     const suite = await lerSuiteOmni()

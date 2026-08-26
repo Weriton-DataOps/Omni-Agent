@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process'
 import { readFile, readdir } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, isAbsolute, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { compararVersoes, verificarVersao } from './versao.mjs'
@@ -96,12 +96,59 @@ async function versaoCarregada(pluginRoot) {
   return manifest.version
 }
 
+export async function lerMudancasAtualizacao(pluginRoot, previousVersion, installedVersion) {
+  if (!isAbsolute(pluginRoot ?? '')) throw new Error('A raiz do plugin atualizado precisa ser absoluta.')
+  const manifest = JSON.parse(
+    await readFile(join(pluginRoot, 'contratos', 'atualizacao', 'releases.json'), 'utf8')
+  )
+  if (
+    manifest?.schemaVersion !== 1 ||
+    !Array.isArray(manifest.releases) ||
+    manifest.releases.some((release) =>
+      typeof release?.version !== 'string' ||
+      !Array.isArray(release.changes) ||
+      release.changes.length === 0 ||
+      release.changes.some((change) => typeof change !== 'string' || change.trim().length < 3)
+    )
+  ) {
+    throw new Error('Registro de mudanças do Omni é inválido.')
+  }
+  const versions = manifest.releases.map((release) => release.version)
+  if (new Set(versions).size !== versions.length) throw new Error('Registro de mudanças possui versão duplicada.')
+  return manifest.releases
+    .filter((release) =>
+      compararVersoes(previousVersion, release.version) < 0 &&
+      compararVersoes(release.version, installedVersion) <= 0
+    )
+    .flatMap((release) => release.changes.map((change) => ({ version: release.version, change: change.trim() })))
+}
+
+export function resumirAtualizacaoPublica(update) {
+  if (update?.status === 'current') {
+    return { status: 'current', message: 'Nenhuma atualização disponível.' }
+  }
+  const summary = {
+    status: update.status,
+    transition: `${update.previousInstalledVersion} → ${update.installedVersion}`,
+    changes: (update.changes ?? []).map((item) => item.change)
+  }
+  if (update.reloadRequired) {
+    summary.reload = {
+      vscode: '/plugin → Restart',
+      terminal: '/reload-plugins',
+      preservesSession: true
+    }
+  }
+  return summary
+}
+
 export async function atualizarPlugin({
   casa,
   pluginRoot = raiz,
   run = executarProcesso,
   resolveCli = localizarClaudeCli,
-  checkVersion = verificarVersao
+  checkVersion = verificarVersao,
+  readChanges = lerMudancasAtualizacao
 } = {}) {
   const executable = await resolveCli({ run })
   const loadedVersion = await versaoCarregada(pluginRoot)
@@ -152,6 +199,11 @@ export async function atualizarPlugin({
 
   const changed = compararVersoes(before.version, after.version) !== 0
   const reloadRequired = compararVersoes(loadedVersion, after.version) !== 0
+  const updatedRoot = after.installPath ?? pluginRoot
+  const changes = changed ? await readChanges(updatedRoot, before.version, after.version) : []
+  if (changed && changes.length === 0) {
+    throw new Error(`A versão ${after.version} foi instalada sem registrar o que mudou.`)
+  }
   return {
     status: changed ? 'updated' : reloadRequired ? 'awaiting-reload' : 'current',
     plugin: PLUGIN_ID,
@@ -160,6 +212,7 @@ export async function atualizarPlugin({
     previousInstalledVersion: before.version,
     installedVersion: after.version,
     latestVersion: remote.latestVersion,
+    changes,
     verifiedBy: remote.latestVersion ? ['claude-plugin-list', 'github-manifest'] : ['claude-plugin-list'],
     reloadRequired,
     applyInstructions: reloadRequired
