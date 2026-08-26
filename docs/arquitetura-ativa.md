@@ -15,6 +15,7 @@ Existe uma única fonte para cada responsabilidade:
 | manutenção e ciclo de vida | `runtime/memoria.mjs` + `contratos/memoria/garbage-collection.json` |
 | aprendizado local de atalhos | `runtime/atalhos.mjs` + `contratos/aprendizado/atalhos.json` |
 | pipeline de autoaperfeiçoamento | `runtime/autoaperfeicoamento.mjs` + contrato versionado |
+| aprendizado com falhas | `runtime/falhas.mjs` + `contratos/aprendizado/falhas.json` |
 | injeção por turno | `hooks/hooks.json` + `runtime/hook-contexto.mjs` |
 | detecção de atualização | `runtime/versao.mjs` |
 | atualização explícita do plugin | `runtime/atualizacao.mjs` |
@@ -101,6 +102,27 @@ O store `%APPDATA%\omni\learning\shortcuts.json` guarda a sequência, os contado
 do resultado. O conteúdo bruto do resultado não é persistido. Um atalho validado não entra nas
 projeções de contexto e não altera o Git: essa separação impede que repetição aparente se torne uma
 capacidade falsa.
+
+## Aprendizado com falhas
+
+```text
+falha real + execução identificada
+              ↓
+ assinatura estável em SHA-256
+              ↓ 3 evidências distintas
+        padrão candidato
+              ↓
+    causa raiz + hipótese
+              ↓ 2 testes consistentes
+             eval
+              ↓
+ proposta no autoaperfeiçoamento
+```
+
+Uma falha isolada nunca altera o comportamento do Omni. Logs, stack traces, comandos e resultados
+brutos não são guardados. Evidência repetida é deduplicada, teste falho bloqueia o eval e uma nova
+ocorrência invalida a avaliação anterior. A proposta resultante continua sujeita à decisão de
+portabilidade e aos gates da seção 25.
 
 ## Promoção do aprendizado
 

@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Weriton-DataOps/Omni-Agent/contratos/aprendizado/falhas.schema.json",
+  "title": "Omni Failure Learning Store V1",
+  "type": "object",
+  "required": ["schemaVersion", "store", "patterns"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "store": {
+      "type": "object",
+      "required": ["id", "createdAt", "updatedAt"],
+      "properties": {
+        "id": { "const": "omni-local-failure-learning" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
+    },
+    "patterns": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id", "agent", "action", "failureClass", "signatureFingerprint", "status",
+          "occurrences", "observations", "analysis", "fixTests", "evaluation", "createdAt", "updatedAt"
+        ],
+        "properties": {
+          "id": { "type": "string", "pattern": "^failure-pattern-" },
+          "agent": { "type": "string", "minLength": 1 },
+          "action": { "type": "string", "minLength": 3 },
+          "failureClass": { "type": "string" },
+          "signatureFingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+          "status": { "enum": ["observing", "candidate", "analyzed", "testing", "ready-for-eval", "evaluated"] },
+          "occurrences": { "type": "integer", "minimum": 1 },
+          "observations": { "type": "array", "items": { "type": "object" } },
+          "analysis": { "type": ["object", "null"] },
+          "fixTests": { "type": "array", "items": { "type": "object" } },
+          "evaluation": { "type": ["object", "null"] },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

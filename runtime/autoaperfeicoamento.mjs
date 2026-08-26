@@ -4,6 +4,7 @@ import { access, mkdir, open, readFile, realpath, rename, rm, stat, unlink, writ
 import { isAbsolute, join, sep } from 'node:path'
 
 import { lerAtalhos } from './atalhos.mjs'
+import { lerFalhas } from './falhas.mjs'
 import { pareceConterSegredo } from './memoria.mjs'
 
 export const SELF_IMPROVEMENT_SCHEMA_VERSION = 1
@@ -196,6 +197,39 @@ function criarRascunho(shortcut) {
   }
 }
 
+function criarRascunhoFalha(pattern) {
+  const name = slug(`recuperar ${pattern.action}`)
+  const description = `Aplicar a recuperação validada para falha de ${pattern.action}.`
+  const instructions = [
+    `Use esta skill somente quando a ação for: ${pattern.action}.`,
+    `Classe de falha reconhecida: ${pattern.failureClass}.`,
+    `Causa raiz validada: ${pattern.analysis.rootCause}.`,
+    `Correção validada: ${pattern.analysis.hypothesis}.`,
+    'Execute a correção e repita a verificação que comprovou o resultado.',
+    'Se a falha reaparecer, pare: não trate este procedimento como regra válida.',
+    'Não exponha evidência local, memória ou implementação interna do Omni.'
+  ]
+  const allText = [name, description, ...instructions].join('\n')
+  if (pareceConterSegredo(allText)) throw new Error('O rascunho parece conter segredo e não pode ser promovido.')
+  return {
+    capability: {
+      name,
+      description,
+      when_to_use: [`falha ${pattern.failureClass} durante ${pattern.action}`],
+      when_not_to_use: ['falha diferente do padrão validado', 'sem possibilidade de repetir a verificação'],
+      inputs: ['contexto da falha', 'estado da ação'],
+      outputs: ['recuperação verificada'],
+      risk: 'medium',
+      permissions: [],
+      latency: 'procedure-dependent',
+      cost: 'tool-dependent',
+      required_tools: [],
+      recommended_agent: 'omni'
+    },
+    skill: { name, description, instructions }
+  }
+}
+
 export async function proporMelhoriaDeAtalho(casa, shortcutId, { now } = {}) {
   const shortcuts = await lerAtalhos(casa)
   const shortcut = shortcuts.shortcuts.find((item) => item.id === shortcutId)
@@ -244,16 +278,76 @@ export async function proporMelhoriaDeAtalho(casa, shortcutId, { now } = {}) {
   }
 }
 
-function avaliar(shortcut, proposal, policy, evaluatedAt) {
-  const gates = [
-    { id: 'source-still-validated', passed: shortcut?.status === 'validated' && shortcut?.validation?.status === 'passed' },
-    { id: 'independent-validation', passed: Boolean(shortcut?.validation?.observationId) },
-    { id: 'minimum-successful-runs', passed: shortcut?.successCount >= policy.minimumSuccessfulRuns },
-    { id: 'shortcut-removes-steps', passed: shortcut?.shortcutSteps?.length < shortcut?.baselineSteps?.length },
-    { id: 'source-snapshot-current', passed: shortcut?.updatedAt === proposal.source.updatedAt },
+export async function proporMelhoriaDeFalha(casa, patternId, { now } = {}) {
+  const failures = await lerFalhas(casa)
+  const pattern = failures.patterns.find((item) => item.id === patternId)
+  if (!pattern) return { result: 'source-not-found', proposal: null }
+  if (pattern.status !== 'evaluated' || pattern.evaluation?.passed !== true) {
+    return { result: 'source-not-validated', proposal: null }
+  }
+  const policy = await lerPolitica()
+  const recordedAt = agora(now)
+  const release = await adquirirTrava(casa)
+  try {
+    const loaded = await carregar(casa, policy)
+    const existing = loaded.store.proposals.find(
+      (item) => item.source.kind === 'failure-pattern' && item.source.id === pattern.id && item.source.updatedAt === pattern.updatedAt
+    )
+    if (existing) return { result: 'existing', proposal: existing }
+    const successfulFixTests = pattern.fixTests.filter((item) => item.success && item.consistent).length
+    const proposal = {
+      id: `improvement-${randomUUID()}`,
+      category: 'failure-pattern',
+      destination: classificarAprendizado({ useful: true, reusable: true }),
+      status: 'draft',
+      source: {
+        kind: 'failure-pattern',
+        id: pattern.id,
+        updatedAt: pattern.updatedAt,
+        agent: pattern.agent,
+        action: pattern.action,
+        failureClass: pattern.failureClass,
+        occurrences: pattern.occurrences,
+        rootCause: pattern.analysis.rootCause,
+        hypothesis: pattern.analysis.hypothesis,
+        successfulFixTests,
+        evaluationStatus: pattern.evaluation.passed ? 'passed' : 'failed'
+      },
+      draft: criarRascunhoFalha(pattern),
+      evaluation: null,
+      approval: null,
+      promotion: null,
+      createdAt: recordedAt,
+      updatedAt: recordedAt
+    }
+    loaded.store.proposals.push(proposal)
+    await gravar(casa, loaded.store, policy)
+    return { result: 'draft', proposal }
+  } finally {
+    await release()
+  }
+}
+
+function avaliar(source, proposal, policy, evaluatedAt) {
+  const gates = proposal.source.kind === 'shortcut'
+    ? [
+        { id: 'source-still-validated', passed: source?.status === 'validated' && source?.validation?.status === 'passed' },
+        { id: 'independent-validation', passed: Boolean(source?.validation?.observationId) },
+        { id: 'minimum-successful-runs', passed: source?.successCount >= policy.minimumSuccessfulRuns },
+        { id: 'shortcut-removes-steps', passed: source?.shortcutSteps?.length < source?.baselineSteps?.length },
+        { id: 'source-snapshot-current', passed: source?.updatedAt === proposal.source.updatedAt }
+      ]
+    : [
+        { id: 'failure-pattern-evaluated', passed: source?.status === 'evaluated' && source?.evaluation?.passed === true },
+        { id: 'repeated-failure-evidence', passed: source?.occurrences >= 3 },
+        { id: 'root-cause-and-fix-recorded', passed: Boolean(source?.analysis?.rootCause && source?.analysis?.hypothesis) },
+        { id: 'repeated-fix-tests', passed: source?.fixTests?.filter((item) => item.success && item.consistent).length >= 2 },
+        { id: 'source-snapshot-current', passed: source?.updatedAt === proposal.source.updatedAt }
+      ]
+  gates.push(
     { id: 'capability-draft-complete', passed: Boolean(proposal.draft?.capability?.name && proposal.draft?.skill?.instructions?.length >= 4) },
     { id: 'no-automatic-promotion', passed: policy.automaticPromotion === false }
-  ]
+  )
   return {
     protocol: 'self-improvement-eval-v1',
     passed: gates.every((gate) => gate.passed),
@@ -264,7 +358,7 @@ function avaliar(shortcut, proposal, policy, evaluatedAt) {
 
 export async function avaliarMelhoria(casa, id, { now } = {}) {
   const policy = await lerPolitica()
-  const shortcuts = await lerAtalhos(casa)
+  const [shortcuts, failures] = await Promise.all([lerAtalhos(casa), lerFalhas(casa)])
   const evaluatedAt = agora(now)
   const release = await adquirirTrava(casa)
   try {
@@ -274,8 +368,10 @@ export async function avaliarMelhoria(casa, id, { now } = {}) {
     if (proposal.status === 'rejected' || proposal.status === 'materialized-pending-version') {
       return { result: 'closed', proposal }
     }
-    const shortcut = shortcuts.shortcuts.find((item) => item.id === proposal.source.id)
-    proposal.evaluation = avaliar(shortcut, proposal, policy, evaluatedAt)
+    const source = proposal.source.kind === 'shortcut'
+      ? shortcuts.shortcuts.find((item) => item.id === proposal.source.id)
+      : failures.patterns.find((item) => item.id === proposal.source.id)
+    proposal.evaluation = avaliar(source, proposal, policy, evaluatedAt)
     proposal.status = proposal.evaluation.passed ? 'evaluated' : 'draft'
     proposal.approval = null
     proposal.updatedAt = evaluatedAt
@@ -371,8 +467,8 @@ async function materializarNoRepositorio(repoRoot, proposal) {
     source: {
       kind: proposal.source.kind,
       id: proposal.source.id,
-      successfulRuns: proposal.source.successCount,
-      validationStatus: proposal.source.validationStatus
+      evidenceCount: proposal.source.successCount ?? proposal.source.occurrences,
+      validationStatus: proposal.source.validationStatus ?? proposal.source.evaluationStatus
     },
     evaluation: proposal.evaluation,
     approval: proposal.approval,
@@ -406,7 +502,7 @@ async function materializarNoRepositorio(repoRoot, proposal) {
 
 export async function promoverMelhoria(casa, id, repoRoot, { now } = {}) {
   const policy = await lerPolitica()
-  const shortcuts = await lerAtalhos(casa)
+  const [shortcuts, failures] = await Promise.all([lerAtalhos(casa), lerFalhas(casa)])
   const release = await adquirirTrava(casa)
   try {
     const loaded = await carregar(casa, policy)
@@ -415,8 +511,10 @@ export async function promoverMelhoria(casa, id, repoRoot, { now } = {}) {
     if (proposal.status !== 'approved' || proposal.approval?.portable !== true) {
       return { result: 'not-approved', proposal }
     }
-    const shortcut = shortcuts.shortcuts.find((item) => item.id === proposal.source.id)
-    const reevaluation = avaliar(shortcut, proposal, policy, agora(now))
+    const source = proposal.source.kind === 'shortcut'
+      ? shortcuts.shortcuts.find((item) => item.id === proposal.source.id)
+      : failures.patterns.find((item) => item.id === proposal.source.id)
+    const reevaluation = avaliar(source, proposal, policy, agora(now))
     if (!reevaluation.passed) {
       proposal.status = 'draft'
       proposal.evaluation = reevaluation

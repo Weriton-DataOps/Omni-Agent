@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-  [ValidateSet('estado', 'personalidade', 'atualizar', 'contexto', 'experiencia', 'candidatas', 'arquivo', 'manutencao', 'lembrar', 'licao', 'confirmar', 'descartar', 'atualizar-memoria', 'obsoleta', 'consolidar', 'atalhos', 'atalho-observar', 'atalho-validar', 'melhorias', 'melhoria-propor', 'melhoria-avaliar', 'melhoria-aprovar', 'melhoria-rejeitar', 'melhoria-promover')]
+  [ValidateSet('estado', 'personalidade', 'atualizar', 'contexto', 'experiencia', 'candidatas', 'arquivo', 'manutencao', 'lembrar', 'licao', 'confirmar', 'descartar', 'atualizar-memoria', 'obsoleta', 'consolidar', 'atalhos', 'atalho-observar', 'atalho-validar', 'melhorias', 'melhoria-propor', 'melhoria-avaliar', 'melhoria-aprovar', 'melhoria-rejeitar', 'melhoria-promover', 'falhas', 'falha-registrar', 'falha-analisar', 'falha-testar', 'falha-avaliar')]
   [string]$Acao = 'estado',
   [Parameter(ValueFromRemainingArguments = $true)]
   [string[]]$Argumentos

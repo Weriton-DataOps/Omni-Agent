@@ -125,3 +125,49 @@ test('operador observa, lista e valida atalho sem promove-lo', async () => {
     await rm(raiz, { recursive: true, force: true })
   }
 })
+
+test('operador aprende padrão de falha sem transformar ocorrência isolada em regra', async () => {
+  const raiz = await mkdtemp(join(tmpdir(), 'omni-cli-failure-'))
+  const env = { ...process.env, OMNI_HOME: join(raiz, 'home') }
+  const failureArgs = (execution) => [
+    'falha-registrar',
+    '--agente', 'omni',
+    '--acao', 'consultar disponibilidade do banco',
+    '--classe', 'dependency',
+    '--assinatura', 'ECONNREFUSED ao abrir conexao do Postgres',
+    '--execucao', execution
+  ]
+  try {
+    assert.equal(executar(failureArgs('execucao-1'), env).failure.status, 'observing')
+    assert.equal(executar(failureArgs('execucao-2'), env).failure.status, 'observing')
+    const candidate = executar(failureArgs('execucao-3'), env)
+    assert.equal(candidate.failure.status, 'candidate')
+    assert.equal(candidate.failure.occurrences, 3)
+
+    const analyzed = executar([
+      'falha-analisar', candidate.failure.id,
+      '--causa', 'servico de banco ainda nao estava pronto',
+      '--hipotese', 'aguardar healthcheck antes de abrir conexoes'
+    ], env)
+    assert.equal(analyzed.failure.status, 'analyzed')
+
+    const fixTest = (execution) => [
+      'falha-testar', candidate.failure.id,
+      '--execucao', execution,
+      '--resultado', 'healthcheck passou e a consulta respondeu'
+    ]
+    assert.equal(executar(fixTest('teste-1'), env).failure.status, 'testing')
+    assert.equal(executar(fixTest('teste-2'), env).failure.status, 'ready-for-eval')
+
+    const evaluated = executar(['falha-avaliar', candidate.failure.id], env)
+    assert.equal(evaluated.failure.status, 'evaluated')
+    assert.equal(evaluated.selfImprovement.status, 'evaluated')
+    assert.equal(evaluated.selfImprovement.category, 'failure-pattern')
+
+    const state = executar(['estado'], env)
+    assert.equal(state.failureLearning.evaluated, 1)
+    assert.equal(state.failureLearning.automaticGlobalRule, false)
+  } finally {
+    await rm(raiz, { recursive: true, force: true })
+  }
+})

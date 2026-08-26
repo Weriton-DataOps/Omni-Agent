@@ -23,8 +23,16 @@ import {
   decidirMelhoria,
   lerAutoaperfeicoamento,
   promoverMelhoria,
-  proporMelhoriaDeAtalho
+  proporMelhoriaDeAtalho,
+  proporMelhoriaDeFalha
 } from './autoaperfeicoamento.mjs'
+import {
+  analisarPadraoFalha,
+  avaliarPadraoFalha,
+  lerFalhas,
+  registrarFalha,
+  testarCorrecaoFalha
+} from './falhas.mjs'
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
 const [action = 'estado', ...parts] = process.argv.slice(2)
@@ -97,14 +105,30 @@ function resumirMelhoria(item) {
   }
 }
 
+function resumirFalha(item) {
+  return {
+    id: item.id,
+    agent: item.agent,
+    action: item.action,
+    failureClass: item.failureClass,
+    status: item.status,
+    occurrences: item.occurrences,
+    analyzed: item.analysis !== null,
+    fixTests: item.fixTests.length,
+    successfulFixTests: item.fixTests.filter((test) => test.success && test.consistent).length,
+    evaluationPassed: item.evaluation?.passed ?? null
+  }
+}
+
 async function main() {
   if (action === 'estado') {
-    const [memory, persona, version, shortcutStore, improvementStore] = await Promise.all([
+    const [memory, persona, version, shortcutStore, improvementStore, failureStore] = await Promise.all([
       lerMemoria(home),
       lerPersonalidadeAtiva({ pluginRoot: root }),
       verificarVersao({ casa: home, pluginRoot: root }),
       lerAtalhos(home),
-      lerAutoaperfeicoamento(home)
+      lerAutoaperfeicoamento(home),
+      lerFalhas(home)
     ])
     return {
       ok: true,
@@ -135,6 +159,15 @@ async function main() {
         materialized: improvementStore.proposals.filter((item) => item.status === 'materialized-pending-version').length,
         automaticPromotion: false,
         automaticGitPush: false
+      },
+      failureLearning: {
+        schemaVersion: failureStore.schemaVersion,
+        observing: failureStore.patterns.filter((item) => item.status === 'observing').length,
+        candidates: failureStore.patterns.filter((item) => item.status === 'candidate').length,
+        underTest: failureStore.patterns.filter((item) => ['analyzed', 'testing', 'ready-for-eval'].includes(item.status)).length,
+        evaluated: failureStore.patterns.filter((item) => item.status === 'evaluated').length,
+        automaticGlobalRule: false,
+        automaticPromotion: false
       },
       version,
       context: { schemaVersion: 2, retrieval: 'hybrid-local-v1', projections: ['fast', 'deep'] }
@@ -227,6 +260,54 @@ async function main() {
     if (!id || !options.repo) throw new Error('Use: melhoria-promover <id> --repo <caminho absoluto>.')
     const promotion = await promoverMelhoria(home, id, options.repo)
     return { ok: true, improvement: promotion.proposal ? resumirMelhoria(promotion.proposal) : promotion }
+  }
+  if (action === 'falhas') {
+    const store = await lerFalhas(home)
+    return { ok: true, patterns: store.patterns.map(resumirFalha), automaticGlobalRule: false }
+  }
+  if (action === 'falha-registrar') {
+    const { options } = lerOpcoes(parts)
+    const failure = await registrarFalha(home, {
+      agent: options.agente,
+      action: options.acao,
+      failureClass: options.classe,
+      signature: options.assinatura,
+      evidenceId: options.execucao
+    })
+    return { ok: true, failure: failure.pattern ? resumirFalha(failure.pattern) : failure }
+  }
+  if (action === 'falha-analisar') {
+    const { options, positionals } = lerOpcoes(parts)
+    if (!positionals[0]) throw new Error('Use: falha-analisar <id> --causa <texto> --hipotese <texto>.')
+    const analysis = await analisarPadraoFalha(home, positionals[0], {
+      rootCause: options.causa,
+      hypothesis: options.hipotese
+    })
+    return { ok: true, failure: analysis.pattern ? resumirFalha(analysis.pattern) : analysis }
+  }
+  if (action === 'falha-testar') {
+    const { options, positionals } = lerOpcoes(parts)
+    if (!positionals[0]) throw new Error('Use: falha-testar <id> --execucao <id> --resultado <texto> [--falhou].')
+    const testResult = await testarCorrecaoFalha(home, positionals[0], {
+      evidenceId: options.execucao,
+      outcome: options.resultado,
+      success: options.falhou !== true
+    })
+    return { ok: true, failure: testResult.pattern ? resumirFalha(testResult.pattern) : testResult }
+  }
+  if (action === 'falha-avaliar') {
+    if (!parts[0]) throw new Error('Use: falha-avaliar <id>.')
+    const evaluation = await avaliarPadraoFalha(home, parts[0])
+    let improvement = null
+    if (evaluation.result === 'passed') {
+      const proposed = await proporMelhoriaDeFalha(home, evaluation.pattern.id)
+      improvement = proposed.proposal ? await avaliarMelhoria(home, proposed.proposal.id) : proposed
+    }
+    return {
+      ok: true,
+      failure: evaluation.pattern ? resumirFalha(evaluation.pattern) : evaluation,
+      selfImprovement: improvement?.proposal ? resumirMelhoria(improvement.proposal) : improvement
+    }
   }
   if (action === 'contexto') return { ok: true, context: await montarContexto(home, { intent: text }) }
   if (action === 'experiencia') {

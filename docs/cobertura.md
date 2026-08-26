@@ -38,11 +38,15 @@
 - proposta de capacidade a partir de atalho validado, com eval repetível e revalidação contra regressão;
 - aprovação explícita de portabilidade e materialização auditável de skill e capacidade na árvore-fonte;
 - proibição estrutural de commit, push e promoção automática pelo runtime;
+- captura local de falhas por assinatura criptográfica e evidência distinta, sem logs brutos;
+- formação de padrão somente após três ocorrências, com deduplicação e escrita concorrente;
+- análise separada de causa raiz e hipótese, seguida de dois testes consistentes da correção;
+- eval de padrão de falha, invalidação por recorrência e encaminhamento seguro ao pipeline 25;
 
 ## Contratado, ainda incompleto
 
 - gates de versão, commit e publicação dos artefatos materializados;
-- captura e análise especializada de bugs e padrões de falha da seção 26;
+- melhoria mensurável de agentes da seção 27;
 - estado conversacional e histórico de sessões;
 - catálogo de projetos;
 - geração das respostas de eval por modelo, registro da revisão humana e observatório;

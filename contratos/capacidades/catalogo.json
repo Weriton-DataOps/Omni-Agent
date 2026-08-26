@@ -98,6 +98,20 @@
       "cost": "none",
       "required_tools": ["filesystem", "git-readonly-status"],
       "recommended_agent": "omni"
+    },
+    {
+      "name": "failure-learning",
+      "description": "Detectar recorrência de falhas por evidências distintas, validar correção e encaminhar padrão comprovado.",
+      "when_to_use": ["falha real de ação", "assinatura estável", "teste real da correção"],
+      "when_not_to_use": ["falha isolada como regra", "evidência duplicada", "causa sem suporte", "log bruto ou segredo"],
+      "inputs": ["agent", "actionSummary", "failureClass", "signatureFingerprint", "distinctEvidence", "fixTest"],
+      "outputs": ["failurePattern", "rootCauseAnalysis", "failureEval", "improvementProposal"],
+      "risk": "medium",
+      "permissions": ["write-local-runtime"],
+      "latency": "local",
+      "cost": "none",
+      "required_tools": ["filesystem"],
+      "recommended_agent": "omni"
     }
   ]
 }

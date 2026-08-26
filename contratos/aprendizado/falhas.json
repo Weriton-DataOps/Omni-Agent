@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "policy": "failure-learning-v1",
+  "failureClasses": [
+    "tool-error",
+    "validation-error",
+    "timeout",
+    "permission",
+    "dependency",
+    "logic",
+    "environment",
+    "unknown"
+  ],
+  "minimumPatternOccurrences": 3,
+  "minimumSuccessfulFixTests": 2,
+  "maximumObservationsPerPattern": 50,
+  "maximumFixTestsPerPattern": 20,
+  "requireDistinctEvidence": true,
+  "automaticGlobalRule": false,
+  "automaticPromotion": false,
+  "storeRawError": false,
+  "storeRawTestOutcome": false
+}

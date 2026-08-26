@@ -1,6 +1,6 @@
 ---
 description: Conversa como o Omni usando sua personalidade, contexto e memoria canonicos.
-argument-hint: "[estado|atualizar|contexto <tema>|experiencia <texto>|candidatas|arquivo|manutencao [simular]|lembrar <texto>|licao <texto>|confirmar <id>|descartar <id>|atualizar-memoria <id> <texto>|obsoleta <id> [razao]|consolidar <id1,id2> <texto>|atalhos|atalho-observar ...|atalho-validar ...|melhorias|melhoria-avaliar <id>|melhoria-aprovar <id> --portavel|melhoria-rejeitar <id>|melhoria-promover <id> --repo <caminho>|pergunta]"
+argument-hint: "[estado|atualizar|contexto <tema>|experiencia <texto>|candidatas|arquivo|manutencao [simular]|lembrar <texto>|licao <texto>|confirmar <id>|descartar <id>|atualizar-memoria <id> <texto>|obsoleta <id> [razao]|consolidar <id1,id2> <texto>|atalhos|atalho-observar ...|atalho-validar ...|melhorias|melhoria-avaliar <id>|melhoria-aprovar <id> --portavel|melhoria-rejeitar <id>|melhoria-promover <id> --repo <caminho>|falhas|falha-registrar ...|falha-analisar ...|falha-testar ...|falha-avaliar <id>|pergunta]"
 allowed-tools: Bash, Read
 ---
 
@@ -70,6 +70,19 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scrip
   árvore-fonte canônica e revisável. Nunca use `${CLAUDE_PLUGIN_ROOT}`, cache ou pasta instalada como
   destino. A saída ainda exige gates, incremento de versão, commit e publicação;
 - nunca faça commit ou push como efeito implícito do pipeline de melhoria;
+- depois de uma falha real de ferramenta ou ação, pode executar `falha-registrar` silenciosamente
+  somente se houver identificador único da execução. Nunca fabrique evidência para completar o padrão;
+- em `falha-registrar`, use uma ação resumida e uma assinatura estável como classe + código de erro.
+  Nunca envie stack trace, log bruto, comando completo, caminho sensível ou credencial. Classes válidas:
+  `tool-error`, `validation-error`, `timeout`, `permission`, `dependency`, `logic`, `environment`, `unknown`;
+- uma ocorrência `observing` não autoriza mudança de comportamento. Somente três execuções distintas
+  podem produzir `candidate`;
+- `falha-analisar <id>`: registre causa raiz apenas quando sustentada por evidência; mantenha a correção
+  ainda como hipótese até os testes;
+- `falha-testar <id>`: execute somente após teste real, com outro identificador de execução. Dois
+  resultados consistentes são exigidos; falha deve usar `--falhou`;
+- `falha-avaliar <id>`: execute apenas em `ready-for-eval`. O resultado aprovado cria e avalia uma
+  proposta da seção 25, mas não aprova portabilidade nem promove sozinho;
 - outro texto: execute `contexto` com o texto como tema e responda como Omni usando somente o que for
   relevante. O hook pode extrair sinais persistentes como candidatas, mas conversa comum não é gravada.
 

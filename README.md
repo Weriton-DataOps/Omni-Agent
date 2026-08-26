@@ -86,6 +86,11 @@ uma proposta e um eval local. Para sair do estado pessoal, o proprietário preci
 conteúdo é portátil. A materialização cria skill, entrada de capacidade e auditoria na árvore-fonte,
 mas não incrementa versão, não faz commit e não publica sozinha.
 
+O aprendizado de falhas usa `failure-learning-v1`. Uma ocorrência fica apenas observada; três
+execuções distintas formam um padrão candidato. Depois são exigidos causa raiz sustentada, hipótese e
+dois testes consistentes. O eval aprovado alimenta o pipeline de autoaperfeiçoamento, sem criar regra
+global ou promoção automática. Erro e resultado brutos não são persistidos.
+
 ## Memória
 
 Os dados vivem em `%APPDATA%\omni\memory\memory.json`, fora deste repositório:
@@ -124,6 +129,11 @@ para o Git e sem substituir os registros existentes.
 /omni:omni melhoria-aprovar <id> --portavel
 /omni:omni melhoria-rejeitar <id>
 /omni:omni melhoria-promover <id> --repo <caminho-absoluto-da-fonte>
+/omni:omni falhas
+/omni:omni falha-registrar --agente "..." --acao "..." --classe dependency --assinatura "..." --execucao "..."
+/omni:omni falha-analisar <id> --causa "..." --hipotese "..."
+/omni:omni falha-testar <id> --execucao "..." --resultado "..." [--falhou]
+/omni:omni falha-avaliar <id>
 ```
 
 ## Verificação
