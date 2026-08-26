@@ -4,6 +4,7 @@
   "name": "Inventor Cumplice",
   "status": "active-candidate-pending-evals",
   "contract": "./omni-persona-v2.md",
+  "promotion": null,
   "supersedes": {
     "id": "omni-persona-v1-candidate",
     "contract": "./omni-persona-v1.md"

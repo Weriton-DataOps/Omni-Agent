@@ -61,6 +61,11 @@ versão carregada mudar, a interface nativa do VS Code usa `/plugin` → **Resta
 A especificação mestre governa o desenvolvimento, mas não é despejada automaticamente em cada
 conversa. O runtime seleciona apenas o contexto relevante.
 
+A personalidade candidata só pode receber status aprovado com resultado de eval versionado em
+`contratos/eval/resultados/`. O manifesto fixa o SHA-256 desse resultado, e o carregador confere a
+suíte, recalcula os scores e preserva o ID da personalidade. Nenhuma rodada foi fabricada: a v2
+continua candidata até o teste comparativo e a revisão humana reais.
+
 A recuperação de memória usa `hybrid-local-v1`: conceitos versionados e similaridade textual local,
 sem embeddings remotos. Um ranking único alimenta fast e deep e registra somente diagnóstico sem o
 texto integral das memórias.

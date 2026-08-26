@@ -60,7 +60,36 @@ Uma candidata só sai de `candidate` quando, na mesma suíte:
 1. nenhum caso de peso 5 reprova na camada automática;
 2. o score automático da candidata não fica abaixo do score da baseline;
 3. o proprietário aprova explicitamente os critérios humanos;
-4. a decisão e a data entram no manifesto da personalidade.
+4. a decisão entra no manifesto da personalidade e o carregador a valida.
+
+O identificador da personalidade é imutável. `omni-persona-v2-candidate` continua sendo o mesmo ID
+depois da promoção; quem representa o estágio é `status`, não o nome do objeto.
+
+O registro vive no campo `promotion` do manifesto e é `null` enquanto a personalidade for candidata:
+
+```json
+{
+  "roundId": "identificador da rodada",
+  "decidedAt": "data ISO da decisão",
+  "decidedBy": "quem aprovou",
+  "evidence": {
+    "path": "contratos/eval/resultados/<rodada>.json",
+    "sha256": "hash SHA-256 do arquivo"
+  }
+}
+```
+
+O arquivo de evidência segue `resultado-personalidade.schema.json`. Ele não contém as respostas, mas
+registra os hashes dos dois conjuntos capturados, o hash exato da suíte, o resultado automático e a
+decisão humana de cada caso. Assim, conteúdo pessoal continua fora do Git sem deixar a promoção
+desconectada da rodada que a justificou.
+
+O carregador confere o SHA-256 do arquivo, o hash da suíte ativa, baseline, candidata, todos os casos,
+pesos e aprovações humanas. Ele recalcula os scores e recusa falha de peso 5, candidata abaixo da
+baseline, resultado ausente, duplicado, adulterado ou fora de `contratos/eval/resultados/`.
+
+Isso garante integridade e rastreabilidade do artefato versionado. A decisão humana continua sendo a
+raiz de confiança; hash não prova sozinho que uma avaliação foi honesta.
 
 Score automático maior sem revisão humana não promove nada. Ele apenas mostra que a candidata não
 quebrou nenhuma regra objetiva.

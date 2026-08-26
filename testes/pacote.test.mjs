@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { readFile, stat } from 'node:fs/promises'
+import { readFile, readdir, stat } from 'node:fs/promises'
 import test from 'node:test'
 
 const root = new URL('../', import.meta.url)
@@ -11,7 +11,7 @@ test('marketplace usa o plugin do próprio repositório e versão semântica', a
   const packageManifest = JSON.parse(await readFile(file('package.json'), 'utf8'))
   assert.equal(marketplace.plugins[0].source, './')
   assert.equal(manifest.name, 'omni')
-  assert.equal(manifest.version, '0.9.0')
+  assert.equal(manifest.version, '0.9.1')
   assert.equal(packageManifest.version, manifest.version)
 })
 
@@ -23,6 +23,9 @@ test('runtime, schema e manifesto concordam sobre as versões', async () => {
   const garbageCollection = JSON.parse(
     await readFile(file('contratos/memoria/garbage-collection.json'), 'utf8')
   )
+  const promotionResultSchema = JSON.parse(
+    await readFile(file('contratos/eval/resultado-personalidade.schema.json'), 'utf8')
+  )
   assert.equal(schema.properties.schemaVersion.const, 4)
   assert.equal(migrations.currentSchemaVersion, 4)
   assert.deepEqual(
@@ -32,6 +35,8 @@ test('runtime, schema e manifesto concordam sobre as versões', async () => {
   assert.equal(garbageCollection.policy, 'memory-gc-safe-v1')
   assert.equal(garbageCollection.semanticConsolidation.automaticMerge, false)
   assert.equal(garbageCollection.archive.automaticPermanentDeletion, false)
+  assert.equal(promotionResultSchema.properties.schemaVersion.const, 1)
+  assert.equal(promotionResultSchema.additionalProperties, false)
   assert.equal(contextSchema.properties.schemaVersion.const, 2)
   assert.equal(retrieval.algorithm, 'hybrid-local-v1')
   assert.equal(
@@ -56,6 +61,8 @@ test('plugin contém somente o núcleo declarado', async () => {
   await stat(file('runtime/atualizacao.mjs'))
   await stat(file('contratos/memoria/garbage-collection.json'))
   await stat(file('contratos/memoria/garbage-collection.md'))
+  await stat(file('contratos/eval/resultado-personalidade.schema.json'))
+  await stat(file('contratos/eval/resultados/README.md'))
   await stat(file('hooks/hooks.json'))
   await stat(file('contratos/personalidade/omni-persona-v1.md'))
   await stat(file('contratos/personalidade/omni-persona-v2.md'))
@@ -80,6 +87,8 @@ test('personalidade v2 é a fonte ativa e canais externos continuam planejados',
   )
   assert.equal(persona.id, 'omni-persona-v2-candidate')
   assert.equal(persona.status, 'active-candidate-pending-evals')
+  assert.equal(persona.promotion, null)
+  assert.deepEqual(await readdir(file('contratos/eval/resultados/')), ['README.md'])
   assert.equal(persona.supersedes.id, 'omni-persona-v1-candidate')
   assert.equal(persona.channels.plugin, 'active')
   assert.equal(persona.channels.chat, 'planned')

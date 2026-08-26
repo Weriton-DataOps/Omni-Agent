@@ -17,7 +17,7 @@ Existe uma única fonte para cada responsabilidade:
 | detecção de atualização | `runtime/versao.mjs` |
 | atualização explícita do plugin | `runtime/atualizacao.mjs` |
 | entrada no Claude Code | `skills/omni/SKILL.md` |
-| gate de promoção da personalidade | `contratos/eval/personalidade.json` + `runtime/eval-personalidade.mjs` |
+| gate de promoção da personalidade | suíte + resultado com SHA-256 + `runtime/personalidade.mjs` |
 
 ## Contexto de uma resposta
 

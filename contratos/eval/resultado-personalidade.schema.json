@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Weriton-DataOps/Omni-Agent/contratos/eval/resultado-personalidade.schema.json",
+  "title": "Omni Personality Evaluation Result V1",
+  "type": "object",
+  "required": [
+    "schemaVersion", "roundId", "decidedAt", "decidedBy", "suiteSha256", "baseline",
+    "candidate", "responseSets", "caseResults"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "roundId": { "type": "string", "minLength": 1 },
+    "decidedAt": { "type": "string", "format": "date-time" },
+    "decidedBy": { "type": "string", "minLength": 1 },
+    "suiteSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "baseline": { "type": "string", "minLength": 1 },
+    "candidate": { "type": "string", "minLength": 1 },
+    "responseSets": {
+      "type": "object",
+      "required": ["baselineSha256", "candidateSha256"],
+      "properties": {
+        "baselineSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "candidateSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      },
+      "additionalProperties": false
+    },
+    "caseResults": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "id", "weight", "baselineAutomaticPassed", "candidateAutomaticPassed", "humanApproved"
+        ],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "weight": { "type": "integer", "minimum": 1 },
+          "baselineAutomaticPassed": { "type": "boolean" },
+          "candidateAutomaticPassed": { "type": "boolean" },
+          "humanApproved": { "type": "boolean" }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

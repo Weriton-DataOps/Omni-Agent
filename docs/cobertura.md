@@ -5,6 +5,8 @@
 - personalidade v2 candidata ativa, com v1 preservada como linha de base;
 - suíte de eval de personalidade versionada, com camada automática determinística sobre respostas
   capturadas e revisão humana obrigatória antes de qualquer promoção;
+- gate de promoção com ID estável, evidência versionada, SHA-256, scores recalculados e recusa de
+  resultados incompletos ou incompatíveis com a suíte;
 - memória confirmada e candidata;
 - confirmação e descarte de candidatas;
 - pipeline determinístico de extração, classificação, validação e pontuação;
