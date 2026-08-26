@@ -8,8 +8,8 @@ import { lerPersonalidadeAtiva } from '../runtime/personalidade.mjs'
 
 test('manifesto e núcleo formam uma identidade única', async () => {
   const persona = await lerPersonalidadeAtiva()
-  assert.equal(persona.manifest.id, 'omni-persona-v2-candidate')
-  assert.match(persona.nucleus, /PERSONALIDADE omni-persona-v2-candidate\./)
+  assert.equal(persona.manifest.id, 'omni-persona-v1-candidate')
+  assert.match(persona.nucleus, /PERSONALIDADE omni-persona-v1-candidate\./)
 })
 
 test('contrato não pode escapar do diretório de personalidade', async () => {
@@ -34,4 +34,3 @@ test('contrato não pode escapar do diretório de personalidade', async () => {
     await rm(pluginRoot, { recursive: true, force: true })
   }
 })
-

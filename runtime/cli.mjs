@@ -45,6 +45,16 @@ import {
   registrarCheckpoint,
   registrarDescoberta
 } from './persistencia-contexto.mjs'
+import {
+  atualizarDelegacao,
+  lerCicloOperacional,
+  prepararDelegacao
+} from './ciclo-operacional.mjs'
+import {
+  configurarRepositorioCanonico,
+  lerRepositorioCanonico,
+  materializarMelhoriaOperacional
+} from './evolucao.mjs'
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
 const [action = 'estado', ...parts] = process.argv.slice(2)
@@ -142,7 +152,7 @@ function resumirFalha(item) {
 
 async function main() {
   if (action === 'estado') {
-    const [memory, persona, version, shortcutStore, improvementStore, failureStore, evalStore, contextStore] = await Promise.all([
+    const [memory, persona, version, shortcutStore, improvementStore, failureStore, evalStore, contextStore, operationalCycle, sourceRepository] = await Promise.all([
       lerMemoria(home),
       lerPersonalidadeAtiva({ pluginRoot: root }),
       verificarVersao({ casa: home, pluginRoot: root }),
@@ -150,7 +160,9 @@ async function main() {
       lerAutoaperfeicoamento(home),
       lerFalhas(home),
       lerHistoricoEval(home),
-      lerPersistenciaContexto(home)
+      lerPersistenciaContexto(home),
+      lerCicloOperacional(home),
+      lerRepositorioCanonico(home)
     ])
     return {
       ok: true,
@@ -201,6 +213,13 @@ async function main() {
         backlog: contextStore.backlog.length,
         rawConversationStored: false
       },
+      operationalCycle: {
+        sessions: operationalCycle.sessions.length,
+        delegations: operationalCycle.delegations.length,
+        events: operationalCycle.events.length,
+        improvementCandidates: operationalCycle.improvementCandidates.length
+      },
+      sourceRepository,
       version,
       context: { schemaVersion: 4, retrieval: 'hybrid-local-v1', projections: ['fast', 'deep'] }
     }
@@ -242,6 +261,64 @@ async function main() {
   if (action === 'checkpoints') {
     const store = await lerPersistenciaContexto(home)
     return { ok: true, checkpoints: store.checkpoints, rawConversationStored: false }
+  }
+  if (action === 'ciclo') {
+    const cycle = await lerCicloOperacional(home)
+    return {
+      ok: true,
+      cycle: {
+        sessions: cycle.sessions,
+        delegations: cycle.delegations,
+        improvements: cycle.improvementCandidates,
+        eventCount: cycle.events.length
+      }
+    }
+  }
+  if (action === 'delegacoes') {
+    const cycle = await lerCicloOperacional(home)
+    return { ok: true, delegations: cycle.delegations }
+  }
+  if (action === 'delegacao-preparar') {
+    const { options } = lerOpcoes(parts)
+    return {
+      ok: true,
+      delegation: await prepararDelegacao(home, {
+        target: options.destino,
+        prompt: options.prompt,
+        sessionId: options.sessao
+      })
+    }
+  }
+  if (action === 'delegacao-estado') {
+    const { options, positionals } = lerOpcoes(parts)
+    const [id, state] = positionals
+    if (!id || !state) throw new Error('Use: delegacao-estado <id> <estado> [--resumo <texto>] [--evidencia <id>].')
+    return {
+      ok: true,
+      delegation: await atualizarDelegacao(home, id, state, {
+        summary: options.resumo,
+        evidence: options.evidencia
+      })
+    }
+  }
+  if (action === 'melhoria-operacional-promover') {
+    const { options, positionals } = lerOpcoes(parts)
+    if (!positionals[0] || !options.repo) {
+      throw new Error('Use: melhoria-operacional-promover <id> --repo <caminho absoluto>.')
+    }
+    return {
+      ok: true,
+      improvement: await materializarMelhoriaOperacional(home, positionals[0], options.repo)
+    }
+  }
+  if (action === 'repo-configurar') {
+    const { options, positionals } = lerOpcoes(parts)
+    const path = options.caminho ?? positionals[0]
+    if (!path) throw new Error('Use: repo-configurar --caminho <caminho absoluto>.')
+    return { ok: true, repository: await configurarRepositorioCanonico(home, path) }
+  }
+  if (action === 'repo-status') {
+    return { ok: true, repository: await lerRepositorioCanonico(home) }
   }
   if (action === 'checkpoint-registrar') {
     const { options } = lerOpcoes(parts)

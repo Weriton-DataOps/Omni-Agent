@@ -7,6 +7,14 @@ import { montarContexto } from './contexto.mjs'
 import { casaDoOmni } from './memoria.mjs'
 import { processarExperiencia } from './pipeline-memoria.mjs'
 import { lerPersonalidadeAtiva } from './personalidade.mjs'
+import {
+  observarFerramenta,
+  observarFimSubagente,
+  observarInicioSubagente,
+  observarParada,
+  observarPrompt
+} from './observador.mjs'
+import { observarEvento } from './ciclo-operacional.mjs'
 
 const raiz = dirname(dirname(fileURLToPath(import.meta.url)))
 
@@ -81,7 +89,19 @@ function contextoAdicional(persona, projecao) {
 export async function tratarHook(input, env = process.env) {
   if (!input || typeof input !== 'object') return saidaVazia()
 
+  const casa = casaDoOmni(env)
+
   if (input.hook_event_name === 'SessionEnd') {
+    if (await estaAtiva(input, env)) {
+      await observarEvento(casa, {
+        eventType: 'session-end',
+        sessionId: input.session_id,
+        evidenceId: `session-end:${input.session_id}:${input.reason ?? 'other'}`,
+        cwd: input.cwd,
+        status: 'closed',
+        summary: `Sessao encerrada: ${input.reason ?? 'other'}`
+      })
+    }
     await encerrar(input, env)
     return saidaVazia()
   }
@@ -91,16 +111,66 @@ export async function tratarHook(input, env = process.env) {
     return saidaVazia()
   }
 
-  if (input.hook_event_name !== 'UserPromptSubmit' || !(await estaAtiva(input, env))) {
+  if (!(await estaAtiva(input, env))) {
     return saidaVazia()
   }
+
+  if (input.hook_event_name === 'PostToolUse' || input.hook_event_name === 'PostToolUseFailure') {
+    await observarFerramenta(casa, input)
+    return saidaVazia()
+  }
+
+  if (input.hook_event_name === 'SubagentStart') {
+    await observarInicioSubagente(casa, input)
+    return {
+      suppressOutput: true,
+      hookSpecificOutput: {
+        hookEventName: 'SubagentStart',
+        additionalContext: [
+          'Execute a tarefa recebida com autonomia e evidencias verificaveis.',
+          'Mantenha o pedido completo visivel nesta sessao e devolva resultado, verificacao e pendencias reais.'
+        ].join(' ')
+      }
+    }
+  }
+
+  if (input.hook_event_name === 'SubagentStop') {
+    await observarFimSubagente(casa, input)
+    return saidaVazia()
+  }
+
+  if (input.hook_event_name === 'Stop' || input.hook_event_name === 'StopFailure') {
+    await observarParada(casa, input)
+    return saidaVazia()
+  }
+
+  if (input.hook_event_name === 'TaskCompleted') {
+    await observarEvento(casa, {
+      eventType: 'task-complete',
+      sessionId: input.session_id,
+      evidenceId: input.task_id ?? `${input.session_id}:${input.task_subject ?? 'task'}`,
+      cwd: input.cwd,
+      status: 'completed',
+      summary: input.task_subject ?? input.task_description ?? 'Tarefa concluida'
+    })
+    return saidaVazia()
+  }
+
+  if (input.hook_event_name !== 'UserPromptSubmit') return saidaVazia()
 
   const intencao = typeof input.prompt === 'string' ? input.prompt.trim() : ''
   if (!intencao) return saidaVazia()
 
-  await processarExperiencia(casaDoOmni(env), intencao)
+  await Promise.all([
+    processarExperiencia(casa, intencao),
+    observarPrompt(casa, input)
+  ])
   const [contexto, persona] = await Promise.all([
-    montarContexto(casaDoOmni(env), { intent: intencao }),
+    montarContexto(casa, {
+      intent: intencao,
+      projectId: typeof input.cwd === 'string' ? input.cwd : undefined,
+      environmentId: typeof input.cwd === 'string' ? input.cwd : undefined
+    }),
     lerPersonalidadeAtiva({ pluginRoot: raiz })
   ])
   return {

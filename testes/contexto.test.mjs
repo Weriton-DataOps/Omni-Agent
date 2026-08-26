@@ -24,7 +24,7 @@ test('fast e deep nascem da mesma fotografia e respeitam orçamento', async () =
     await lembrarExplicitamente(casa, 'prefiro mapas antes de textos longos', 'preference')
     await lembrarExplicitamente(casa, 'o projeto Omni usa contexto montado por turno', 'semantic')
     const context = await montarContexto(casa, { intent: 'como devo explicar o projeto Omni?' })
-    assert.equal(context.persona, 'omni-persona-v2-candidate')
+    assert.equal(context.persona, 'omni-persona-v1-candidate')
     assert.match(context.canonicalSignature, /^[a-f0-9]{16}$/)
     assert.ok(context.projections.fast.characters <= context.projections.fast.budgetCharacters)
     assert.ok(context.projections.deep.characters <= context.projections.deep.budgetCharacters)
@@ -49,7 +49,7 @@ test('papel operacional e limite do habitat governam fast e deep', async () => {
     for (const projection of Object.values(context.projections)) {
       assert.match(projection.text, /assistente cognitivo pessoal/i)
       assert.match(projection.text, /VS Code.*habitats de trabalho/i)
-      assert.match(projection.text, /não transforma o Omni em programador/i)
+      assert.match(projection.text, /encaminhe execução especializada ao executor adequado/i)
     }
   } finally {
     await rm(casa, { recursive: true, force: true })

@@ -1,6 +1,9 @@
-# Pipeline de autoaperfeiçoamento
+# Admissão de capacidades e skills
 
-Este contrato implementa somente a seção 25 da especificação mestre.
+Este contrato é o funil específico para aprendizados cuja natureza real é uma **nova capacidade**.
+Regras operacionais, procedimentos, roteamento, personalidade, hooks e casos de eval seguem o ciclo
+operacional em `contratos/operacao/ciclo.json` e `runtime/evolucao.mjs`; portanto, deixam de passar
+por este gate de skill.
 
 ```text
 experiência

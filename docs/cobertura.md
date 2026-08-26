@@ -1,86 +1,49 @@
-# Cobertura da especificação mestre
+# Cobertura real do Omni
 
-## Funcional e testado
+Atualizado em 26/08/2026. Este documento separa código existente de comportamento ainda sujeito a
+teste humano.
 
-- personalidade v2 candidata ativa, com v1 preservada como linha de base;
-- suíte de eval de personalidade versionada, com camada automática determinística sobre respostas
-  capturadas e revisão humana obrigatória antes de qualquer promoção;
-- gate de promoção com ID estável, evidência versionada, SHA-256, scores recalculados e recusa de
-  resultados incompletos ou incompatíveis com a suíte;
-- memória confirmada e candidata;
-- confirmação e descarte de candidatas;
-- pipeline determinístico de extração, classificação, validação e pontuação;
-- descarte de conversa comum e contexto explicitamente transitório;
-- consolidação de evidências repetidas por ocorrência;
-- recusa de possíveis segredos;
-- escrita atômica e concorrente;
-- inicialização local e migração versionada sem perda;
-- proteção contra downgrade do schema de memória;
-- deduplicação;
-- recuperação semântica local e lexical por intenção;
-- ranking por escopo, recência, frequência, confiança, importância e contexto atual;
-- seleção única com recortes fast/deep e diagnóstico sem conteúdo pessoal;
-- manutenção automática diária com expiração explícita e triagem conservadora de candidatas;
-- arquivo local auditável, sem exclusão permanente automática;
-- atualização, obsolescência e consolidação explícitas com preservação das versões anteriores;
-- consolidação automática apenas de duplicatas exatas e propostas semânticas sujeitas à decisão humana;
-- fotografia canônica com papel operacional e limites de especialização obrigatórios;
-- projeções fast e deep com orçamento e roteamento proporcional usado pelo hook;
-- ativação isolada e montagem de contexto em cada turno do Claude Code;
-- catálogo mínimo de capacidades;
-- skill do Claude Code.
-- detecção de versão desatualizada com ETag e fallback offline;
-- atualização explícita com validação da origem, da instalação e recarga na mesma sessão;
-- aprendizado local de atalhos com três sucessos consecutivos, validação independente e regressão
-  segura diante de falha ou resultado inconsistente;
-- armazenamento de atalhos sem resultado bruto, sem segredo e sem promoção automática;
-- classificação de autoaperfeiçoamento entre descarte, memória e capacidade;
-- proposta de capacidade a partir de atalho validado, com eval repetível e revalidação contra regressão;
-- aprovação explícita de portabilidade e aderência ao papel antes da materialização auditável de skill;
-- proibição estrutural de commit, push e promoção automática pelo runtime;
-- captura local de falhas por assinatura criptográfica e evidência distinta, sem logs brutos;
-- formação de padrão somente após três ocorrências, com deduplicação e escrita concorrente;
-- análise separada de causa raiz e hipótese, seguida de dois testes consistentes da correção;
-- eval de padrão de falha, invalidação por recorrência e encaminhamento seguro ao pipeline 25;
-- suíte comparável do único agente Omni, com histórico local de qualidade, segurança, latência e custo;
-- comparação antes/depois que bloqueia regressão de segurança;
-- seleção de capacidades por intenção, orçamento por categoria e diagnóstico de descarte;
-- checkpoint estruturado, comprimido e sem conversa bruta;
-- backlog explícito para descobertas fora da Definition of Done;
-- recuperação seletiva de checkpoint e backlog no contexto de uma resposta;
-- invariantes verificáveis de identidade, contexto, escopo e fechamento;
+## Implementado e coberto por teste automatizado
 
-## Raio-X desta revisão
+- personalidade-base v1 escolhida pelo manifesto e injetada por turno;
+- memória local, atômica, versionada, com filtro técnico de segredos;
+- várias unidades de aprendizado extraídas da mesma mensagem;
+- declaração estável e explícita do proprietário confirmada automaticamente;
+- recuperação híbrida e ranking de memória confirmada;
+- projeções fast/deep com orçamento;
+- contexto estruturado formal e estado operacional vivo;
+- sensores de mensagem, ferramenta bem-sucedida, falha de ferramenta, subagente, conclusão de tarefa,
+  fim de resposta e fim de sessão;
+- correções do proprietário alimentando falhas e candidatas de melhoria no mesmo turno;
+- delegação com estados `prepared → visible → running → blocked/completed → closed`;
+- conclusão de subagente alimentando evidência e observação de atalho;
+- melhoria operacional classificada por destino: regra, procedimento, roteamento, personalidade, hook,
+  eval ou capacidade;
+- materialização revisável no artefato correspondente, sem converter todo aprendizado em skill;
+- configuração local da árvore-fonte e materialização automática de melhoria repetida;
+- dados pessoais e conversa bruta fora do Git;
+- atualização do plugin, evals determinísticos existentes e gates de schema.
 
-| Requisito | Estado demonstrado |
-|---|---|
-| personalidade escolhida, carregada e injetada | implementado e utilizado |
-| memória confirmada recuperada por relevância | implementado e utilizado |
-| papel de assistente cognitivo e limites de especialidade | implementado e utilizado |
-| fast/deep escolhidos por tarefa | implementado e utilizado |
-| checkpoint e backlog alimentando retomada | implementado e utilizado seletivamente |
-| aprendizado de atalhos e falhas | implementado, com promoção bloqueada por gates |
-| admissão de nova skill pelo papel do Omni | implementado, exige confirmação humana |
-| personalidade perceptível em conversa real | corpus ampliado; rodada humana ainda pendente |
-| catálogo completo de projetos | contratado, ainda incompleto |
-| integrações externas e interface | fora do escopo atual |
+## Implementado, aguardando validação comportamental
 
-## Contratado, ainda incompleto
+- prompt realmente visível em outra sessão na interface usada pelo proprietário;
+- executor iniciado, acompanhado, destravado e encerrado de ponta a ponta;
+- conversa central permanecendo disponível durante execução longa;
+- personalidade v1 perceptível e consistente em muitas conversas reais;
+- analogias, humor e iniciativa na intensidade desejada;
+- aprendizado repetido materializado no repositório canônico e refletido após atualização do plugin;
+- comparação pedido × ação × resultado reduzindo vacilos reais;
+- observação de respostas gerando evals úteis sem falsos positivos.
 
-- gates de versão, commit e publicação dos artefatos materializados;
-- histórico conversacional bruto (deliberadamente não usado como memória); a continuidade
-  estruturada por checkpoints já é funcional;
-- catálogo de projetos;
-- geração das respostas de eval por modelo, registro da revisão humana e observatório;
-- adaptação para outros canais.
+Esses itens formam o Definition of Done reservado para 27/08/2026 em
+[`validacao/definition-of-done-2026-08-27.md`](validacao/definition-of-done-2026-08-27.md).
 
-Nada desta segunda lista deve ser apresentado como funcional antes de possuir código, teste e
-evidência repetível.
+## Adiado pelo proprietário
 
-## Deliberadamente fora ou adiado
+- interface, chat e Realtime;
+- catálogo completo de projetos;
+- integrações com iniciativas externas;
+- rodada humana final de personalidade.
 
-- seção 31: seleção entre agentes; não se aplica ao Omni, que é um único agente;
-- seção 35: interface; adiada pelo proprietário até ampla validação conversacional;
-- seções 36–37: pertencem à iniciativa independente OverCore;
-- seção 38: pertence à iniciativa independente Oracle;
-- seção 39: presença contínua é requisito, mas depende da interface e ainda não é funcional.
+Nenhum item adiado deve ser apresentado como funcional. Nenhum item comportamental deve ser marcado
+como aprovado antes da rodada de amanhã.

@@ -22,6 +22,16 @@
         "Ligou checkpoints e backlog relevantes ao contexto e passou a usar o roteamento fast/deep.",
         "Adicionou o gate de aderência ao papel para novas skills e ampliou os evals comportamentais."
       ]
+    },
+    {
+      "version": "0.15.0",
+      "changes": [
+        "Ligou mensagens, ferramentas, falhas, tarefas e subagentes ao ciclo de aprendizado do Omni.",
+        "Adicionou delegação rastreável com prompt visível, execução, evidência e fechamento.",
+        "Passou a registrar vários sinais por turno e confirmar declarações estáveis do proprietário.",
+        "Adicionou evolução por regra, procedimento, roteamento, personalidade, eval ou capacidade.",
+        "Restaurou a personalidade-base v1 e reservou a validação comportamental completa para 27/08/2026."
+      ]
     }
   ]
 }

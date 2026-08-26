@@ -679,6 +679,24 @@ export function registrarCandidataAnalisada(casa, analise) {
   })
 }
 
+export function registrarMemoriaAnalisada(casa, analise) {
+  const confirmada = analise.autoConfirm === true
+  return registrar(casa, {
+    text: analise.text,
+    type: analise.type,
+    scope: analise.scope,
+    source: analise.source,
+    status: confirmada ? 'confirmed' : 'candidate',
+    confidence: confirmada ? Math.max(0.95, analise.confidence) : analise.confidence,
+    importance: analise.importance,
+    validation: {
+      status: confirmada ? 'confirmed' : 'validated',
+      reasons: analise.validationReasons
+    },
+    evidenceKind: analise.evidenceKind
+  })
+}
+
 export async function decidirCandidata(casa, id, decision) {
   const liberar = await adquirirTrava(casa)
   try {

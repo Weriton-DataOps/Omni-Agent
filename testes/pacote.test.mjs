@@ -11,7 +11,7 @@ test('marketplace usa o plugin do próprio repositório e versão semântica', a
   const packageManifest = JSON.parse(await readFile(file('package.json'), 'utf8'))
   assert.equal(marketplace.plugins[0].source, './')
   assert.equal(manifest.name, 'omni')
-  assert.equal(manifest.version, '0.14.0')
+  assert.equal(manifest.version, '0.15.0')
   assert.equal(packageManifest.version, manifest.version)
 })
 
@@ -98,6 +98,12 @@ test('plugin contém somente o núcleo declarado', async () => {
   await stat(file('contratos/atualizacao/releases.json'))
   await stat(file('runtime/historico-evals.mjs'))
   await stat(file('runtime/persistencia-contexto.mjs'))
+  await stat(file('runtime/ciclo-operacional.mjs'))
+  await stat(file('runtime/observador.mjs'))
+  await stat(file('runtime/evolucao.mjs'))
+  await stat(file('contratos/operacao/ciclo.json'))
+  await stat(file('contratos/operacao/regras-aprendidas.json'))
+  await stat(file('contratos/operacao/procedimentos-aprendidos.json'))
   await stat(file('contratos/memoria/garbage-collection.json'))
   await stat(file('contratos/memoria/garbage-collection.md'))
   await stat(file('contratos/aprendizado/atalhos.json'))
@@ -122,7 +128,7 @@ test('plugin contém somente o núcleo declarado', async () => {
   await stat(file('contratos/personalidade/omni-persona-v2.md'))
 })
 
-test('fronteiras impedem interface e iniciativas externas de virarem funcionalidade do Omni', async () => {
+test('fronteiras mantêm interface e iniciativas externas independentes do Omni', async () => {
   const scope = JSON.parse(await readFile(file('contratos/arquitetura/escopo.json'), 'utf8'))
   const invariants = JSON.parse(await readFile(file('contratos/arquitetura/invariantes.json'), 'utf8'))
   assert.deepEqual(scope.activeAgents, ['omni'])
@@ -132,13 +138,20 @@ test('fronteiras impedem interface e iniciativas externas de virarem funcionalid
   assert.equal(invariants.identity.agentCount, 1)
   assert.equal(invariants.availability.implemented, false)
   assert.equal(invariants.completion.conversationValidationRequiredBeforeInterface, true)
-  assert.equal(invariants.scope.automaticImplementationFromBacklog, false)
+  assert.equal(invariants.scope.backlogExecution, 'prioritize-against-current-definition-of-done')
+  assert.equal(invariants.boundaries.agentOrchestration, 'active-with-visible-prompt-and-evidence')
 })
 
 test('hook injeta contexto por turno somente após ativação do Omni', async () => {
   const hooks = JSON.parse(await readFile(file('hooks/hooks.json'), 'utf8'))
   assert.ok(hooks.hooks.UserPromptSubmit)
   assert.ok(hooks.hooks.UserPromptExpansion)
+  assert.ok(hooks.hooks.PostToolUse)
+  assert.ok(hooks.hooks.PostToolUseFailure)
+  assert.ok(hooks.hooks.SubagentStart)
+  assert.ok(hooks.hooks.SubagentStop)
+  assert.ok(hooks.hooks.Stop)
+  assert.ok(hooks.hooks.TaskCompleted)
   assert.ok(hooks.hooks.SessionEnd)
   const command = hooks.hooks.UserPromptSubmit[0].hooks[0]
   assert.equal(command.type, 'command')
@@ -146,26 +159,25 @@ test('hook injeta contexto por turno somente após ativação do Omni', async ()
   assert.deepEqual(command.args, ['${CLAUDE_PLUGIN_ROOT}/runtime/hook-contexto.mjs'])
 })
 
-test('personalidade v2 é a fonte ativa e canais externos continuam planejados', async () => {
+test('personalidade-base v1 é a fonte ativa e canais externos continuam planejados', async () => {
   const persona = JSON.parse(await readFile(file('contratos/personalidade/manifest.json'), 'utf8'))
   const contract = await readFile(
     new URL(persona.contract, file('contratos/personalidade/manifest.json')),
     'utf8'
   )
-  assert.equal(persona.id, 'omni-persona-v2-candidate')
+  assert.equal(persona.id, 'omni-persona-v1-candidate')
   assert.equal(persona.status, 'active-candidate-pending-evals')
   assert.equal(persona.promotion, null)
   assert.deepEqual(await readdir(file('contratos/eval/resultados/')), ['README.md'])
-  assert.equal(persona.supersedes.id, 'omni-persona-v1-candidate')
+  assert.equal(persona.supersedes, null)
   assert.equal(persona.channels.plugin, 'active')
   assert.equal(persona.channels.chat, 'planned')
   assert.equal(persona.channels.realtime, 'planned')
   const nucleo = contract.match(/## Núcleo textual\s+```text\s*([\s\S]*?)```/i)[1]
   assert.match(nucleo, /Inventor Cúmplice/)
   assert.match(nucleo, /INDEPENDÊNCIA INTELECTUAL/)
-  assert.match(nucleo, /NÃO ANUNCIE/)
-  assert.match(nucleo, /ENTREGA DA IDEIA/)
-  assert.doesNotMatch(nucleo, /deixe claro onde a analogia termina/)
+  assert.match(nucleo, /REFERÊNCIAS E ANALOGIAS/)
+  assert.match(nucleo, /EXPRESSÃO/)
 })
 
 test('o contrato declarado no manifesto é o que o hook consegue injetar', async () => {
@@ -180,11 +192,11 @@ test('o contrato declarado no manifesto é o que o hook consegue injetar', async
   assert.doesNotMatch(hook, /omni-persona-v\d+\.md/, 'hook não pode fixar o contrato por caminho')
 })
 
-test('a linha de base v1 permanece disponível para eval comparativo', async () => {
+test('a candidata v2 permanece disponível para eval comparativo futuro', async () => {
   const persona = JSON.parse(await readFile(file('contratos/personalidade/manifest.json'), 'utf8'))
-  const baseline = await readFile(file('contratos/personalidade/omni-persona-v1.md'), 'utf8')
-  assert.equal(persona.supersedes.contract, './omni-persona-v1.md')
-  assert.match(baseline, /PERSONALIDADE omni-persona-v1-candidate/)
+  const candidate = await readFile(file('contratos/personalidade/omni-persona-v2.md'), 'utf8')
+  assert.equal(persona.supersedes, null)
+  assert.match(candidate, /PERSONALIDADE omni-persona-v2-candidate/)
 })
 
 test('contexto ativo não carrega nomes ou caminhos estranhos ao Omni', async () => {
@@ -215,25 +227,15 @@ test('contexto ativo não carrega nomes ou caminhos estranhos ao Omni', async ()
   for (const name of forbidden) assert.equal(active.includes(name), false, `referência ativa indevida: ${name}`)
 })
 
-test('skill começa em pt-BR e não despeja diagnóstico quando chamada vazia', async () => {
+test('skill começa em pt-BR e descreve ação, delegação e proteção técnica', async () => {
   const skill = await readFile(file('skills/omni/SKILL.md'), 'utf8')
-  assert.match(skill, /Toda saída visível deve estar em português do Brasil desde a primeira linha/)
-  assert.match(skill, /execute `estado` uma única vez e silenciosamente/)
-  assert.match(skill, /execute\s+`personalidade` silenciosamente/)
-  assert.doesNotMatch(skill, /omni-persona-v\d+\.md|personalidade v\d+/)
-  assert.match(skill, /`outdated`, avise em uma frase/)
-  assert.match(skill, /Se o pedido for exatamente `atualizar`/)
-  assert.match(skill, /Execute somente `atualizar`/)
-  assert.match(skill, /somente os itens de\s+`changes`/)
-  assert.match(skill, /não exponha repositório, fontes de verificação, versão remota, caminhos/)
-  assert.match(skill, /`manutencao simular`/)
-  assert.match(skill, /consolidação aproximada nunca é automática/)
-  assert.match(skill, /Não infira portabilidade pelo conteúdo/)
-  assert.match(skill, /Nunca use `\$\{CLAUDE_PLUGIN_ROOT\}`/)
-  assert.match(skill, /nunca faça commit ou push como efeito implícito/)
-  assert.match(skill, /Nunca fabrique evidência para completar o padrão/)
-  assert.match(skill, /uma ocorrência `observing` não autoriza mudança de comportamento/)
-  assert.match(skill, /O resultado aprovado cria e avalia uma\s+proposta da seção 25/is)
+  assert.match(skill, /Responda em português do Brasil/)
+  assert.match(skill, /consulte\s+silenciosamente `personalidade` e `estado`/is)
+  assert.match(skill, /torne o prompt completo visível na sessão de destino/)
+  assert.match(skill, /inicie o executor/)
+  assert.match(skill, /mantenha esta conversa central disponível/i)
+  assert.match(skill, /O destino de uma melhoria segue sua natureza/)
+  assert.match(skill, /runtime filtra segredos/)
+  assert.match(skill, /Quando o pedido for exatamente `atualizar`/)
   assert.match(skill, /interface nativa do VS Code/)
-  assert.match(skill, /não apresente\s+diagnóstico técnico sem que seja pedido/is)
 })

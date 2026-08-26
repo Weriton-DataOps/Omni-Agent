@@ -14,7 +14,7 @@ function executar(args, env) {
   return JSON.parse(run.stdout)
 }
 
-test('operador lista e decide candidata criada pelo pipeline', async () => {
+test('operador confirma declaração estável criada pelo pipeline', async () => {
   const raiz = await mkdtemp(join(tmpdir(), 'omni-cli-'))
   const env = { ...process.env, OMNI_HOME: join(raiz, 'home') }
   try {
@@ -22,15 +22,11 @@ test('operador lista e decide candidata criada pelo pipeline', async () => {
       ['experiencia', 'Prefiro', 'mapas', 'antes', 'de', 'textos', 'longos.'],
       env
     )
-    assert.equal(experience.pipeline.result, 'candidate')
+    assert.equal(experience.pipeline.result, 'confirmed')
 
     const candidates = executar(['candidatas'], env)
-    assert.equal(candidates.candidates.length, 1)
-    assert.equal(candidates.candidates[0].type, 'preference')
-
-    const decision = executar(['confirmar', candidates.candidates[0].id], env)
-    assert.equal(decision.memory.result, 'confirmed')
-    assert.equal(executar(['candidatas'], env).candidates.length, 0)
+    assert.equal(candidates.candidates.length, 0)
+    assert.equal(executar(['estado'], env).memory.confirmed, 1)
   } finally {
     await rm(raiz, { recursive: true, force: true })
   }
@@ -38,9 +34,9 @@ test('operador lista e decide candidata criada pelo pipeline', async () => {
 
 test('operador entrega a personalidade escolhida pelo manifesto', () => {
   const result = executar(['personalidade'], process.env)
-  assert.equal(result.personality.id, 'omni-persona-v2-candidate')
-  assert.match(result.personality.nucleus, /NÃO ANUNCIE/)
-  assert.doesNotMatch(result.personality.nucleus, /deixe claro onde a analogia termina/)
+  assert.equal(result.personality.id, 'omni-persona-v1-candidate')
+  assert.match(result.personality.nucleus, /Inventor Cúmplice/)
+  assert.match(result.personality.nucleus, /INDEPENDÊNCIA INTELECTUAL/)
 })
 
 test('operador expõe manutenção, consolidação e arquivo sem apagar histórico', async () => {

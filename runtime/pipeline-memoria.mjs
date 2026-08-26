@@ -1,6 +1,6 @@
-import { pareceConterSegredo, registrarCandidataAnalisada } from './memoria.mjs'
+import { pareceConterSegredo, registrarMemoriaAnalisada } from './memoria.mjs'
 
-export const MEMORY_WRITE_PIPELINE_VERSION = 1
+export const MEMORY_WRITE_PIPELINE_VERSION = 2
 
 const SINAIS = [
   {
@@ -63,54 +63,60 @@ function escopoValido(scope) {
 }
 
 export function analisarExperiencia(texto, { scope = { type: 'user' } } = {}) {
+  return analisarExperiencias(texto, { scope })[0] ?? { result: 'discarded', reason: 'no-memory-signal' }
+}
+
+export function analisarExperiencias(texto, { scope = { type: 'user' } } = {}) {
   const bruto = typeof texto === 'string' ? texto.trim() : ''
-  if (!bruto) return { result: 'discarded', reason: 'empty' }
-  if (bruto.startsWith('/')) return { result: 'discarded', reason: 'command' }
-  if (pareceConterSegredo(bruto)) return { result: 'refused', reason: 'possible-secret' }
-  if (!escopoValido(scope)) return { result: 'discarded', reason: 'invalid-scope' }
-  if (bruto.length > 4_000) return { result: 'discarded', reason: 'experience-too-long' }
+  if (!bruto) return [{ result: 'discarded', reason: 'empty' }]
+  if (bruto.startsWith('/')) return [{ result: 'discarded', reason: 'command' }]
+  if (pareceConterSegredo(bruto)) return [{ result: 'refused', reason: 'possible-secret' }]
+  if (!escopoValido(scope)) return [{ result: 'discarded', reason: 'invalid-scope' }]
+  if (bruto.length > 4_000) return [{ result: 'discarded', reason: 'experience-too-long' }]
 
   const units = bruto
     .split(/(?:\r?\n)+|(?<=[.!?])\s+/u)
     .map((unit) => unit.replace(/\s+/g, ' ').trim())
     .filter(Boolean)
-  const selected = units
-    .map((unit) => ({ unit, signal: SINAIS.find((candidate) => candidate.pattern.test(normalizar(unit))) }))
-    .find((candidate) => candidate.signal)
-  if (!selected) return { result: 'discarded', reason: 'no-memory-signal' }
+  const analyses = units.flatMap((original) => {
+    const normalized = normalizar(original)
+    const signal = SINAIS.find((candidate) => candidate.pattern.test(normalized))
+    if (!signal) return []
+    if (/\b(?:so nesta sessao|somente nesta sessao|so agora|hoje apenas|temporariamente)\b/.test(normalized)) {
+      return [{ result: 'transient', reason: 'explicitly-transient' }]
+    }
+    if (original.length < 12 || original.length > 800) return []
 
-  const original = selected.unit
-  const signal = selected.signal
-  const normalized = normalizar(original)
-  if (/\b(?:so nesta sessao|somente nesta sessao|so agora|hoje apenas|temporariamente)\b/.test(normalized)) {
-    return { result: 'transient', reason: 'explicitly-transient' }
-  }
-  if (original.length < 12) return { result: 'discarded', reason: 'too-short' }
-  if (original.length > 800) return { result: 'discarded', reason: 'too-long' }
-
-  const specificity = Math.min(1, Math.max(0.35, original.length / 240))
-  const score = arredondar(
-    signal.confidence * 0.5 + signal.importance * 0.35 + specificity * 0.15
-  )
-  if (score < 0.6) return { result: 'discarded', reason: 'low-score', score }
-
-  return {
-    result: 'validated',
-    text: original,
-    type: signal.type,
-    scope,
-    confidence: arredondar(signal.confidence),
-    importance: arredondar(signal.importance),
-    score,
-    source: 'user-prompt-pipeline-v1',
-    evidenceKind: 'observed-user-signal',
-    validationReasons: ['persistent-language-signal', `pipeline-score:${score.toFixed(2)}`]
-  }
+    const specificity = Math.min(1, Math.max(0.35, original.length / 240))
+    const score = arredondar(signal.confidence * 0.5 + signal.importance * 0.35 + specificity * 0.15)
+    if (score < 0.6) return []
+    const explicitDeclaration = /\b(?:lembre|guarde|registre|fica definido|de agora em diante|sempre que|quando eu disser|prefiro|quero que voce|me explique sempre)\b/.test(normalized)
+    return [{
+      result: 'validated',
+      text: original,
+      type: signal.type,
+      scope,
+      confidence: arredondar(signal.confidence),
+      importance: arredondar(signal.importance),
+      score,
+      autoConfirm: explicitDeclaration && score >= 0.72,
+      source: 'user-prompt-pipeline-v2',
+      evidenceKind: explicitDeclaration ? 'owner-declaration' : 'observed-user-signal',
+      validationReasons: [
+        'persistent-language-signal',
+        `pipeline-score:${score.toFixed(2)}`,
+        ...(explicitDeclaration ? ['owner-declaration-auto-confirmed'] : [])
+      ]
+    }]
+  })
+  return analyses.length ? analyses : [{ result: 'discarded', reason: 'no-memory-signal' }]
 }
 
 export async function processarExperiencia(casa, texto, options = {}) {
-  const analysis = analisarExperiencia(texto, options)
-  if (analysis.result !== 'validated') {
+  const analyses = analisarExperiencias(texto, options)
+  const valid = analyses.filter((analysis) => analysis.result === 'validated')
+  if (!valid.length) {
+    const analysis = analyses[0]
     return {
       result: analysis.result,
       reason: analysis.reason,
@@ -121,13 +127,16 @@ export async function processarExperiencia(casa, texto, options = {}) {
     }
   }
 
-  const stored = await registrarCandidataAnalisada(casa, analysis)
+  const stored = []
+  for (const analysis of valid) stored.push(await registrarMemoriaAnalisada(casa, analysis))
   return {
-    result: stored.result,
+    result: stored.some((item) => item.result === 'confirmed') ? 'confirmed' : stored[0].result,
     reason: null,
-    score: analysis.score,
-    classification: analysis.type,
-    memory: stored.memory,
+    score: valid[0].score,
+    classification: valid[0].type,
+    classifications: valid.map((item) => item.type),
+    memory: stored[0].memory,
+    memories: stored.map((item) => item.memory),
     pipelineVersion: MEMORY_WRITE_PIPELINE_VERSION
   }
 }

@@ -120,7 +120,7 @@ test('entrada executável usada pelo Claude Code entrega JSON limpo', async () =
   }
 })
 
-test('hook extrai sinal persistente como candidata sem promovê-lo', async () => {
+test('hook confirma declaração persistente clara do proprietário', async () => {
   const { raiz, env } = await ambiente()
   const session_id = 'sessao-aprendizado'
   try {
@@ -137,9 +137,9 @@ test('hook extrai sinal persistente como candidata sem promovê-lo', async () =>
       env
     )
     const memory = await lerMemoria(env.OMNI_HOME)
-    assert.equal(memory.confirmed.length, 0)
-    assert.equal(memory.candidates.length, 1)
-    assert.equal(memory.candidates[0].type, 'preference')
+    assert.equal(memory.confirmed.length, 1)
+    assert.equal(memory.candidates.length, 0)
+    assert.equal(memory.confirmed[0].type, 'preference')
   } finally {
     await rm(raiz, { recursive: true, force: true })
   }

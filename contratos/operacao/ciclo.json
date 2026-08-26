@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "contract": "omni-operational-cycle-v1",
+  "eventRetention": 500,
+  "sessionRetention": 100,
+  "delegationRetention": 200,
+  "improvementRetention": 100,
+  "learning": {
+    "observeUserCorrections": true,
+    "observeToolFailures": true,
+    "observeVerifiedCompletions": true,
+    "captureSeveralSignalsPerTurn": true,
+    "promoteExplicitStablePreferences": true
+  },
+  "delegation": {
+    "states": ["prepared", "visible", "running", "blocked", "completed", "closed"],
+    "targetReceivesVisiblePrompt": true,
+    "centralConversationRemainsAvailable": true,
+    "completionReturnsEvidence": true
+  },
+  "privacy": {
+    "storeRawConversation": false,
+    "storeRawToolOutput": false,
+    "storeRawError": false,
+    "storeSecrets": false
+  }
+}
