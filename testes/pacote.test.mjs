@@ -11,7 +11,7 @@ test('marketplace usa o plugin do próprio repositório e versão semântica', a
   const packageManifest = JSON.parse(await readFile(file('package.json'), 'utf8'))
   assert.equal(marketplace.plugins[0].source, './')
   assert.equal(manifest.name, 'omni')
-  assert.equal(manifest.version, '0.13.1')
+  assert.equal(manifest.version, '0.14.0')
   assert.equal(packageManifest.version, manifest.version)
 })
 
@@ -53,6 +53,8 @@ test('runtime, schema e manifesto concordam sobre as versões', async () => {
   assert.deepEqual(improvementPolicy.destinations, ['discard', 'memory', 'capability'])
   assert.equal(improvementPolicy.requiresOwnerApproval, true)
   assert.equal(improvementPolicy.requiresPortableConfirmation, true)
+  assert.equal(improvementPolicy.requiresRoleFitConfirmation, true)
+  assert.equal(improvementPolicy.skillAdmissionQuestions.length, 5)
   assert.equal(improvementPolicy.automaticPromotion, false)
   assert.equal(improvementPolicy.automaticGitCommit, false)
   assert.equal(improvementPolicy.automaticGitPush, false)
@@ -67,7 +69,8 @@ test('runtime, schema e manifesto concordam sobre as versões', async () => {
   assert.equal(failurePolicy.storeRawTestOutcome, false)
   assert.equal(promotionResultSchema.properties.schemaVersion.const, 1)
   assert.equal(promotionResultSchema.additionalProperties, false)
-  assert.equal(contextSchema.properties.schemaVersion.const, 3)
+  assert.equal(contextSchema.properties.schemaVersion.const, 4)
+  assert.deepEqual(contextSchema.properties.routing.properties.selected.enum, ['fast', 'deep'])
   assert.equal(retrieval.algorithm, 'hybrid-local-v1')
   assert.equal(
     Object.values(retrieval.weights).reduce((sum, value) => sum + value, 0),

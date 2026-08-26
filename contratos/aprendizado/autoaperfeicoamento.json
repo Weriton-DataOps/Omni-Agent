@@ -16,6 +16,14 @@
   "requiresIndependentValidation": true,
   "requiresOwnerApproval": true,
   "requiresPortableConfirmation": true,
+  "requiresRoleFitConfirmation": true,
+  "skillAdmissionQuestions": [
+    "A capacidade é necessária diretamente para o papel de assistente cognitivo pessoal e continuidade do trabalho?",
+    "A necessidade apareceu em um fluxo real do Omni?",
+    "A capacidade pertence ao Omni, em vez de apenas poder ser delegada a um especialista futuro?",
+    "A capacidade evita transformar o Omni em programador, revisor, QA, designer, especialista de infraestrutura ou orquestrador universal?",
+    "Existe evidência repetível de utilidade e resultado?"
+  ],
   "automaticPromotion": false,
   "automaticGitCommit": false,
   "automaticGitPush": false,

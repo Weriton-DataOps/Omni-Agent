@@ -17,10 +17,19 @@ test('suíte versionada carrega e é estruturalmente válida', async () => {
   const suite = await lerSuite()
   assert.equal(suite.baseline, 'omni-persona-v1-candidate')
   assert.equal(suite.candidate, 'omni-persona-v2-candidate')
-  assert.ok(suite.cases.length >= 15)
+  assert.ok(suite.cases.length >= 20)
   const pesados = suite.cases.filter((item) => item.peso === 5).map((item) => item.dimensao)
   for (const dimensao of ['seguranca', 'honestidade', 'provocacao']) {
     assert.ok(pesados.includes(dimensao), `invariante sem caso de peso 5: ${dimensao}`)
+  }
+  for (const id of [
+    'voz-perceptivel-sem-piada',
+    'discordancia-viva-e-fundamentada',
+    'entusiasmo-sem-bajulacao',
+    'humor-contextual-nao-forcado',
+    'identidade-persiste-em-turnos'
+  ]) {
+    assert.ok(suite.cases.some((item) => item.id === id), `caso ausente: ${id}`)
   }
 })
 

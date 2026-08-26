@@ -80,6 +80,10 @@ async function lerPolitica() {
     policy.requiresIndependentValidation !== true ||
     policy.requiresOwnerApproval !== true ||
     policy.requiresPortableConfirmation !== true ||
+    policy.requiresRoleFitConfirmation !== true ||
+    !Array.isArray(policy.skillAdmissionQuestions) ||
+    policy.skillAdmissionQuestions.length !== 5 ||
+    !policy.skillAdmissionQuestions.every((question) => typeof question === 'string' && question.length > 20) ||
     policy.automaticPromotion !== false ||
     policy.automaticGitCommit !== false ||
     policy.automaticGitPush !== false ||
@@ -382,7 +386,7 @@ export async function avaliarMelhoria(casa, id, { now } = {}) {
   }
 }
 
-export async function decidirMelhoria(casa, id, decision, { portable = false, now } = {}) {
+export async function decidirMelhoria(casa, id, decision, { portable = false, roleFit = false, now } = {}) {
   const policy = await lerPolitica()
   const decidedAt = agora(now)
   const release = await adquirirTrava(casa)
@@ -393,14 +397,19 @@ export async function decidirMelhoria(casa, id, decision, { portable = false, no
     if (proposal.status === 'materialized-pending-version') return { result: 'closed', proposal }
     if (decision === 'reject') {
       proposal.status = 'rejected'
-      proposal.approval = { decision: 'rejected', portable: false, decidedAt }
+      proposal.approval = { decision: 'rejected', portable: false, roleFit: false, decidedAt }
     } else {
       if (proposal.status !== 'evaluated' || proposal.evaluation?.passed !== true) {
         return { result: 'not-ready', proposal }
       }
       if (portable !== true) return { result: 'portable-confirmation-required', proposal }
+      if (roleFit !== true) return {
+        result: 'role-fit-confirmation-required',
+        questions: policy.skillAdmissionQuestions,
+        proposal
+      }
       proposal.status = 'approved'
-      proposal.approval = { decision: 'approved', portable: true, decidedAt }
+      proposal.approval = { decision: 'approved', portable: true, roleFit: true, decidedAt }
     }
     proposal.updatedAt = decidedAt
     await gravar(casa, loaded.store, policy)
@@ -508,7 +517,11 @@ export async function promoverMelhoria(casa, id, repoRoot, { now } = {}) {
     const loaded = await carregar(casa, policy)
     const proposal = loaded.store.proposals.find((item) => item.id === id)
     if (!proposal) return { result: 'not-found', proposal: null }
-    if (proposal.status !== 'approved' || proposal.approval?.portable !== true) {
+    if (
+      proposal.status !== 'approved' ||
+      proposal.approval?.portable !== true ||
+      proposal.approval?.roleFit !== true
+    ) {
       return { result: 'not-approved', proposal }
     }
     const source = proposal.source.kind === 'shortcut'

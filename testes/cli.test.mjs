@@ -110,11 +110,12 @@ test('operador observa, lista e valida atalho sem promove-lo', async () => {
     const improvements = executar(['melhorias'], env)
     assert.equal(improvements.proposals.length, 1)
     const approval = executar(
-      ['melhoria-aprovar', improvements.proposals[0].id, '--portavel'],
+      ['melhoria-aprovar', improvements.proposals[0].id, '--portavel', '--aderente'],
       env
     )
     assert.equal(approval.improvement.status, 'approved')
     assert.equal(approval.improvement.portable, true)
+    assert.equal(approval.improvement.roleFit, true)
 
     const state = executar(['estado'], env)
     assert.equal(state.learning.validated, 1)

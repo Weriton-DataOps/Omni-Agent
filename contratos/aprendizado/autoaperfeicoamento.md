@@ -36,7 +36,9 @@ validação e totaliza ao menos quatro sucessos. A avaliação é refeita imedia
 materialização. Se o atalho regredir, a promoção é recusada.
 
 O proprietário precisa confirmar explicitamente que o conteúdo é portátil e pode entrar no Git.
-Essa decisão não pode ser inferida pelo modelo. A materialização produz:
+Também precisa confirmar que a capacidade pertence diretamente ao papel do Omni, apareceu num fluxo
+real, não é apenas especialidade delegável e possui evidência repetível de utilidade. Nenhuma das
+duas decisões pode ser inferida pelo modelo. A materialização produz:
 
 - uma skill em `skills/learned-<nome>/SKILL.md`;
 - uma entrada no catálogo canônico de capacidades;

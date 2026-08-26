@@ -14,6 +14,14 @@
       "changes": [
         "O comando atualizar agora mostra somente a versão e o que foi atualizado."
       ]
+    },
+    {
+      "version": "0.14.0",
+      "changes": [
+        "Fixou o papel do Omni como assistente cognitivo pessoal e camada de continuidade.",
+        "Ligou checkpoints e backlog relevantes ao contexto e passou a usar o roteamento fast/deep.",
+        "Adicionou o gate de aderência ao papel para novas skills e ampliou os evals comportamentais."
+      ]
     }
   ]
 }

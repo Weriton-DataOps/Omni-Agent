@@ -111,7 +111,7 @@ test('fast é subconjunto do mesmo ranking deep e uso selecionado é contado', a
     const context = await montarContexto(home, { intent: 'mostre um mapa do plano' })
     const fast = context.retrieval.selected.fast.map((entry) => entry.id)
     const deep = context.retrieval.selected.deep.map((entry) => entry.id)
-    assert.equal(context.schemaVersion, 3)
+    assert.equal(context.schemaVersion, 4)
     assert.ok(fast.every((id) => deep.includes(id)))
     assert.equal(deep[0], saved.memory.id)
     assert.equal(JSON.stringify(context.retrieval).includes(saved.memory.text), false)

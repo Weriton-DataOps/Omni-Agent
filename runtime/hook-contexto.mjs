@@ -109,7 +109,7 @@ export async function tratarHook(input, env = process.env) {
       hookEventName: 'UserPromptSubmit',
       additionalContext: contextoAdicional(
         persona.nucleus,
-        contexto.projections.deep.text
+        contexto.projections[contexto.routing.selected].text
       )
     }
   }

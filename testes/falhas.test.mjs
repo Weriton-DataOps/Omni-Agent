@@ -171,7 +171,7 @@ test('nova ocorrencia invalida eval anterior e bloqueia a proposta antiga', asyn
     const pattern = await evaluatedPattern(casa)
     const draft = await proporMelhoriaDeFalha(casa, pattern.id)
     await avaliarMelhoria(casa, draft.proposal.id)
-    await decidirMelhoria(casa, draft.proposal.id, 'approve', { portable: true })
+    await decidirMelhoria(casa, draft.proposal.id, 'approve', { portable: true, roleFit: true })
 
     const recurrence = await registrarFalha(casa, { ...failure, evidenceId: 'execucao-4' })
     assert.equal(recurrence.result, 'candidate')

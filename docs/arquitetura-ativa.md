@@ -6,10 +6,12 @@ Existe uma única fonte para cada responsabilidade:
 
 | Responsabilidade | Fonte |
 |---|---|
+| papel operacional e limites | `contratos/arquitetura/invariantes.json` |
 | identidade ativa | `contratos/personalidade/manifest.json` → contrato versionado |
 | catálogo disponível | `contratos/capacidades/catalogo.json` |
 | memória persistente | `%APPDATA%\omni\memory\memory.json` |
 | seleção de contexto | `runtime/contexto.mjs` |
+| continuidade de trabalho | `%APPDATA%\omni\runs\structured-context.json` + `runtime/persistencia-contexto.mjs` |
 | recuperação e ranking de memória | `runtime/recuperacao.mjs` + `contratos/contexto/recuperacao.json` |
 | escrita de memória | `runtime/memoria.mjs` |
 | manutenção e ciclo de vida | `runtime/memoria.mjs` + `contratos/memoria/garbage-collection.json` |
@@ -31,6 +33,9 @@ MEMÓRIA ───────┘                         └─► DEEP
 ```
 
 Fast e deep não são duas memórias. São duas projeções da mesma fotografia, com orçamentos diferentes.
+A fotografia também recebe o papel operacional obrigatório e, quando relevante, um checkpoint e itens
+do backlog. O hook escolhe fast para conversa direta e deep para análise, complexidade ou retomada;
+ele não carrega deep indiscriminadamente.
 
 ```text
 intenção → filtro de escopo → semântica local + lexical → ranking híbrido → top 4 fast / top 10 deep
@@ -142,7 +147,10 @@ experiência ─► analisar ─┬─► descartar
                      gates + versão + commit + publicação
 ```
 
-O pipeline local nunca transforma observação em capacidade por conta própria. A materialização ainda
+O pipeline local nunca transforma observação em capacidade por conta própria. Ser reutilizável não
+basta: o proprietário confirma separadamente a portabilidade e a aderência ao papel do Omni. A
+capacidade precisa ser necessária ao assistente cognitivo, ter surgido num fluxo real, pertencer ao
+Omni, não ser mera especialidade delegável e possuir evidência repetível. A materialização ainda
 não é publicação: ela cria alterações revisáveis na árvore-fonte e para. O fluxo recusa cache e pacote
 instalado como destino, reavalia a evidência imediatamente antes da escrita e preserva commit e push
 como ações separadas do desenvolvimento.
@@ -194,6 +202,7 @@ Uma resposta só pode introduzir conteúdo vindo de:
 2. personalidade canônica;
 3. memória confirmada selecionada;
 4. capacidade declarada relevante.
+5. checkpoint ou backlog selecionado por relação com o pedido de continuidade.
 
 A especificação mestre orienta a construção, mas não entra inteira no prompt de cada turno.
 

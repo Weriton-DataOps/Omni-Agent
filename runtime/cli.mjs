@@ -70,7 +70,7 @@ function lerOpcoes(argumentos) {
       continue
     }
     const key = part.slice(2)
-    if (key === 'falhou' || key === 'portavel' || key === 'necessaria') {
+    if (key === 'falhou' || key === 'portavel' || key === 'aderente' || key === 'necessaria') {
       options[key] = true
       continue
     }
@@ -120,6 +120,7 @@ function resumirMelhoria(item) {
     evaluationPassed: item.evaluation?.passed ?? null,
     ownerDecision: item.approval?.decision ?? null,
     portable: item.approval?.portable ?? false,
+    roleFit: item.approval?.roleFit ?? false,
     promotion: item.promotion?.status ?? null
   }
 }
@@ -201,7 +202,7 @@ async function main() {
         rawConversationStored: false
       },
       version,
-      context: { schemaVersion: 3, retrieval: 'hybrid-local-v1', projections: ['fast', 'deep'] }
+      context: { schemaVersion: 4, retrieval: 'hybrid-local-v1', projections: ['fast', 'deep'] }
     }
   }
   if (action === 'personalidade') {
@@ -320,12 +321,12 @@ async function main() {
   if (action === 'melhoria-aprovar' || action === 'melhoria-rejeitar') {
     const { options, positionals } = lerOpcoes(parts)
     const id = positionals[0]
-    if (!id) throw new Error(`Use: ${action} <id>${action === 'melhoria-aprovar' ? ' --portavel' : ''}.`)
+    if (!id) throw new Error(`Use: ${action} <id>${action === 'melhoria-aprovar' ? ' --portavel --aderente' : ''}.`)
     const decision = await decidirMelhoria(
       home,
       id,
       action === 'melhoria-aprovar' ? 'approve' : 'reject',
-      { portable: options.portavel === true }
+      { portable: options.portavel === true, roleFit: options.aderente === true }
     )
     return { ok: true, improvement: decision.proposal ? resumirMelhoria(decision.proposal) : decision }
   }

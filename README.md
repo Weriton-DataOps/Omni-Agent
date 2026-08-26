@@ -1,6 +1,8 @@
 # Omni
 
-Fonte única do núcleo cognitivo do Omni.
+Fonte única do núcleo cognitivo do Omni: assistente cognitivo pessoal e camada de continuidade do
+trabalho. Ele acompanha objetivos, decisões, pendências e mudanças de contexto; o ambiente em que roda
+é habitat, não uma especialidade assumida automaticamente.
 
 Este repositório contém uma única iniciativa e um único agente: **Omni**. Oracle e OverCore são
 iniciativas externas, com evolução independente. A fronteira aprovada está no
@@ -92,7 +94,8 @@ local e não vira memória, verbo, skill, capacidade ou commit automaticamente.
 
 O pipeline `self-improvement-v1` separa descarte, memória e capacidade. Um atalho validado gera apenas
 uma proposta e um eval local. Para sair do estado pessoal, o proprietário precisa confirmar que o
-conteúdo é portátil. A materialização cria skill, entrada de capacidade e auditoria na árvore-fonte,
+conteúdo é portátil e que a capacidade pertence diretamente ao papel do Omni. A materialização cria
+skill, entrada de capacidade e auditoria na árvore-fonte,
 mas não incrementa versão, não faz commit e não publica sozinha.
 
 O aprendizado de falhas usa `failure-learning-v1`. Uma ocorrência fica apenas observada; três
@@ -135,7 +138,7 @@ para o Git e sem substituir os registros existentes.
 /omni:omni atalho-validar <id> --resultado "..."
 /omni:omni melhorias
 /omni:omni melhoria-avaliar <id>
-/omni:omni melhoria-aprovar <id> --portavel
+/omni:omni melhoria-aprovar <id> --portavel --aderente
 /omni:omni melhoria-rejeitar <id>
 /omni:omni melhoria-promover <id> --repo <caminho-absoluto-da-fonte>
 /omni:omni falhas

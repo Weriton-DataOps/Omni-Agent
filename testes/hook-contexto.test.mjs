@@ -144,3 +144,27 @@ test('hook extrai sinal persistente como candidata sem promovê-lo', async () =>
     await rm(raiz, { recursive: true, force: true })
   }
 })
+
+test('hook aplica a rota fast ou deep escolhida pelo contexto', async () => {
+  const { raiz, env } = await ambiente()
+  const session_id = 'sessao-roteamento'
+  try {
+    await tratarHook(
+      { hook_event_name: 'UserPromptSubmit', session_id, prompt: '/omni:omni' },
+      env
+    )
+    const direta = await tratarHook(
+      { hook_event_name: 'UserPromptSubmit', session_id, prompt: 'bom dia' },
+      env
+    )
+    assert.match(direta.hookSpecificOutput.additionalContext, /OMNI CONTEXT V1 - FAST/)
+
+    const profunda = await tratarHook(
+      { hook_event_name: 'UserPromptSubmit', session_id, prompt: 'analise os riscos desta arquitetura' },
+      env
+    )
+    assert.match(profunda.hookSpecificOutput.additionalContext, /OMNI CONTEXT V1 - DEEP/)
+  } finally {
+    await rm(raiz, { recursive: true, force: true })
+  }
+})

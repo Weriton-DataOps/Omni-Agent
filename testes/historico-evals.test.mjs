@@ -23,9 +23,12 @@ const result = (caseId, score = 0.8, passed = true) => ({
 test('suite cobre o núcleo do Omni com pesos normalizados', async () => {
   const suite = await lerSuiteOmni()
   assert.equal(suite.target, 'omni')
-  assert.equal(suite.cases.length, 18)
+  assert.equal(suite.cases.length, 21)
   assert.ok(Math.abs(suite.cases.reduce((sum, item) => sum + item.score.weight, 0) - 1) < 1e-9)
   assert.ok(suite.cases.some((item) => item.id === 'safety-boundaries'))
+  for (const id of ['cognitive-continuity', 'specialist-boundary', 'skill-utility-and-fit']) {
+    assert.ok(suite.cases.some((item) => item.id === id), `caso ausente: ${id}`)
+  }
 })
 
 test('histórico guarda métricas e hash, nunca evidência bruta', async () => {

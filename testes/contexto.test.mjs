@@ -6,6 +6,17 @@ import test from 'node:test'
 
 import { montarContexto } from '../runtime/contexto.mjs'
 import { lembrarExplicitamente, proporLicao } from '../runtime/memoria.mjs'
+import { registrarCheckpoint, registrarDescoberta } from '../runtime/persistencia-contexto.mjs'
+
+const task = {
+  objective: 'validar o nucleo do Omni por conversa',
+  scope: ['contexto e memoria'],
+  nonGoals: ['construir interface'],
+  requirements: ['preservar personalidade'],
+  successCriteria: ['respostas consistentes'],
+  definitionOfDone: ['eval sem regressao'],
+  knownConstraints: ['nenhuma conversa bruta persistida']
+}
 
 test('fast e deep nascem da mesma fotografia e respeitam orçamento', async () => {
   const casa = await mkdtemp(join(tmpdir(), 'omni-plugin-context-'))
@@ -21,10 +32,73 @@ test('fast e deep nascem da mesma fotografia e respeitam orçamento', async () =
     assert.match(context.projections.deep.text, /contexto montado por turno/)
     assert.equal(context.projections.fast.path, 'fast')
     assert.equal(context.projections.deep.path, 'deep')
-    assert.equal(context.schemaVersion, 3)
+    assert.equal(context.schemaVersion, 4)
     assert.equal(context.projections.fast.budget.policy, 'context-budget-v1')
     assert.ok(context.sources.find((source) => source.name === 'capabilities').items <= 6)
     assert.ok(context.projections.fast.selected.every((id) => context.projections.deep.selected.includes(id)))
+  } finally {
+    await rm(casa, { recursive: true, force: true })
+  }
+})
+
+test('papel operacional e limite do habitat governam fast e deep', async () => {
+  const casa = await mkdtemp(join(tmpdir(), 'omni-plugin-role-'))
+  try {
+    const context = await montarContexto(casa, { intent: 'oi' })
+    assert.equal(context.routing.selected, 'fast')
+    for (const projection of Object.values(context.projections)) {
+      assert.match(projection.text, /assistente cognitivo pessoal/i)
+      assert.match(projection.text, /VS Code.*habitats de trabalho/i)
+      assert.match(projection.text, /não transforma o Omni em programador/i)
+    }
+  } finally {
+    await rm(casa, { recursive: true, force: true })
+  }
+})
+
+test('roteamento escolhe fast para conversa direta e deep para análise', async () => {
+  const casa = await mkdtemp(join(tmpdir(), 'omni-plugin-routing-'))
+  try {
+    const fast = await montarContexto(casa, { intent: 'bom dia' })
+    const deep = await montarContexto(casa, { intent: 'analise os riscos desta arquitetura' })
+    assert.deepEqual(fast.routing, { selected: 'fast', reason: 'direct-conversation' })
+    assert.equal(deep.routing.selected, 'deep')
+    assert.equal(deep.routing.reason, 'explicit-analysis-or-complexity')
+  } finally {
+    await rm(casa, { recursive: true, force: true })
+  }
+})
+
+test('retomada recupera checkpoint e backlog apenas quando relevantes', async () => {
+  const casa = await mkdtemp(join(tmpdir(), 'omni-plugin-continuity-'))
+  try {
+    const recorded = await registrarCheckpoint(casa, {
+      runId: 'sessao-contexto-1',
+      task,
+      state: {
+        summary: 'contexto por turno ligado ao runtime',
+        decisions: ['manter uma fonte de verdade'],
+        openTasks: ['validar o comportamento conversando'],
+        eventRefs: [], artifactRefs: [], memoryRefs: []
+      }
+    })
+    await registrarDescoberta(casa, {
+      title: 'interface futura', reason: 'fora do objetivo atual', source: 'conversa'
+    })
+
+    const unrelated = await montarContexto(casa, { intent: 'explique gravidade' })
+    assert.equal(unrelated.continuity.checkpointId, null)
+    assert.equal(unrelated.continuity.backlogItems, 0)
+    assert.doesNotMatch(unrelated.projections.deep.text, /interface futura/)
+
+    const resumed = await montarContexto(casa, { intent: 'onde paramos e o que ficou pendente?' })
+    assert.equal(resumed.routing.selected, 'deep')
+    assert.equal(resumed.continuity.checkpointId, recorded.checkpoint.id)
+    assert.equal(resumed.continuity.backlogItems, 1)
+    assert.match(resumed.projections.deep.text, /validar o nucleo do Omni por conversa/)
+    assert.match(resumed.projections.deep.text, /manter uma fonte de verdade/)
+    assert.match(resumed.projections.deep.text, /validar o comportamento conversando/)
+    assert.match(resumed.projections.deep.text, /interface futura/)
   } finally {
     await rm(casa, { recursive: true, force: true })
   }

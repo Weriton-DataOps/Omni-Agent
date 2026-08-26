@@ -1,15 +1,33 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/Weriton-DataOps/Omni-Agent/contratos/contexto/schema.json",
-  "title": "Omni Context Snapshot V3",
+  "title": "Omni Context Snapshot V4",
   "type": "object",
-  "required": ["schemaVersion", "generatedAt", "canonicalSignature", "persona", "sources", "retrieval", "projections"],
+  "required": ["schemaVersion", "generatedAt", "canonicalSignature", "persona", "sources", "routing", "continuity", "retrieval", "projections"],
   "properties": {
-    "schemaVersion": { "const": 3 },
+    "schemaVersion": { "const": 4 },
     "generatedAt": { "type": "string", "format": "date-time" },
     "canonicalSignature": { "type": "string", "pattern": "^[a-f0-9]{16}$" },
     "persona": { "type": "string", "minLength": 1 },
     "sources": { "type": "array", "items": { "type": "object" } },
+    "routing": {
+      "type": "object",
+      "required": ["selected", "reason"],
+      "properties": {
+        "selected": { "enum": ["fast", "deep"] },
+        "reason": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "continuity": {
+      "type": "object",
+      "required": ["checkpointId", "backlogItems"],
+      "properties": {
+        "checkpointId": { "type": ["string", "null"] },
+        "backlogItems": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
     "retrieval": {
       "type": "object",
       "required": ["schemaVersion", "algorithm", "considered", "eligible", "excluded", "selected"],

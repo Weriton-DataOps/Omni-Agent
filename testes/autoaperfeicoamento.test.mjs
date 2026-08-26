@@ -92,9 +92,13 @@ test('atalho validado vira proposta, passa por eval e exige portabilidade explic
 
     const refused = await decidirMelhoria(home, draft.proposal.id, 'approve')
     assert.equal(refused.result, 'portable-confirmation-required')
-    const approved = await decidirMelhoria(home, draft.proposal.id, 'approve', { portable: true })
+    const roleRefused = await decidirMelhoria(home, draft.proposal.id, 'approve', { portable: true })
+    assert.equal(roleRefused.result, 'role-fit-confirmation-required')
+    assert.equal(roleRefused.questions.length, 5)
+    const approved = await decidirMelhoria(home, draft.proposal.id, 'approve', { portable: true, roleFit: true })
     assert.equal(approved.result, 'approved')
     assert.equal(approved.proposal.approval.portable, true)
+    assert.equal(approved.proposal.approval.roleFit, true)
 
     const raw = await readFile(caminhoDoAutoaperfeicoamento(home), 'utf8')
     assert.equal(raw.includes(execution.outcome), false)
@@ -122,7 +126,7 @@ test('regressão da fonte cancela aprovação antes de tocar o repositório', as
     const shortcut = await validatedShortcut(home)
     const draft = await proporMelhoriaDeAtalho(home, shortcut.id)
     await avaliarMelhoria(home, draft.proposal.id)
-    await decidirMelhoria(home, draft.proposal.id, 'approve', { portable: true })
+    await decidirMelhoria(home, draft.proposal.id, 'approve', { portable: true, roleFit: true })
     await registrarObservacaoAtalho(home, { ...execution, outcome: 'resultado divergente' })
 
     const result = await promoverMelhoria(home, draft.proposal.id, repo)
@@ -142,7 +146,7 @@ test('promoção materializa skill, catálogo e auditoria sem commit ou push', a
     const shortcut = await validatedShortcut(home)
     const draft = await proporMelhoriaDeAtalho(home, shortcut.id)
     await avaliarMelhoria(home, draft.proposal.id)
-    await decidirMelhoria(home, draft.proposal.id, 'approve', { portable: true })
+    await decidirMelhoria(home, draft.proposal.id, 'approve', { portable: true, roleFit: true })
     const headBefore = git(repo, ['rev-parse', 'HEAD'])
 
     const result = await promoverMelhoria(home, draft.proposal.id, repo)
