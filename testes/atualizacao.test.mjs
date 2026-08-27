@@ -79,12 +79,12 @@ test('atualiza, valida e orienta a aplicação conforme a interface', async () =
 })
 
 test('versão atual é validada sem pedir nova sessão', async () => {
-  const fake = runner({ before: '0.19.1', after: '0.19.1' })
+  const fake = runner({ before: '0.19.2', after: '0.19.2' })
   const result = await atualizarPlugin({
     casa: 'C:\\omni-test',
     run: fake.run,
     resolveCli: async () => 'claude-test',
-    checkVersion: async () => ({ latestVersion: '0.19.1', status: 'current' })
+    checkVersion: async () => ({ latestVersion: '0.19.2', status: 'current' })
   })
 
   assert.equal(result.status, 'current')
@@ -252,4 +252,14 @@ test('localizador respeita executável explícito validado', async () => {
   })
   assert.equal(executable, 'C:\\Claude\\claude.exe')
   assert.deepEqual(calls[0].args, ['--version'])
+})
+
+test('registro da 0.19.2 descreve o fim do diagnostico imutavel e do sucesso falso', async () => {
+  const changes = await lerMudancasAtualizacao(pluginRoot, '0.19.1', '0.19.2')
+  assert.equal(changes.length, 3)
+  assert.ok(changes.every((item) => item.version === '0.19.2'))
+  const text = changes.map((item) => item.change).join(' ')
+  assert.match(text, /reanalise.*diagnostico errado.*medido/i)
+  assert.match(text, /resultado real.*operacao que nao aconteceu/i)
+  assert.match(text, /testes de regressao.*aceita antes.*recusada depois/i)
 })

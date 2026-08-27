@@ -98,6 +98,14 @@
         "Alinhou o eval de atalhos ao uso local no primeiro sucesso, à validação em três sucessos e à promoção portátil separada.",
         "Criou a linha de base das auditorias de 26/08 e o protocolo comparável para sete dias de observação."
       ]
+    },
+    {
+      "version": "0.19.2",
+      "changes": [
+        "Liberou a reanalise de um padrao de falha enquanto ele nao foi avaliado, para que um diagnostico errado possa ser substituido por outro medido.",
+        "Fez falha-analisar, falha-testar, falha-avaliar e melhoria-aprovar propagarem o resultado real, encerrando o ok verdadeiro sobre operacao que nao aconteceu.",
+        "Acrescentou dois testes de regressao cobrindo a reanalise aceita antes da avaliacao e recusada depois dela."
+      ]
     }
   ]
 }
