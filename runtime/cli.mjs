@@ -35,6 +35,12 @@ import {
   testarCorrecaoFalha
 } from './falhas.mjs'
 import {
+  bloquearAutomacaoFalha,
+  concluirAutomacaoFalha,
+  reivindicarAutomacaoFalha,
+  sincronizarAutomacaoFalhas
+} from './automacao-falhas.mjs'
+import {
   compararRodadasEval,
   lerHistoricoEval,
   lerSuiteOmni,
@@ -153,13 +159,14 @@ function resumirFalha(item) {
 
 async function main() {
   if (action === 'estado') {
-    const [memory, persona, version, shortcutStore, improvementStore, failureStore, evalStore, contextStore, operationalCycle, sourceRepository, dailyScan] = await Promise.all([
+    const [memory, persona, version, shortcutStore, improvementStore, failureStore, failureAutomation, evalStore, contextStore, operationalCycle, sourceRepository, dailyScan] = await Promise.all([
       lerMemoria(home),
       lerPersonalidadeAtiva({ pluginRoot: root }),
       verificarVersao({ casa: home, pluginRoot: root }),
       lerAtalhos(home),
       lerAutoaperfeicoamento(home),
       lerFalhas(home),
+      sincronizarAutomacaoFalhas(home),
       lerHistoricoEval(home),
       lerPersistenciaContexto(home),
       lerCicloOperacional(home),
@@ -207,6 +214,14 @@ async function main() {
         underTest: failureStore.patterns.filter((item) => ['analyzed', 'testing', 'ready-for-eval'].includes(item.status)).length,
         evaluated: failureStore.patterns.filter((item) => item.status === 'evaluated').length,
         totalPatterns: failureStore.patterns.length,
+        automaticValidation: {
+          queued: failureAutomation.jobs.filter((item) => item.state === 'queued').length,
+          running: failureAutomation.jobs.filter((item) => item.state === 'running').length,
+          blocked: failureAutomation.jobs.filter((item) => item.state === 'blocked').length,
+          completed: failureAutomation.jobs.filter((item) => item.state === 'completed').length,
+          executor: 'background-subagent',
+          requiresOwnerPrompt: false
+        },
         automaticGlobalRule: false,
         automaticPromotion: false
       },
@@ -445,8 +460,21 @@ async function main() {
     return { ok: true, improvement: promotion.proposal ? resumirMelhoria(promotion.proposal) : promotion }
   }
   if (action === 'falhas') {
-    const store = await lerFalhas(home)
-    return { ok: true, patterns: store.patterns.map(resumirFalha), automaticGlobalRule: false }
+    const [store, automation] = await Promise.all([
+      lerFalhas(home),
+      sincronizarAutomacaoFalhas(home)
+    ])
+    return {
+      ok: true,
+      patterns: store.patterns.map(resumirFalha),
+      automation: {
+        queued: automation.jobs.filter((item) => item.state === 'queued').length,
+        running: automation.jobs.filter((item) => item.state === 'running').length,
+        blocked: automation.jobs.filter((item) => item.state === 'blocked').length,
+        completed: automation.jobs.filter((item) => item.state === 'completed').length
+      },
+      automaticGlobalRule: false
+    }
   }
   if (action === 'falha-registrar') {
     const { options } = lerOpcoes(parts)
@@ -464,7 +492,8 @@ async function main() {
     if (!positionals[0]) throw new Error('Use: falha-analisar <id> --causa <texto> --hipotese <texto>.')
     const analysis = await analisarPadraoFalha(home, positionals[0], {
       rootCause: options.causa,
-      hypothesis: options.hipotese
+      hypothesis: options.hipotese,
+      generation: options.geracao
     })
     return { ok: true, failure: analysis.pattern ? resumirFalha(analysis.pattern) : analysis }
   }
@@ -474,13 +503,43 @@ async function main() {
     const testResult = await testarCorrecaoFalha(home, positionals[0], {
       evidenceId: options.execucao,
       outcome: options.resultado,
+      criterion: options.criterio,
+      generation: options.geracao,
       success: options.falhou !== true
     })
     return { ok: true, failure: testResult.pattern ? resumirFalha(testResult.pattern) : testResult }
   }
+  if (action === 'falha-automacao-reivindicar') {
+    const { options } = lerOpcoes(parts)
+    if (!options.executor) throw new Error('Use: falha-automacao-reivindicar --executor <id-unico>.')
+    const claimed = await reivindicarAutomacaoFalha(home, { executorId: options.executor })
+    return {
+      ok: true,
+      automation: claimed.job
+        ? { result: claimed.result, jobId: claimed.job.id, patternId: claimed.job.patternId, prompt: claimed.prompt }
+        : { result: claimed.result }
+    }
+  }
+  if (action === 'falha-automacao-concluir') {
+    const { options, positionals } = lerOpcoes(parts)
+    if (!positionals[0] || !options.execucao) {
+      throw new Error('Use: falha-automacao-concluir <job-id> --execucao <id-da-evidencia>.')
+    }
+    const completed = await concluirAutomacaoFalha(home, positionals[0], options.execucao)
+    return { ok: true, automation: { result: completed.result, jobId: completed.job?.id ?? null } }
+  }
+  if (action === 'falha-automacao-bloquear') {
+    const { options, positionals } = lerOpcoes(parts)
+    if (!positionals[0] || !options.motivo) {
+      throw new Error('Use: falha-automacao-bloquear <job-id> --motivo <texto-seguro>.')
+    }
+    const blocked = await bloquearAutomacaoFalha(home, positionals[0], options.motivo)
+    return { ok: true, automation: { result: blocked.result, jobId: blocked.job?.id ?? null } }
+  }
   if (action === 'falha-avaliar') {
-    if (!parts[0]) throw new Error('Use: falha-avaliar <id>.')
-    const evaluation = await avaliarPadraoFalha(home, parts[0])
+    const { options, positionals } = lerOpcoes(parts)
+    if (!positionals[0]) throw new Error('Use: falha-avaliar <id> [--geracao <hash>].')
+    const evaluation = await avaliarPadraoFalha(home, positionals[0], { generation: options.geracao })
     let improvement = null
     if (evaluation.result === 'passed') {
       const proposed = await proporMelhoriaDeFalha(home, evaluation.pattern.id)

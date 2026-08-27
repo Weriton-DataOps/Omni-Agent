@@ -64,6 +64,10 @@ independentes até seus próprios contratos serem ativados.
 - Declarações estáveis do proprietário entram como memória confirmada quando a linguagem for clara.
 - Vários sinais presentes na mesma mensagem são processados individualmente.
 - Correções do proprietário viram observações de falha e candidatas de melhoria no mesmo turno.
+- Quando um padrão de falha atingir o limiar de candidata, reivindique automaticamente um trabalho
+  e inicie o briefing retornado em um subagente de segundo plano. Não peça ao proprietário para
+  autorizar diagnóstico, dois testes locais/reversíveis e eval; interrompa somente se o briefing
+  encontrar destruição, escrita remota, custo, nova permissão ou escalada de privilégio.
 - Conclusões verificadas de subagentes alimentam atalhos e procedimentos repetíveis.
 - O destino de uma melhoria segue sua natureza: regra operacional, procedimento, roteamento,
   personalidade, hook, eval, memória ou capacidade/skill.

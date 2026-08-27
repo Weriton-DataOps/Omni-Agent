@@ -9,6 +9,7 @@ import test from 'node:test'
 import { tratarHook } from '../runtime/hook-contexto.mjs'
 import { lembrarExplicitamente, lerMemoria } from '../runtime/memoria.mjs'
 import { lerEstadoVarredura } from '../runtime/varredura-diaria.mjs'
+import { registrarFalha } from '../runtime/falhas.mjs'
 
 const hookCli = fileURLToPath(new URL('../runtime/hook-contexto.mjs', import.meta.url))
 
@@ -166,6 +167,63 @@ test('hook aplica a rota fast ou deep escolhida pelo contexto', async () => {
       env
     )
     assert.match(profunda.hookSpecificOutput.additionalContext, /OMNI CONTEXT V1 - DEEP/)
+  } finally {
+    await rm(raiz, { recursive: true, force: true })
+  }
+})
+
+test('candidata de falha entra no turno como trabalho automatico de subagente', async () => {
+  const { raiz, env } = await ambiente()
+  const session_id = 'sessao-automacao-falhas'
+  try {
+    await tratarHook(
+      { hook_event_name: 'UserPromptSubmit', session_id, prompt: '/omni:omni' },
+      env
+    )
+    const failure = {
+      agent: 'omni',
+      action: 'executar Bash',
+      failureClass: 'permission',
+      signature: 'permissao negada ao executar teste local'
+    }
+    for (let index = 1; index <= 3; index += 1) {
+      await registrarFalha(env.OMNI_HOME, { ...failure, evidenceId: `hook-failure-${index}` })
+    }
+    const turn = await tratarHook(
+      { hook_event_name: 'UserPromptSubmit', session_id, prompt: 'continue o trabalho' },
+      env
+    )
+    const context = turn.hookSpecificOutput.additionalContext
+    assert.match(context, /AUTOMAÇÃO DE FALHAS/)
+    assert.match(context, /subagente.*segundo plano/i)
+    assert.match(context, /não peça autorização ao proprietário/i)
+  } finally {
+    await rm(raiz, { recursive: true, force: true })
+  }
+})
+
+test('terceira falha de ferramenta dispara o despacho sem esperar outro pedido', async () => {
+  const { raiz, env } = await ambiente()
+  const session_id = 'sessao-falha-imediata'
+  try {
+    await tratarHook(
+      { hook_event_name: 'UserPromptSubmit', session_id, prompt: '/omni:omni' },
+      env
+    )
+    let result
+    for (let index = 1; index <= 3; index += 1) {
+      result = await tratarHook({
+        hook_event_name: 'PostToolUseFailure',
+        session_id,
+        tool_use_id: `tool-failure-${index}`,
+        tool_name: 'Bash',
+        error: 'permission denied ao criar artefato local',
+        cwd: raiz
+      }, env)
+    }
+    assert.equal(result.hookSpecificOutput.hookEventName, 'PostToolUseFailure')
+    assert.match(result.hookSpecificOutput.additionalContext, /AUTOMAÇÃO DE FALHAS/)
+    assert.match(result.hookSpecificOutput.additionalContext, /antes de encerrar este turno/i)
   } finally {
     await rm(raiz, { recursive: true, force: true })
   }

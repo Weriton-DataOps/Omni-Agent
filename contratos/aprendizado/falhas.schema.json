@@ -34,7 +34,15 @@
           "occurrences": { "type": "integer", "minimum": 1 },
           "observations": { "type": "array", "items": { "type": "object" } },
           "analysis": { "type": ["object", "null"] },
-          "fixTests": { "type": "array", "items": { "type": "object" } },
+          "fixTests": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "criterionFingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+              }
+            }
+          },
           "evaluation": { "type": ["object", "null"] },
           "createdAt": { "type": "string", "format": "date-time" },
           "updatedAt": { "type": "string", "format": "date-time" }

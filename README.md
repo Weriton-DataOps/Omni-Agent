@@ -26,6 +26,12 @@ conclusões verificadas alimentam atalhos. O contexto seguinte recebe apenas o r
 Uma conferência diária assíncrona percorre somente sessões ativadas pelo Omni, recupera lacunas dos
 sensores e reconhece rotinas repetidas. Evidências já capturadas não são contadas novamente.
 
+Ao atingir o limiar de padrão de falha, uma candidata entra numa fila idempotente. O próximo turno
+disponível reivindica no máximo um trabalho e inicia um subagente em segundo plano para comprovar
+causa raiz, executar dois testes locais independentes e rodar o eval. O ciclo não pede confirmação;
+somente destruição, escrita remota, custo, nova permissão ou escalada de privilégio voltam ao
+proprietário. Publicação e promoção global continuam separadas.
+
 ## Separação de dados
 
 ```text

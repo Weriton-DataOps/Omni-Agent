@@ -56,6 +56,15 @@
         "Reforçou inteligência perceptível, humor, sarcasmo e analogias como parte do raciocínio, não como enfeite opcional.",
         "Removeu amortecedores de estilo e ampliou os evals contra respostas genéricas e secas, preservando verdade, segurança e respeito."
       ]
+    },
+    {
+      "version": "0.18.0",
+      "changes": [
+        "Passou a enfileirar automaticamente padrões de falha candidatos para um subagente em segundo plano, sem nova pergunta ao proprietário.",
+        "Adicionou reserva idempotente, lease e proteção contra duplicação ou ciclo infinito do executor.",
+        "Automatizou causa raiz, dois testes locais independentes e eval, comparando consistência pelo mesmo critério de aceitação.",
+        "Manteve ações destrutivas, escrita remota, custo, nova permissão e escalada de privilégio dependentes de autorização."
+      ]
     }
   ]
 }

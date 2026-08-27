@@ -25,6 +25,11 @@ ação → falha real → assinatura em hash
 - somente três ocorrências distintas da mesma ação, classe e assinatura formam um padrão candidato;
 - causa raiz e hipótese são registradas separadamente e não podem conter segredo;
 - dois testes reais, distintos, bem-sucedidos e com resultado consistente são exigidos;
+- uma candidata agenda automaticamente um subagente em segundo plano, sem nova pergunta ao proprietário;
+- o trabalho é idempotente, tem lease e no máximo um candidato é reivindicado por turno;
+- consistência compara o mesmo critério de aceitação; resumos reais podem variar entre execuções;
+- diagnóstico e testes locais/reversíveis são autônomos; destruição, escrita remota, custo e nova
+  permissão bloqueiam o trabalho e voltam ao proprietário;
 - teste falho ou inconsistente devolve o padrão ao estado analisado;
 - nova ocorrência após o eval invalida o resultado anterior;
 - erro bruto, stack trace, comando completo e resultado bruto não são persistidos;

@@ -16,6 +16,21 @@
   "maximumObservationsPerPattern": 50,
   "maximumFixTestsPerPattern": 20,
   "requireDistinctEvidence": true,
+  "automaticCandidateValidation": {
+    "enabled": true,
+    "executor": "background-subagent",
+    "requiresOwnerPrompt": false,
+    "leaseMinutes": 60,
+    "maximumConcurrentJobs": 1,
+    "excludedActions": ["executar Agent", "executar TaskStop"],
+    "ownerAuthorizationRequiredFor": [
+      "ação destrutiva",
+      "escrita remota",
+      "chamada paga",
+      "nova permissão",
+      "escalada de privilégio"
+    ]
+  },
   "automaticGlobalRule": false,
   "automaticPromotion": false,
   "storeRawError": false,

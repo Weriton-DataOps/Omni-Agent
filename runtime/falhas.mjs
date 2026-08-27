@@ -27,6 +27,13 @@ function fingerprint(value) {
   return createHash('sha256').update(normalize(value)).digest('hex')
 }
 
+export function geracaoPadraoFalha(pattern) {
+  const lastEvidence = pattern?.observations?.at(-1)?.evidenceFingerprint ?? 'sem-evidencia'
+  return createHash('sha256')
+    .update(`${pattern?.id ?? 'sem-padrao'}:${pattern?.occurrences ?? 0}:${lastEvidence}`, 'utf8')
+    .digest('hex')
+}
+
 function safeText(value, label, minimum, maximum) {
   const text = typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : ''
   if (text.length < minimum || text.length > maximum) {
@@ -99,6 +106,7 @@ function testValid(item) {
       item.id.startsWith('fix-test-') &&
       hashValid(item.evidenceFingerprint) &&
       hashValid(item.outcomeFingerprint) &&
+      (item.criterionFingerprint === undefined || hashValid(item.criterionFingerprint)) &&
       typeof item.success === 'boolean' &&
       typeof item.consistent === 'boolean' &&
       dateValid(item.testedAt)
@@ -269,6 +277,9 @@ export async function analisarPadraoFalha(casa, id, input, { at } = {}) {
     const loaded = await load(casa, policy)
     const pattern = loaded.store.patterns.find((item) => item.id === id)
     if (!pattern) return { result: 'not-found', pattern: null }
+    if (input?.generation && input.generation !== geracaoPadraoFalha(pattern)) {
+      return { result: 'stale-generation', pattern }
+    }
     if (pattern.status !== 'candidate') return { result: 'not-ready', requiredStatus: 'candidate', pattern }
     pattern.analysis = { rootCause, hypothesis, analyzedAt }
     pattern.fixTests = []
@@ -295,15 +306,22 @@ export async function testarCorrecaoFalha(casa, id, input, { at } = {}) {
   const policy = await readPolicy()
   const evidence = safeText(input?.evidenceId, 'Identificador do teste', 3, 240)
   const outcome = safeText(input?.outcome, 'Resultado do teste', 2, 500)
+  const criterion = input?.criterion === undefined
+    ? null
+    : safeText(input.criterion, 'Critério de aceitação', 3, 500)
   if (typeof input?.success !== 'boolean') throw new Error('O teste precisa declarar sucesso ou falha.')
   const evidenceFingerprint = fingerprint(evidence)
   const outcomeFingerprint = fingerprint(outcome)
+  const criterionFingerprint = criterion === null ? null : fingerprint(criterion)
   const testedAt = now(at)
   const release = await acquireLock(casa)
   try {
     const loaded = await load(casa, policy)
     const pattern = loaded.store.patterns.find((item) => item.id === id)
     if (!pattern) return { result: 'not-found', pattern: null }
+    if (input?.generation && input.generation !== geracaoPadraoFalha(pattern)) {
+      return { result: 'stale-generation', pattern }
+    }
     if (!['analyzed', 'testing', 'ready-for-eval'].includes(pattern.status)) {
       return { result: 'not-ready', requiredStatus: 'analyzed', pattern }
     }
@@ -312,14 +330,17 @@ export async function testarCorrecaoFalha(casa, id, input, { at } = {}) {
       ...pattern.fixTests.map((item) => item.evidenceFingerprint)
     ].includes(evidenceFingerprint)
     if (evidenceUsed) return { result: 'duplicate-evidence', pattern }
-    const expected = [...pattern.fixTests]
+    const previousSuccess = [...pattern.fixTests]
       .reverse()
-      .find((item) => item.success && item.consistent)?.outcomeFingerprint ?? outcomeFingerprint
-    const consistent = input.success && expected === outcomeFingerprint
+      .find((item) => item.success && item.consistent)
+    const expected = criterionFingerprint ?? outcomeFingerprint
+    const previousExpected = previousSuccess?.criterionFingerprint ?? previousSuccess?.outcomeFingerprint ?? expected
+    const consistent = input.success && previousExpected === expected
     const fixTest = {
       id: `fix-test-${randomUUID()}`,
       evidenceFingerprint,
       outcomeFingerprint,
+      ...(criterionFingerprint === null ? {} : { criterionFingerprint }),
       success: input.success,
       consistent,
       testedAt
@@ -338,7 +359,7 @@ export async function testarCorrecaoFalha(casa, id, input, { at } = {}) {
   }
 }
 
-export async function avaliarPadraoFalha(casa, id, { at } = {}) {
+export async function avaliarPadraoFalha(casa, id, { at, generation } = {}) {
   const policy = await readPolicy()
   const evaluatedAt = now(at)
   const release = await acquireLock(casa)
@@ -346,6 +367,9 @@ export async function avaliarPadraoFalha(casa, id, { at } = {}) {
     const loaded = await load(casa, policy)
     const pattern = loaded.store.patterns.find((item) => item.id === id)
     if (!pattern) return { result: 'not-found', pattern: null }
+    if (generation && generation !== geracaoPadraoFalha(pattern)) {
+      return { result: 'stale-generation', pattern }
+    }
     if (pattern.status !== 'ready-for-eval') {
       return { result: 'not-ready', requiredStatus: 'ready-for-eval', pattern }
     }
