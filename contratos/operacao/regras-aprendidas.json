@@ -1,5 +1,18 @@
 {
   "schemaVersion": 1,
   "contract": "omni-learned-rules-v1",
-  "rules": []
+  "rules": [
+    {
+      "id": "improvement-0ac4a466-8d86-493e-954a-7cc8903ae9c3",
+      "category": "owner-correction",
+      "destination": "personality",
+      "text": "Responder com calor, ritmo, humor e analogias naturais na medida da conversa, preservando objetividade.",
+      "evidence": {
+        "occurrences": 2,
+        "fingerprint": "91dd3a41e58269b024ece7e5acd9a030b16cee2463936bcb1423bf46928ccdf4"
+      },
+      "status": "active",
+      "learnedAt": "2026-08-27T00:24:24.899Z"
+    }
+  ]
 }

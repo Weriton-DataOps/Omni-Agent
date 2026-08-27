@@ -14,6 +14,10 @@ teste humano.
 - contexto estruturado formal e estado operacional vivo;
 - sensores de mensagem, ferramenta bem-sucedida, falha de ferramenta, subagente, conclusão de tarefa,
   fim de resposta e fim de sessão;
+- conferência diária assíncrona, limitada às sessões ativadas pelo Omni, com deduplicação contra os
+  sensores em tempo real;
+- recuperação de lacunas em memória, falhas e melhorias, mais agrupamento de rotinas repetidas em
+  atalhos candidatos;
 - correções do proprietário alimentando falhas e candidatas de melhoria no mesmo turno;
 - delegação com estados `prepared → visible → running → blocked/completed → closed`;
 - conclusão de subagente alimentando evidência e observação de atalho;
@@ -34,6 +38,7 @@ teste humano.
 - aprendizado repetido materializado no repositório canônico e refletido após atualização do plugin;
 - comparação pedido × ação × resultado reduzindo vacilos reais;
 - observação de respostas gerando evals úteis sem falsos positivos.
+- varredura de um dia real aumentando apenas campos sustentados por evidência e sem duplicar hooks.
 
 Esses itens formam o Definition of Done reservado para 27/08/2026 em
 [`validacao/definition-of-done-2026-08-27.md`](validacao/definition-of-done-2026-08-27.md).

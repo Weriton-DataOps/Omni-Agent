@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "contract": "omni-daily-activity-scan-v1",
+  "automaticIntervalMinutes": 60,
+  "settleMinutes": 5,
+  "maximumFilesPerScan": 500,
+  "maximumBytesPerScan": 524288000,
+  "maximumProcessedEvidence": 50000,
+  "maximumScanHistory": 60,
+  "sources": ["claude-code-jsonl"],
+  "targets": ["memory", "failures", "shortcuts", "operational-improvements"],
+  "privacy": {
+    "storeRawConversation": false,
+    "storeRawToolResults": false,
+    "storeRawErrors": false,
+    "storeSecrets": false
+  }
+}

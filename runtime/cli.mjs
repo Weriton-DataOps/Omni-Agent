@@ -55,6 +55,7 @@ import {
   lerRepositorioCanonico,
   materializarMelhoriaOperacional
 } from './evolucao.mjs'
+import { lerEstadoVarredura, varrerAtividadesDoDia } from './varredura-diaria.mjs'
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
 const [action = 'estado', ...parts] = process.argv.slice(2)
@@ -80,7 +81,7 @@ function lerOpcoes(argumentos) {
       continue
     }
     const key = part.slice(2)
-    if (key === 'falhou' || key === 'portavel' || key === 'aderente' || key === 'necessaria') {
+    if (key === 'falhou' || key === 'portavel' || key === 'aderente' || key === 'necessaria' || key === 'forcar') {
       options[key] = true
       continue
     }
@@ -152,7 +153,7 @@ function resumirFalha(item) {
 
 async function main() {
   if (action === 'estado') {
-    const [memory, persona, version, shortcutStore, improvementStore, failureStore, evalStore, contextStore, operationalCycle, sourceRepository] = await Promise.all([
+    const [memory, persona, version, shortcutStore, improvementStore, failureStore, evalStore, contextStore, operationalCycle, sourceRepository, dailyScan] = await Promise.all([
       lerMemoria(home),
       lerPersonalidadeAtiva({ pluginRoot: root }),
       verificarVersao({ casa: home, pluginRoot: root }),
@@ -162,7 +163,8 @@ async function main() {
       lerHistoricoEval(home),
       lerPersistenciaContexto(home),
       lerCicloOperacional(home),
-      lerRepositorioCanonico(home)
+      lerRepositorioCanonico(home),
+      lerEstadoVarredura(home)
     ])
     return {
       ok: true,
@@ -183,6 +185,7 @@ async function main() {
         observing: shortcutStore.shortcuts.filter((item) => item.status === 'observing').length,
         candidates: shortcutStore.shortcuts.filter((item) => item.status === 'candidate').length,
         validated: shortcutStore.shortcuts.filter((item) => item.status === 'validated').length,
+        total: shortcutStore.shortcuts.length,
         automaticPromotion: false
       },
       selfImprovement: {
@@ -191,6 +194,9 @@ async function main() {
         evaluated: improvementStore.proposals.filter((item) => item.status === 'evaluated').length,
         approved: improvementStore.proposals.filter((item) => item.status === 'approved').length,
         materialized: improvementStore.proposals.filter((item) => item.status === 'materialized-pending-version').length,
+        capabilityProposals: improvementStore.proposals.length,
+        operationalCandidates: operationalCycle.improvementCandidates.length,
+        totalProposals: improvementStore.proposals.length + operationalCycle.improvementCandidates.length,
         automaticPromotion: false,
         automaticGitPush: false
       },
@@ -200,6 +206,7 @@ async function main() {
         candidates: failureStore.patterns.filter((item) => item.status === 'candidate').length,
         underTest: failureStore.patterns.filter((item) => ['analyzed', 'testing', 'ready-for-eval'].includes(item.status)).length,
         evaluated: failureStore.patterns.filter((item) => item.status === 'evaluated').length,
+        totalPatterns: failureStore.patterns.length,
         automaticGlobalRule: false,
         automaticPromotion: false
       },
@@ -219,10 +226,33 @@ async function main() {
         events: operationalCycle.events.length,
         improvementCandidates: operationalCycle.improvementCandidates.length
       },
+      dailyAudit: {
+        schemaVersion: dailyScan.schemaVersion,
+        completedScans: dailyScan.scans.length,
+        lastScan: dailyScan.scans.at(-1) ?? null,
+        capturedLiveEvidence: dailyScan.capturedLiveEvidence.length,
+        processedEvidence: dailyScan.processedEvidence.length,
+        rawConversationStored: false
+      },
       sourceRepository,
       version,
       context: { schemaVersion: 4, retrieval: 'hybrid-local-v1', projections: ['fast', 'deep'] }
     }
+  }
+  if (action === 'varredura-dia') {
+    const { options } = lerOpcoes(parts)
+    return {
+      ok: true,
+      dailyAudit: await varrerAtividadesDoDia(home, {
+        date: options.data,
+        projectsRoot: options.origem,
+        force: options.forcar === true
+      })
+    }
+  }
+  if (action === 'varreduras') {
+    const store = await lerEstadoVarredura(home)
+    return { ok: true, dailyAudit: { scans: store.scans, processedEvidence: store.processedEvidence.length } }
   }
   if (action === 'personalidade') {
     const persona = await lerPersonalidadeAtiva({ pluginRoot: root })

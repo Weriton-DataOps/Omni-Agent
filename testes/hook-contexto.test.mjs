@@ -8,6 +8,7 @@ import test from 'node:test'
 
 import { tratarHook } from '../runtime/hook-contexto.mjs'
 import { lembrarExplicitamente, lerMemoria } from '../runtime/memoria.mjs'
+import { lerEstadoVarredura } from '../runtime/varredura-diaria.mjs'
 
 const hookCli = fileURLToPath(new URL('../runtime/hook-contexto.mjs', import.meta.url))
 
@@ -58,6 +59,7 @@ test('sessao Omni recebe personalidade e memoria relevante em cada novo turno', 
     assert.match(contexto, /Inventor Cúmplice/)
     assert.match(contexto, /prefiro poucas palavras e uma analogia concreta/i)
     assert.match(contexto, /RELEVANT CONFIRMED MEMORY/)
+    assert.equal((await lerEstadoVarredura(env.OMNI_HOME)).capturedLiveEvidence.length, 1)
   } finally {
     await rm(raiz, { recursive: true, force: true })
   }

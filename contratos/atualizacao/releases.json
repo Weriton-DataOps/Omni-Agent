@@ -32,6 +32,14 @@
         "Adicionou evolução por regra, procedimento, roteamento, personalidade, eval ou capacidade.",
         "Restaurou a personalidade-base v1 e reservou a validação comportamental completa para 27/08/2026."
       ]
+    },
+    {
+      "version": "0.16.0",
+      "changes": [
+        "Adicionou uma varredura diária das sessões do Omni para recuperar aprendizados que os hooks não capturaram.",
+        "Passou a agrupar execuções bem-sucedidas repetidas em atalhos e candidatas de melhoria operacional.",
+        "Adicionou deduplicação por evidência, execução automática em segundo plano e relatório sem conversa bruta."
+      ]
     }
   ]
 }

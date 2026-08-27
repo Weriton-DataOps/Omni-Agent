@@ -91,6 +91,17 @@ function codigoErro(input) {
   return String(input?.error ?? '').match(/(?:exit code|code)\s*[:=]?\s*(-?\d+)/i)?.[1] ?? 'unknown'
 }
 
+function recuperacaoParaClasse(failureClass) {
+  return {
+    permission: 'verificar identidade, proprietario e permissao necessaria antes de repetir',
+    timeout: 'distinguir processo em andamento de bloqueio real e ajustar o limite com evidencia',
+    dependency: 'verificar dependencia e versao disponiveis antes de executar novamente',
+    'validation-error': 'validar sintaxe e contrato da entrada antes de reenviar',
+    environment: 'confirmar executavel, caminho e diretorio de trabalho antes de repetir',
+    'tool-error': 'preservar codigo de saida, diagnosticar a causa e escolher uma alternativa verificavel'
+  }[failureClass] ?? 'diagnosticar a causa antes de repetir a mesma acao'
+}
+
 function objetivoDeclarado(prompt) {
   const sentence = prompt
     .split(/(?:\r?\n)+|(?<=[.!?])\s+/u)
@@ -155,10 +166,12 @@ export async function observarFerramenta(casa, input) {
     evidenceId: input.tool_use_id ?? `${input.session_id}:${hash(input.error)}`
   })
   if (failure.result === 'candidate') {
+    const toolName = texto(input.tool_name, 80) ?? 'a ferramenta'
+    const failureClass = failure.pattern?.failureClass ?? classeDeErro(input)
     const improvement = await proporMelhoriaOperacional(casa, {
       category: 'repeated-tool-failure',
       destination: 'procedure',
-      statement: `Criar recuperacao repetivel para ${texto(input.tool_name, 80) ?? 'a ferramenta'} com a assinatura observada.`
+      statement: `Quando ${toolName} falhar por ${failureClass}, ${recuperacaoParaClasse(failureClass)}.`
     })
     if (improvement.candidate?.status === 'ready') {
       await materializarMelhoriaConfigurada(casa, improvement.candidate.id)

@@ -1,5 +1,30 @@
 {
   "schemaVersion": 1,
   "contract": "omni-learned-procedures-v1",
-  "procedures": []
+  "procedures": [
+    {
+      "id": "improvement-4234614b-b5c8-4707-8187-c1af15c794c9",
+      "category": "repeated-tool-failure",
+      "destination": "procedure",
+      "text": "Quando Bash falhar por tool-error, preservar codigo de saida, diagnosticar a causa e escolher uma alternativa verificavel.",
+      "evidence": {
+        "occurrences": 2,
+        "fingerprint": "b62f0ff49d33f2c80577c16274858eabcbfdc048d000e78aabd635890d372628"
+      },
+      "status": "active",
+      "learnedAt": "2026-08-27T00:24:25.415Z"
+    },
+    {
+      "id": "improvement-3b70d0cb-22c3-45e7-99c5-31e0d14f1343",
+      "category": "repeated-tool-failure",
+      "destination": "procedure",
+      "text": "Quando Bash falhar por permission, verificar identidade, proprietario e permissao necessaria antes de repetir.",
+      "evidence": {
+        "occurrences": 2,
+        "fingerprint": "ac9082563dcc587622e5816e7bac0e46123cb0b7b8724e5e5b9053753c76152b"
+      },
+      "status": "active",
+      "learnedAt": "2026-08-27T00:24:25.432Z"
+    }
+  ]
 }

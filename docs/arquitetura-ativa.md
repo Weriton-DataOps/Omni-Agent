@@ -27,6 +27,15 @@ USUÁRIO ─► SKILL ─► HOOKS ─► OBSERVADOR ─► CICLO OPERACIONAL LO
                       RESPOSTA
 ```
 
+```text
+HOOKS EM TEMPO REAL ───────────────► aprendizado imediato
+          │
+          └── VARREDURA DIÁRIA ───► compara fingerprints
+                                      ├─ ignora o que já foi capturado
+                                      ├─ recupera lacunas
+                                      └─ agrupa rotinas repetidas
+```
+
 O repositório distribui comportamento portátil. A casa `%APPDATA%\omni` guarda memória pessoal,
 estado de execução, evidências resumidas e fingerprints. Conversas, erros e resultados brutos ficam
 fora do Git.
@@ -43,6 +52,7 @@ fora do Git.
 | memória | `runtime/memoria.mjs` + `runtime/pipeline-memoria.mjs` |
 | falhas e atalhos | `runtime/falhas.mjs` + `runtime/atalhos.mjs` |
 | evolução portável | `runtime/evolucao.mjs` |
+| conferência diária | `runtime/varredura-diaria.mjs` + `runtime/hook-varredura.mjs` |
 | regras aprendidas | `contratos/operacao/regras-aprendidas.json` |
 | procedimentos aprendidos | `contratos/operacao/procedimentos-aprendidos.json` |
 | casos aprendidos de eval | `contratos/eval/casos-aprendidos.json` |
@@ -117,6 +127,11 @@ A promoção operacional exige evidência repetida, mas dispensa uma cerimônia 
 configuração local indica a árvore-fonte canônica; quando a candidata fica pronta, o runtime verifica
 repositório, formato, segredo e destino e materializa automaticamente. O Git recebe somente a regra
 geral; a experiência privada permanece local.
+
+A conferência diária lê os JSONL locais do Claude Code por streaming, considera somente sessões em
+que `/omni:omni` foi ativado e não copia conversas, resultados ou erros para seu próprio estado. O
+ledger guarda apenas fingerprints, contadores e relatórios. Assim, uma interrupção ou hook ausente
+deixa de ser um buraco permanente sem transformar a mesma execução em duas evidências.
 
 ## Estado da interface
 

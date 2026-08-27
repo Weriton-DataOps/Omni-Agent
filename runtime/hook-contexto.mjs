@@ -15,6 +15,7 @@ import {
   observarPrompt
 } from './observador.mjs'
 import { observarEvento } from './ciclo-operacional.mjs'
+import { registrarCoberturaAoVivo } from './varredura-diaria.mjs'
 
 const raiz = dirname(dirname(fileURLToPath(import.meta.url)))
 
@@ -117,6 +118,7 @@ export async function tratarHook(input, env = process.env) {
 
   if (input.hook_event_name === 'PostToolUse' || input.hook_event_name === 'PostToolUseFailure') {
     await observarFerramenta(casa, input)
+    await registrarCoberturaAoVivo(casa, { toolUseId: input.tool_use_id })
     return saidaVazia()
   }
 
@@ -165,6 +167,10 @@ export async function tratarHook(input, env = process.env) {
     processarExperiencia(casa, intencao),
     observarPrompt(casa, input)
   ])
+  await registrarCoberturaAoVivo(casa, {
+    sessionId: input.session_id,
+    prompt: intencao
+  })
   const [contexto, persona] = await Promise.all([
     montarContexto(casa, {
       intent: intencao,

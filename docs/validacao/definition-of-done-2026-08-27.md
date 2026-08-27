@@ -47,6 +47,9 @@
 - [ ] correção real cria observação de falha automaticamente;
 - [ ] repetição cria melhoria operacional pronta;
 - [ ] execução bem-sucedida cria observação de atalho;
+- [ ] varredura diária recupera uma lacuna simulada e ignora uma evidência já capturada pelo hook;
+- [ ] segunda varredura do mesmo corpus não altera nenhum contador;
+- [ ] relatório da varredura não contém conversa, resultado de ferramenta, erro ou segredo bruto;
 - [ ] destino da melhoria corresponde à natureza do aprendizado;
 - [ ] regra operacional vira regra, procedimento vira procedimento e eval vira caso de eval;
 - [ ] skill nasce somente quando o aprendizado for uma capacidade;

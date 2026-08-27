@@ -23,6 +23,8 @@ regra/procedimento/eval/capacidade portável
 O plugin escuta mensagens, ferramentas, falhas, subagentes, tarefas e encerramentos. Preferências
 estáveis podem ser confirmadas automaticamente; correções geram observações de falha e melhorias;
 conclusões verificadas alimentam atalhos. O contexto seguinte recebe apenas o recorte relevante.
+Uma conferência diária assíncrona percorre somente sessões ativadas pelo Omni, recupera lacunas dos
+sensores e reconhece rotinas repetidas. Evidências já capturadas não são contadas novamente.
 
 ## Separação de dados
 
@@ -62,10 +64,18 @@ Omni/
 /omni:omni ciclo
 /omni:omni delegacoes
 /omni:omni melhorias
+/omni:omni varredura
 ```
 
 O operador técnico também expõe `delegacao-preparar`, `delegacao-estado` e
-`melhoria-operacional-promover` por `scripts/omni.ps1`.
+`melhoria-operacional-promover` por `scripts/omni.ps1`. Para conferir um dia específico:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\omni.ps1 varredura-dia --data 2026-08-26 --forcar
+```
+
+A varredura roda também na abertura da sessão e, no máximo uma vez por hora, após uma resposta. Ela
+é uma rede de conferência; o aprendizado por hooks continua sendo o caminho principal.
 
 Uma única configuração local liga o aprendizado ao repositório fonte:
 

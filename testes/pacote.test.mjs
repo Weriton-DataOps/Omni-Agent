@@ -11,7 +11,7 @@ test('marketplace usa o plugin do próprio repositório e versão semântica', a
   const packageManifest = JSON.parse(await readFile(file('package.json'), 'utf8'))
   assert.equal(marketplace.plugins[0].source, './')
   assert.equal(manifest.name, 'omni')
-  assert.equal(manifest.version, '0.15.0')
+  assert.equal(manifest.version, '0.16.0')
   assert.equal(packageManifest.version, manifest.version)
 })
 
@@ -31,6 +31,9 @@ test('runtime, schema e manifesto concordam sobre as versões', async () => {
   )
   const failurePolicy = JSON.parse(
     await readFile(file('contratos/aprendizado/falhas.json'), 'utf8')
+  )
+  const dailyScan = JSON.parse(
+    await readFile(file('contratos/aprendizado/varredura-diaria.json'), 'utf8')
   )
   const promotionResultSchema = JSON.parse(
     await readFile(file('contratos/eval/resultado-personalidade.schema.json'), 'utf8')
@@ -67,6 +70,9 @@ test('runtime, schema e manifesto concordam sobre as versões', async () => {
   assert.equal(failurePolicy.automaticPromotion, false)
   assert.equal(failurePolicy.storeRawError, false)
   assert.equal(failurePolicy.storeRawTestOutcome, false)
+  assert.equal(dailyScan.contract, 'omni-daily-activity-scan-v1')
+  assert.equal(dailyScan.privacy.storeRawConversation, false)
+  assert.equal(dailyScan.privacy.storeRawToolResults, false)
   assert.equal(promotionResultSchema.properties.schemaVersion.const, 1)
   assert.equal(promotionResultSchema.additionalProperties, false)
   assert.equal(contextSchema.properties.schemaVersion.const, 4)
@@ -101,6 +107,8 @@ test('plugin contém somente o núcleo declarado', async () => {
   await stat(file('runtime/ciclo-operacional.mjs'))
   await stat(file('runtime/observador.mjs'))
   await stat(file('runtime/evolucao.mjs'))
+  await stat(file('runtime/varredura-diaria.mjs'))
+  await stat(file('runtime/hook-varredura.mjs'))
   await stat(file('contratos/operacao/ciclo.json'))
   await stat(file('contratos/operacao/regras-aprendidas.json'))
   await stat(file('contratos/operacao/procedimentos-aprendidos.json'))
@@ -115,6 +123,7 @@ test('plugin contém somente o núcleo declarado', async () => {
   await stat(file('contratos/aprendizado/falhas.json'))
   await stat(file('contratos/aprendizado/falhas.schema.json'))
   await stat(file('contratos/aprendizado/falhas.md'))
+  await stat(file('contratos/aprendizado/varredura-diaria.json'))
   await stat(file('contratos/eval/resultado-personalidade.schema.json'))
   await stat(file('contratos/eval/resultados/README.md'))
   await stat(file('contratos/eval/omni-core.json'))
@@ -144,6 +153,7 @@ test('fronteiras mantêm interface e iniciativas externas independentes do Omni'
 
 test('hook injeta contexto por turno somente após ativação do Omni', async () => {
   const hooks = JSON.parse(await readFile(file('hooks/hooks.json'), 'utf8'))
+  assert.ok(hooks.hooks.SessionStart)
   assert.ok(hooks.hooks.UserPromptSubmit)
   assert.ok(hooks.hooks.UserPromptExpansion)
   assert.ok(hooks.hooks.PostToolUse)
@@ -157,6 +167,10 @@ test('hook injeta contexto por turno somente após ativação do Omni', async ()
   assert.equal(command.type, 'command')
   assert.equal(command.command, 'node')
   assert.deepEqual(command.args, ['${CLAUDE_PLUGIN_ROOT}/runtime/hook-contexto.mjs'])
+  const dailyStart = hooks.hooks.SessionStart[0].hooks[0]
+  assert.deepEqual(dailyStart.args, ['${CLAUDE_PLUGIN_ROOT}/runtime/hook-varredura.mjs'])
+  assert.equal(dailyStart.async, true)
+  assert.ok(hooks.hooks.Stop[0].hooks.some((hook) => hook.args?.[0]?.endsWith('hook-varredura.mjs')))
 })
 
 test('personalidade-base v1 é a fonte ativa e canais externos continuam planejados', async () => {

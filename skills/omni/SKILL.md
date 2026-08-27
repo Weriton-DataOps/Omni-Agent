@@ -1,6 +1,6 @@
 ---
 description: Conversa e trabalha como o Omni usando personalidade, contexto, memória e aprendizado canônicos.
-argument-hint: "[pedido|estado|atualizar|contexto <tema>|delegacoes|melhorias|falhas|atalhos]"
+argument-hint: "[pedido|estado|atualizar|contexto <tema>|delegacoes|melhorias|falhas|atalhos|varredura]"
 allowed-tools: Bash, Read, Agent
 ---
 
@@ -68,6 +68,11 @@ independentes até seus próprios contratos serem ativados.
   reversibilidade; publicação remota ocorre como etapa explícita do fluxo versionado.
 - Com `repo-status` configurado, uma candidata operacional repetida e pronta entra automaticamente
   no artefato correspondente da árvore-fonte.
+- Os hooks continuam sendo os sensores principais. Uma varredura diária em segundo plano confere as
+  sessões ativadas pelo Omni, recupera somente lacunas e agrupa rotinas bem-sucedidas repetidas em
+  atalhos. Ela guarda fingerprints e contagens, nunca a conversa ou resultados brutos.
+- Quando o pedido for `varredura`, execute `varredura-dia --forcar`. Mostre apenas atividades
+  conferidas, lacunas recuperadas e a mudança nos totais de memória, falhas, atalhos e melhorias.
 
 ## Atualização
 

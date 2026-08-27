@@ -1,5 +1,18 @@
 {
   "schemaVersion": 1,
   "contract": "omni-learned-eval-cases-v1",
-  "cases": []
+  "cases": [
+    {
+      "id": "improvement-7998c0fb-4167-4d47-83db-a987fa6a0d82",
+      "category": "owner-correction",
+      "destination": "eval",
+      "text": "Comparar pedido, acao e resultado antes de concluir, corrigindo divergencias enquanto o turno ainda esta ativo.",
+      "evidence": {
+        "occurrences": 2,
+        "fingerprint": "f5d7def280c06938bd3fa92714fea867019d107cc329546c86408424f8a29592"
+      },
+      "status": "active",
+      "learnedAt": "2026-08-27T00:24:25.153Z"
+    }
+  ]
 }
