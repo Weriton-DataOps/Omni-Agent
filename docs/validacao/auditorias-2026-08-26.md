@@ -177,12 +177,13 @@ porém, foi considerada nas auditorias de sensores, delegação, falhas e varred
 - sintaxe: aprovada;
 - suíte: **150/150 testes aprovados**;
 - manifesto do marketplace: validado pelo Claude Code 2.1.246;
-- smoke do plugin instalado 0.19.0: contexto, sessão, delegação, visibilidade, evidência, conclusão e
-  atalho conectados;
-- persistência: primeiro checkpoint real registrado;
+- smoke do plugin instalado 0.19.0 e repetição na 0.19.1: contexto, sessão, delegação, visibilidade,
+  evidência, conclusão e atalho conectados;
+- persistência: checkpoints reais de início e encerramento registrados;
 - eval: primeiro baseline determinístico parcial registrado, com 16 casos, 100% de sucesso, score
   médio 1, latência média observada de 165,375 ms e custo zero;
 - privacidade: histórico manteve apenas fingerprints da evidência;
-- versão preparada: 0.19.1.
+- versão 0.19.1 publicada no `origin/main`, instalada e validada; a sessão aberta ainda precisa de
+  **Restart** para passar a usar os hooks novos.
 
 O protocolo repetível está em [`ciclo-auditoria-7-dias.md`](ciclo-auditoria-7-dias.md).

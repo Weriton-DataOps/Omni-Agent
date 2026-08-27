@@ -18,7 +18,7 @@ mais dias se os resultados ainda variarem ou revelarem lacunas.
 
 | Dia | Data | Gates | Conexões | Conversa | Delegação real | Varredura | Evals | Veredito |
 |---:|---|---|---|---|---|---|---|---|
-| 1 | 26/08/2026 | executado | sintético aprovado | observada | pendente após recarga | 4 rodadas | baseline parcial | baseline |
+| 1 | 26/08/2026 | 150/150 | smoke 0.19.1 aprovado | observada | pendente após recarga | 4 rodadas | 16 casos | baseline |
 | 2 | 27/08/2026 | — | — | — | — | — | — | — |
 | 3 | 28/08/2026 | — | — | — | — | — | — | — |
 | 4 | 29/08/2026 | — | — | — | — | — | — | — |
