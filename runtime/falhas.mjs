@@ -272,6 +272,8 @@ export async function registrarFalha(casa, input, { at } = {}) {
   }
 }
 
+const REANALYSABLE_STATUSES = ['candidate', 'analyzed', 'testing', 'ready-for-eval']
+
 export async function analisarPadraoFalha(casa, id, input, { at } = {}) {
   const policy = await readPolicy()
   const rootCause = safeText(input?.rootCause, 'Causa raiz', 8, 500)
@@ -285,7 +287,12 @@ export async function analisarPadraoFalha(casa, id, input, { at } = {}) {
     if (input?.generation && input.generation !== geracaoPadraoFalha(pattern)) {
       return { result: 'stale-generation', pattern }
     }
-    if (pattern.status !== 'candidate') return { result: 'not-ready', requiredStatus: 'candidate', pattern }
+    // Reanálise é permitida enquanto o padrão não foi avaliado: um diagnóstico errado
+    // precisa poder ser substituído por outro medido. Reanalisar zera testes e avaliação,
+    // porque eles provaram a hipótese antiga, não a nova.
+    if (!REANALYSABLE_STATUSES.includes(pattern.status)) {
+      return { result: 'not-ready', requiredStatus: REANALYSABLE_STATUSES.join('|'), pattern }
+    }
     pattern.analysis = { rootCause, hypothesis, analyzedAt }
     pattern.fixTests = []
     pattern.evaluation = null

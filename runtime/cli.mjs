@@ -524,7 +524,13 @@ async function main() {
       hypothesis: options.hipotese,
       generation: options.geracao
     })
-    return { ok: true, failure: analysis.pattern ? resumirFalha(analysis.pattern) : analysis }
+    // O resultado da operação viaja junto: um padrão devolvido não prova que a análise
+    // foi aceita. Sem isto, `not-ready` chega ao chamador vestido de sucesso.
+    return {
+      ok: analysis.result === 'analyzed',
+      result: analysis.result,
+      failure: analysis.pattern ? resumirFalha(analysis.pattern) : analysis
+    }
   }
   if (action === 'falha-testar') {
     const { options, positionals } = lerOpcoes(parts)
@@ -536,7 +542,11 @@ async function main() {
       generation: options.geracao,
       success: options.falhou !== true
     })
-    return { ok: true, failure: testResult.pattern ? resumirFalha(testResult.pattern) : testResult }
+    return {
+      ok: Boolean(testResult.fixTest),
+      result: testResult.result,
+      failure: testResult.pattern ? resumirFalha(testResult.pattern) : testResult
+    }
   }
   if (action === 'falha-automacao-reivindicar') {
     const { options } = lerOpcoes(parts)
@@ -575,7 +585,8 @@ async function main() {
       improvement = proposed.proposal ? await avaliarMelhoria(home, proposed.proposal.id) : proposed
     }
     return {
-      ok: true,
+      ok: ['passed', 'failed'].includes(evaluation.result),
+      result: evaluation.result,
       failure: evaluation.pattern ? resumirFalha(evaluation.pattern) : evaluation,
       selfImprovement: improvement?.proposal ? resumirMelhoria(improvement.proposal) : improvement
     }
