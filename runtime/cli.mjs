@@ -479,7 +479,14 @@ async function main() {
       action === 'melhoria-aprovar' ? 'approve' : 'reject',
       { portable: options.portavel === true, roleFit: options.aderente === true }
     )
-    return { ok: true, improvement: decision.proposal ? resumirMelhoria(decision.proposal) : decision }
+    // Mesmo cuidado de falha-analisar: `portable-confirmation-required` e
+    // `role-fit-confirmation-required` são recusas, não aprovações silenciosas.
+    return {
+      ok: ['approved', 'rejected'].includes(decision.result),
+      result: decision.result,
+      questions: decision.questions,
+      improvement: decision.proposal ? resumirMelhoria(decision.proposal) : decision
+    }
   }
   if (action === 'melhoria-promover') {
     const { options, positionals } = lerOpcoes(parts)
