@@ -65,6 +65,13 @@
         "Automatizou causa raiz, dois testes locais independentes e eval, comparando consistência pelo mesmo critério de aceitação.",
         "Manteve ações destrutivas, escrita remota, custo, nova permissão e escalada de privilégio dependentes de autorização."
       ]
+    },
+    {
+      "version": "0.18.1",
+      "changes": [
+        "Corrigiu a corrida entre o eval da falha e o fechamento do trabalho em segundo plano.",
+        "Garantiu que o subagente anexe a evidência final antes do job ser encerrado e permite reparar recibos antigos sem fingerprint."
+      ]
     }
   ]
 }

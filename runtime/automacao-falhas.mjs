@@ -167,7 +167,7 @@ export async function sincronizarAutomacaoFalhas(casa, { at } = {}) {
     }
     for (const pattern of failures.patterns) {
       if (pattern.status === 'evaluated') {
-        for (const job of store.jobs.filter((item) => item.patternId === pattern.id && item.state !== 'completed')) {
+        for (const job of store.jobs.filter((item) => item.patternId === pattern.id && item.state === 'queued')) {
           job.state = 'completed'
           job.leaseUntil = null
           job.updatedAt = timestamp
@@ -267,6 +267,17 @@ async function finish(casa, id, state, value, { at } = {}) {
     const store = await load(casa)
     const job = store.jobs.find((item) => item.id === id)
     if (!job) return { result: 'not-found', job: null }
+    if (
+      state === 'completed' &&
+      job.state === 'completed' &&
+      job.evidenceFingerprint === null
+    ) {
+      job.evidenceFingerprint = hash(safe)
+      job.reasonFingerprint = null
+      job.updatedAt = timestamp
+      await save(casa, store)
+      return { result: 'completed', job }
+    }
     if (job.state !== 'running') return { result: 'not-running', job }
     const pattern = failures.patterns.find((item) => item.id === job.patternId)
     if (!pattern || generation(pattern) !== job.generationFingerprint) {

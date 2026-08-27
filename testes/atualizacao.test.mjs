@@ -27,7 +27,7 @@ function success(value = '') {
   }
 }
 
-function runner({ before = '0.18.0', after = '0.19.0', marketplace = canonicalMarketplace } = {}) {
+function runner({ before = '0.18.1', after = '0.19.0', marketplace = canonicalMarketplace } = {}) {
   const calls = []
   let pluginListCalls = 0
   return {
@@ -66,7 +66,7 @@ test('atualiza, valida e orienta a aplicação conforme a interface', async () =
   })
 
   assert.equal(result.status, 'updated')
-  assert.equal(result.previousInstalledVersion, '0.18.0')
+  assert.equal(result.previousInstalledVersion, '0.18.1')
   assert.equal(result.installedVersion, '0.19.0')
   assert.equal(result.reloadRequired, true)
   assert.equal(result.applyInstructions.vscode.command, '/plugin')
@@ -79,12 +79,12 @@ test('atualiza, valida e orienta a aplicação conforme a interface', async () =
 })
 
 test('versão atual é validada sem pedir nova sessão', async () => {
-  const fake = runner({ before: '0.18.0', after: '0.18.0' })
+  const fake = runner({ before: '0.18.1', after: '0.18.1' })
   const result = await atualizarPlugin({
     casa: 'C:\\omni-test',
     run: fake.run,
     resolveCli: async () => 'claude-test',
-    checkVersion: async () => ({ latestVersion: '0.18.0', status: 'current' })
+    checkVersion: async () => ({ latestVersion: '0.18.1', status: 'current' })
   })
 
   assert.equal(result.status, 'current')
@@ -163,6 +163,15 @@ test('registro da 0.18.0 descreve a validação autônoma de falhas', async () =
   assert.match(text, /reserva idempotente.*lease/i)
   assert.match(text, /causa raiz.*dois testes.*eval/i)
   assert.match(text, /destrutivas.*escrita remota.*autoriza/i)
+})
+
+test('registro da 0.18.1 descreve o fechamento com evidência', async () => {
+  const changes = await lerMudancasAtualizacao(pluginRoot, '0.18.0', '0.18.1')
+  assert.equal(changes.length, 2)
+  assert.ok(changes.every((item) => item.version === '0.18.1'))
+  const text = changes.map((item) => item.change).join(' ')
+  assert.match(text, /corrida.*eval.*fechamento/i)
+  assert.match(text, /evidência final.*fingerprint/i)
 })
 
 test('resumo público contém somente transição, mudanças e recarga necessária', () => {

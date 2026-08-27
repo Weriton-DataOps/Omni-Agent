@@ -1,16 +1,19 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 
 import {
   bloquearAutomacaoFalha,
+  caminhoDaAutomacaoFalhas,
+  concluirAutomacaoFalha,
   reivindicarAutomacaoFalha,
   sincronizarAutomacaoFalhas
 } from '../runtime/automacao-falhas.mjs'
 import {
   analisarPadraoFalha,
+  avaliarPadraoFalha,
   registrarFalha,
   testarCorrecaoFalha
 } from '../runtime/falhas.mjs'
@@ -139,6 +142,68 @@ test('falhas do proprio executor ficam fora da fila automatica', async () => {
     }
     const store = await sincronizarAutomacaoFalhas(casa)
     assert.equal(store.jobs.length, 0)
+  } finally {
+    await rm(casa, { recursive: true, force: true })
+  }
+})
+
+test('eval concluido nao rouba do subagente o fechamento com evidencia', async () => {
+  const casa = await home()
+  try {
+    const failure = await candidate(casa, 'closing-race')
+    const claimed = await reivindicarAutomacaoFalha(casa, { executorId: 'executor-closing-race' })
+    const generation = claimed.job.generationFingerprint
+    await analisarPadraoFalha(casa, failure.pattern.id, {
+      generation,
+      rootCause: 'o comando escolhia uma pasta sem permissao de escrita',
+      hypothesis: 'usar a pasta temporaria permitida elimina a falha'
+    })
+    for (let index = 1; index <= 2; index += 1) {
+      await testarCorrecaoFalha(casa, failure.pattern.id, {
+        generation,
+        evidenceId: `closing-race-test-${index}`,
+        criterion: 'processo termina com codigo zero',
+        outcome: `execucao ${index} terminou com codigo zero`,
+        success: true
+      })
+    }
+    await avaliarPadraoFalha(casa, failure.pattern.id, { generation })
+    const synchronized = await sincronizarAutomacaoFalhas(casa)
+    assert.equal(synchronized.jobs[0].state, 'running')
+    assert.equal(synchronized.jobs[0].evidenceFingerprint, null)
+
+    const completed = await concluirAutomacaoFalha(
+      casa,
+      claimed.job.id,
+      'closing-race-evidence-id'
+    )
+    assert.equal(completed.result, 'completed')
+    assert.equal(completed.job.state, 'completed')
+    assert.match(completed.job.evidenceFingerprint, /^[a-f0-9]{64}$/)
+  } finally {
+    await rm(casa, { recursive: true, force: true })
+  }
+})
+
+test('fechamento tardio repara job concluido sem fingerprint', async () => {
+  const casa = await home()
+  try {
+    await candidate(casa, 'late-close')
+    const claimed = await reivindicarAutomacaoFalha(casa, { executorId: 'executor-late-close' })
+    const path = caminhoDaAutomacaoFalhas(casa)
+    const store = JSON.parse(await readFile(path, 'utf8'))
+    store.jobs[0].state = 'completed'
+    store.jobs[0].leaseUntil = null
+    store.jobs[0].evidenceFingerprint = null
+    await writeFile(path, `${JSON.stringify(store, null, 2)}\n`, 'utf8')
+
+    const repaired = await concluirAutomacaoFalha(
+      casa,
+      claimed.job.id,
+      'late-closing-evidence-id'
+    )
+    assert.equal(repaired.result, 'completed')
+    assert.match(repaired.job.evidenceFingerprint, /^[a-f0-9]{64}$/)
   } finally {
     await rm(casa, { recursive: true, force: true })
   }
