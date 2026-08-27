@@ -38,7 +38,7 @@ test('detecta versão instalada atual', async () => {
     const result = await verificarVersao({
       casa: home,
       pluginRoot,
-      fetchImpl: async () => resposta('0.18.2'),
+      fetchImpl: async () => resposta('0.19.0'),
       now: Date.parse('2026-08-25T20:00:00.000Z')
     })
     assert.equal(result.status, 'current')
@@ -55,12 +55,12 @@ test('detecta atualização e persiste apenas metadados de versão', async () =>
     const result = await verificarVersao({
       casa: home,
       pluginRoot,
-      fetchImpl: async () => resposta('0.19.0'),
+      fetchImpl: async () => resposta('0.20.0'),
       now: Date.parse('2026-08-25T20:01:00.000Z')
     })
     assert.equal(result.status, 'outdated')
-    assert.equal(result.installedVersion, '0.18.2')
-    assert.equal(result.latestVersion, '0.19.0')
+    assert.equal(result.installedVersion, '0.19.0')
+    assert.equal(result.latestVersion, '0.20.0')
     assert.equal(result.updateAvailable, true)
 
     const cache = JSON.parse(await readFile(caminhoDoCacheVersao(home), 'utf8'))
@@ -79,7 +79,7 @@ test('falha de rede usa cache anterior sem bloquear o Omni', async () => {
     await verificarVersao({
       casa: home,
       pluginRoot,
-      fetchImpl: async () => resposta('0.19.0')
+      fetchImpl: async () => resposta('0.20.0')
     })
     const offline = await verificarVersao({
       casa: home,
@@ -102,7 +102,7 @@ test('HTTP 304 renova a conferência usando o ETag armazenado', async () => {
     await verificarVersao({
       casa: home,
       pluginRoot,
-      fetchImpl: async () => resposta('0.18.2'),
+      fetchImpl: async () => resposta('0.19.0'),
       now: Date.parse('2026-08-25T20:10:00.000Z')
     })
     let receivedHeaders
@@ -143,7 +143,7 @@ test('cache remoto atrás da instalação força segunda consulta sem ETag', asy
         calls.push({ url, options })
         return calls.length === 1
           ? resposta(null, { status: 304 })
-          : resposta('0.18.2', { etag: '"etag-novo"' })
+          : resposta('0.19.0', { etag: '"etag-novo"' })
       },
       now: Date.parse('2026-08-25T20:21:00.000Z')
     })
@@ -152,7 +152,7 @@ test('cache remoto atrás da instalação força segunda consulta sem ETag', asy
     assert.match(calls[1].url, /omni_check=/)
     assert.equal(calls[1].options.headers['Cache-Control'], 'no-cache')
     assert.equal(refreshed.status, 'current')
-    assert.equal(refreshed.latestVersion, '0.18.2')
+    assert.equal(refreshed.latestVersion, '0.19.0')
   } finally {
     await rm(home, { recursive: true, force: true })
   }
@@ -178,7 +178,7 @@ test('sem rede e sem cache retorna unknown', async () => {
 test('lê o formato base64 da API de conteúdo do GitHub', async () => {
   const home = await casa()
   try {
-    const manifest = JSON.stringify({ name: 'omni', version: '0.18.2' })
+    const manifest = JSON.stringify({ name: 'omni', version: '0.19.0' })
     const result = await verificarVersao({
       casa: home,
       pluginRoot,

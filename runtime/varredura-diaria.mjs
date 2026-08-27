@@ -5,7 +5,7 @@ import { homedir } from 'node:os'
 import { isAbsolute, join, resolve } from 'node:path'
 import { createInterface } from 'node:readline'
 
-import { lerAtalhos, registrarObservacaoAtalho, validarAtalho } from './atalhos.mjs'
+import { lerAtalhos, registrarObservacaoAtalho } from './atalhos.mjs'
 import { lerCicloOperacional, proporMelhoriaOperacional } from './ciclo-operacional.mjs'
 import { lerFalhas } from './falhas.mjs'
 import { lerMemoria, pareceConterSegredo, registrarMemoriaAnalisada } from './memoria.mjs'
@@ -337,12 +337,6 @@ async function extrairAtividades(files, targetDate, settleMinutes, now) {
   }
 }
 
-function mesmoAtalho(item, input) {
-  return item.goal === input.goal &&
-    JSON.stringify(item.baselineSteps) === JSON.stringify(input.baselineSteps) &&
-    JSON.stringify(item.shortcutSteps) === JSON.stringify(input.shortcutSteps)
-}
-
 function entradaAtalho(activity) {
   const tools = activity.tools
     .map(({ name }) => name.replace(/[^a-zA-Z0-9_.-]/g, '').slice(0, 80))
@@ -361,26 +355,13 @@ function entradaAtalho(activity) {
         ? 'investigar e verificar artefatos'
         : null
   if (!family) return null
-  const normalized = activity.prompt
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-  const intent = [
-    ['corrigir', /\b(?:corrig|consert|ajust|resolve|repar)/],
-    ['validar', /\b(?:valid|verific|test|confir)/],
-    ['implementar', /\b(?:implement|cri|constru|adicion|inclu)/],
-    ['analisar', /\b(?:analis|avali|investig|diagnostic|procure a causa)/],
-    ['organizar', /\b(?:organiz|reorgan|estrutur)/],
-    ['consultar', /\b(?:consult|busc|pesquis|liste|mostre)/]
-  ].find(([, pattern]) => pattern.test(normalized))?.[0] ?? 'executar'
-  const goal = intent === 'executar' ? family : `${intent}: ${family}`
   return {
-    goal,
+    goal: family,
     baselineSteps: ['interpretar o objetivo', ...unique, 'verificar o resultado', 'reportar'],
-    shortcutSteps: [...unique, 'reportar'],
+    shortcutSteps: [...unique, 'verificar o resultado', 'reportar'],
     outcome: 'atividade concluida com evidencia local',
     success: true,
-    scope: activity.projectId ? { type: 'project', id: activity.projectId } : { type: 'user' }
+    scope: { type: 'user' }
   }
 }
 
@@ -481,13 +462,9 @@ async function processarAtividade(casa, activity, cobertura) {
 
   const shortcutInput = entradaAtalho(activity)
   if (shortcutInput) {
-    const store = await lerAtalhos(casa)
-    const existing = store.shortcuts.find((item) => mesmoAtalho(item, shortcutInput))
-    const learned = existing?.status === 'candidate'
-      ? await validarAtalho(casa, existing.id, shortcutInput)
-      : await registrarObservacaoAtalho(casa, shortcutInput)
+    const learned = await registrarObservacaoAtalho(casa, shortcutInput)
     if (learned.shortcut) results.shortcuts += 1
-    if (learned.result === 'candidate' || learned.result === 'validated') {
+    if (learned.result === 'validated') {
       const improvement = await proporMelhoriaOperacional(casa, {
         category: 'verified-daily-procedure',
         destination: 'procedure',

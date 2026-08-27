@@ -85,14 +85,15 @@ test('operador observa, lista e valida atalho sem promove-lo', async () => {
   try {
     executar(observe, env)
     executar(observe, env)
-    const candidate = executar(observe, env)
-    assert.equal(candidate.learning.result, 'candidate')
-    assert.equal(candidate.learning.promotion, 'not-performed')
+    const validatedAutomatically = executar(observe, env)
+    assert.equal(validatedAutomatically.learning.result, 'validated')
+    assert.equal(validatedAutomatically.learning.promotion, 'not-performed')
 
     const listed = executar(['atalhos'], env)
     assert.equal(listed.shortcuts.length, 1)
-    assert.equal(listed.shortcuts[0].status, 'candidate')
-    assert.equal(listed.automaticPromotion, false)
+    assert.equal(listed.shortcuts[0].status, 'validated')
+    assert.equal(listed.effectiveAfterFirstSuccess, true)
+    assert.equal(listed.automaticPortablePromotion, false)
 
     const validated = executar([
       'atalho-validar', listed.shortcuts[0].id,
@@ -115,7 +116,8 @@ test('operador observa, lista e valida atalho sem promove-lo', async () => {
 
     const state = executar(['estado'], env)
     assert.equal(state.learning.validated, 1)
-    assert.equal(state.learning.automaticPromotion, false)
+    assert.equal(state.learning.effectiveAfterFirstSuccess, true)
+    assert.equal(state.learning.automaticPortablePromotion, false)
     assert.equal(state.selfImprovement.approved, 1)
     assert.equal(state.selfImprovement.automaticGitPush, false)
   } finally {
@@ -188,7 +190,17 @@ test('operador expõe evals, checkpoints e backlog sem executar melhoria sozinho
 
     const backlog = executar(['backlog'], env)
     assert.equal(backlog.discoveries.length, 1)
+    assert.equal(backlog.resolvedDiscoveries.length, 0)
     assert.equal(backlog.automaticImplementation, false)
+
+    const resolved = executar([
+      'descoberta-resolver', discovery.persistence.discovery.id,
+      '--resolucao', 'implementada e verificada por teste automatizado'
+    ], env)
+    assert.equal(resolved.persistence.result, 'resolved')
+    const after = executar(['backlog'], env)
+    assert.equal(after.discoveries.length, 0)
+    assert.equal(after.resolvedDiscoveries.length, 1)
 
     const state = executar(['estado'], env)
     assert.equal(state.evaluation.automaticExecution, false)

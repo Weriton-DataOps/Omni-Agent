@@ -80,6 +80,16 @@
         "Normalizou caminhos e argumentos variáveis sem persistir comando, entrada da ferramenta ou dado sensível.",
         "Passou a preservar a família diagnóstica também nas falhas recuperadas pela varredura diária."
       ]
+    },
+    {
+      "version": "0.19.0",
+      "changes": [
+        "Ativou atalhos locais após o primeiro sucesso verificado e passou a recuperá-los no contexto dos turnos relevantes.",
+        "Consolidou identidades fragmentadas por verbo, ferramenta ou projeto com migração e backup do estado anterior.",
+        "Adicionou contagem de uso, validação em três sucessos e arquivamento automático por desuso ou falhas repetidas.",
+        "Manteve a promoção para skill, capacidade ou regra portátil como ciclo separado e revisável.",
+        "Passou a fechar descobertas concluídas sem apagar o histórico auditável nem deixá-las eternamente no backlog."
+      ]
     }
   ]
 }

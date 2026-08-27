@@ -69,6 +69,9 @@ independentes até seus próprios contratos serem ativados.
   autorizar diagnóstico, dois testes locais/reversíveis e eval; interrompa somente se o briefing
   encontrar destruição, escrita remota, custo, nova permissão ou escalada de privilégio.
 - Conclusões verificadas de subagentes alimentam atalhos e procedimentos repetíveis.
+- Um atalho local entra em estágio ativo depois do primeiro sucesso verificado e pode governar turnos
+  relevantes imediatamente. Três sucessos o validam; desuso ou falhas o suspendem e arquivam. Isso
+  não equivale a promover skill, capacidade ou regra portátil para o Git.
 - O destino de uma melhoria segue sua natureza: regra operacional, procedimento, roteamento,
   personalidade, hook, eval, memória ou capacidade/skill.
 - Promoções que alteram o repositório produzem artefato revisável, executam gates e preservam

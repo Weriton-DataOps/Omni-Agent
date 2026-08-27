@@ -1,10 +1,14 @@
 {
-  "schemaVersion": 1,
-  "policy": "shortcut-learning-v1",
-  "minimumConsecutiveSuccesses": 3,
-  "validationRunsRequired": 1,
+  "schemaVersion": 2,
+  "policy": "shortcut-learning-v2",
+  "activationSuccessfulRuns": 1,
+  "validationSuccessfulRuns": 3,
   "maximumObservationsPerShortcut": 20,
   "minimumRemovedSteps": 1,
-  "automaticPromotion": false,
+  "observingInactivityDays": 14,
+  "activeInactivityDays": 30,
+  "validatedInactivityDays": 90,
+  "maximumFailuresBeforeArchive": 2,
+  "automaticPortablePromotion": false,
   "storeRawOutcome": false
 }

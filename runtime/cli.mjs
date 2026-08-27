@@ -49,7 +49,8 @@ import {
 import {
   lerPersistenciaContexto,
   registrarCheckpoint,
-  registrarDescoberta
+  registrarDescoberta,
+  resolverDescoberta
 } from './persistencia-contexto.mjs'
 import {
   atualizarDelegacao,
@@ -123,6 +124,10 @@ function resumirAtalho(item) {
     successCount: item.successCount,
     failureCount: item.failureCount,
     inconsistentCount: item.inconsistentCount,
+    usageCount: item.usageCount,
+    lastSucceededAt: item.lastSucceededAt,
+    lastUsedAt: item.lastUsedAt,
+    mergedFrom: item.mergedFrom,
     validation: item.validation
   }
 }
@@ -190,10 +195,12 @@ async function main() {
       learning: {
         shortcutSchemaVersion: shortcutStore.schemaVersion,
         observing: shortcutStore.shortcuts.filter((item) => item.status === 'observing').length,
-        candidates: shortcutStore.shortcuts.filter((item) => item.status === 'candidate').length,
+        active: shortcutStore.shortcuts.filter((item) => item.status === 'active').length,
         validated: shortcutStore.shortcuts.filter((item) => item.status === 'validated').length,
         total: shortcutStore.shortcuts.length,
-        automaticPromotion: false
+        archived: shortcutStore.archive.length,
+        effectiveAfterFirstSuccess: true,
+        automaticPortablePromotion: false
       },
       selfImprovement: {
         pipelineVersion: improvementStore.schemaVersion,
@@ -233,6 +240,7 @@ async function main() {
       structuredContext: {
         checkpoints: contextStore.checkpoints.length,
         backlog: contextStore.backlog.length,
+        resolvedDiscoveries: contextStore.resolvedDiscoveries.length,
         rawConversationStored: false
       },
       operationalCycle: {
@@ -372,7 +380,12 @@ async function main() {
   }
   if (action === 'backlog') {
     const store = await lerPersistenciaContexto(home)
-    return { ok: true, discoveries: store.backlog, automaticImplementation: false }
+    return {
+      ok: true,
+      discoveries: store.backlog,
+      resolvedDiscoveries: store.resolvedDiscoveries,
+      automaticImplementation: false
+    }
   }
   if (action === 'descoberta-registrar') {
     const { options } = lerOpcoes(parts)
@@ -386,9 +399,25 @@ async function main() {
       })
     }
   }
+  if (action === 'descoberta-resolver') {
+    const { options, positionals } = lerOpcoes(parts)
+    if (!positionals[0] || !options.resolucao) {
+      throw new Error('Use: descoberta-resolver <id> --resolucao <evidência da conclusão>.')
+    }
+    return {
+      ok: true,
+      persistence: await resolverDescoberta(home, positionals[0], { resolution: options.resolucao })
+    }
+  }
   if (action === 'atalhos') {
     const store = await lerAtalhos(home)
-    return { ok: true, shortcuts: store.shortcuts.map(resumirAtalho), automaticPromotion: false }
+    return {
+      ok: true,
+      shortcuts: store.shortcuts.map(resumirAtalho),
+      archive: store.archive,
+      effectiveAfterFirstSuccess: true,
+      automaticPortablePromotion: false
+    }
   }
   if (action === 'atalho-observar') {
     const { options } = lerOpcoes(parts)

@@ -8,6 +8,7 @@ import { lerPersonalidadeAtiva } from './personalidade.mjs'
 import { lerPersistenciaContexto } from './persistencia-contexto.mjs'
 import { lerCicloOperacional } from './ciclo-operacional.mjs'
 import { ranquearMemorias } from './recuperacao.mjs'
+import { lerAtalhos, registrarUsoAtalhos, selecionarAtalhosRelevantes } from './atalhos.mjs'
 
 const raiz = dirname(dirname(fileURLToPath(import.meta.url)))
 const catalogPath = join(raiz, 'contratos', 'capacidades', 'catalogo.json')
@@ -20,12 +21,13 @@ function hash(value) {
   return createHash('sha256').update(value, 'utf8').digest('hex').slice(0, 16)
 }
 
-function project(path, policy, rules, continuity, capabilities, memories) {
+function project(path, policy, rules, continuity, capabilities, shortcuts, memories) {
   const pathPolicy = policy.paths[path]
   const groups = [
     { category: 'mandatory', title: 'RULES', items: rules },
     { category: 'highPriority', title: 'RELEVANT WORK CONTINUITY', items: continuity },
     { category: 'highPriority', title: 'RELEVANT CAPABILITIES', items: capabilities },
+    { category: 'highPriority', title: 'ACTIVE LOCAL SHORTCUTS', items: shortcuts },
     { category: 'relevant', title: 'RELEVANT CONFIRMED MEMORY', items: memories },
     { category: 'optional', title: 'OPTIONAL', items: [] }
   ]
@@ -223,6 +225,7 @@ export async function montarContexto(casa, {
     architecture,
     structuredContext,
     operationalCycle,
+    shortcutStore,
     learnedRules,
     learnedProcedures
   ] = await Promise.all([
@@ -233,6 +236,7 @@ export async function montarContexto(casa, {
     readFile(architecturePath, 'utf8').then(JSON.parse),
     lerPersistenciaContexto(casa),
     lerCicloOperacional(casa),
+    lerAtalhos(casa),
     readFile(learnedRulesPath, 'utf8').then(JSON.parse),
     readFile(learnedProceduresPath, 'utf8').then(JSON.parse)
   ])
@@ -247,6 +251,17 @@ export async function montarContexto(casa, {
   const selectedDeep = retrieval.ranked.slice(0, retrieval.limits.deep)
   const fastMemories = selectedFast.map(memoriaProjetada)
   const deepMemories = selectedDeep.map(memoriaProjetada)
+  const relevantShortcuts = selecionarAtalhosRelevantes(shortcutStore, intent, {
+    projectId,
+    taskId,
+    environmentId,
+    limit: 3
+  })
+  const shortcutItems = relevantShortcuts.map((item) => ({
+    id: `shortcut:${item.id}`,
+    text: `Atalho local ${item.status} para ${JSON.stringify(item.goal)}: ${item.shortcutSteps.join(' > ')}.`
+  }))
+  const fastShortcuts = shortcutItems.slice(0, 1)
   if (
     architecture?.contract !== 'omni-core-invariants-v1' ||
     !Array.isArray(architecture.operationalRole?.promptRules) ||
@@ -292,9 +307,11 @@ export async function montarContexto(casa, {
     rules,
     continuity: continuity.deep,
     capabilities: deepCapabilities,
+    shortcuts: shortcutItems,
     memories: deepMemories
   }
   await registrarUsoMemorias(casa, selectedDeep.map((entry) => entry.memory.id))
+  await registrarUsoAtalhos(casa, relevantShortcuts.map((item) => item.id))
   return {
     schemaVersion: 4,
     generatedAt: new Date().toISOString(),
@@ -309,6 +326,7 @@ export async function montarContexto(casa, {
       { name: 'structured-state', items: continuity.checkpointId ? 1 : 0 },
       { name: 'backlog', items: continuity.backlogItems },
       { name: 'capabilities', items: deepCapabilities.length },
+      { name: 'active-local-shortcuts', items: shortcutItems.length },
       { name: 'confirmed-memory', items: selectedDeep.length }
     ],
     routing,
@@ -328,8 +346,8 @@ export async function montarContexto(casa, {
       }
     },
     projections: {
-      fast: project('fast', budgetPolicy, rules, continuity.fast, fastCapabilities, fastMemories),
-      deep: project('deep', budgetPolicy, rules, continuity.deep, deepCapabilities, deepMemories)
+      fast: project('fast', budgetPolicy, rules, continuity.fast, fastCapabilities, fastShortcuts, fastMemories),
+      deep: project('deep', budgetPolicy, rules, continuity.deep, deepCapabilities, shortcutItems, deepMemories)
     }
   }
 }

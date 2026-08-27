@@ -4,7 +4,7 @@ import { isAbsolute, join } from 'node:path'
 
 import { pareceConterSegredo } from './memoria.mjs'
 
-export const STRUCTURED_CONTEXT_SCHEMA_VERSION = 1
+export const STRUCTURED_CONTEXT_SCHEMA_VERSION = 2
 const POLICY_PATH = new URL('../contratos/contexto/persistencia.json', import.meta.url)
 
 function now(value) {
@@ -58,7 +58,8 @@ function emptyStore(createdAt = now()) {
     schemaVersion: STRUCTURED_CONTEXT_SCHEMA_VERSION,
     store: { id: 'omni-local-structured-context', createdAt, updatedAt: createdAt },
     checkpoints: [],
-    backlog: []
+    backlog: [],
+    resolvedDiscoveries: []
   }
 }
 
@@ -128,6 +129,21 @@ function backlogValid(item) {
   )
 }
 
+function resolvedDiscoveryValid(item) {
+  return Boolean(
+    item &&
+      typeof item.id === 'string' && item.id.startsWith('discovery-') &&
+      ['backlog', 'required-for-dod'].includes(item.decision) &&
+      typeof item.title === 'string' &&
+      typeof item.reason === 'string' &&
+      typeof item.source === 'string' &&
+      item.implemented === true &&
+      typeof item.resolution === 'string' && item.resolution.length >= 3 &&
+      Number.isFinite(Date.parse(item.recordedAt)) &&
+      Number.isFinite(Date.parse(item.resolvedAt))
+  )
+}
+
 function validateStore(store, path) {
   if (
     store?.schemaVersion !== STRUCTURED_CONTEXT_SCHEMA_VERSION ||
@@ -139,7 +155,10 @@ function validateStore(store, path) {
     !store.checkpoints.every(checkpointValid) ||
     !Array.isArray(store.backlog) ||
     store.backlog.length > 100 ||
-    !store.backlog.every(backlogValid)
+    !store.backlog.every(backlogValid) ||
+    !Array.isArray(store.resolvedDiscoveries) ||
+    store.resolvedDiscoveries.length > 100 ||
+    !store.resolvedDiscoveries.every(resolvedDiscoveryValid)
   ) {
     throw new Error(`Persistência estruturada fora do contrato v1: ${path}`)
   }
@@ -169,16 +188,29 @@ async function acquireLock(casa) {
 async function load(casa) {
   const path = caminhoDaPersistenciaContexto(casa)
   try {
-    const store = JSON.parse(await readFile(path, 'utf8'))
+    const source = await readFile(path, 'utf8')
+    const parsed = JSON.parse(source)
+    const store = parsed.schemaVersion === 1
+      ? { ...parsed, schemaVersion: 2, resolvedDiscoveries: [] }
+      : parsed
     if (store.schemaVersion > STRUCTURED_CONTEXT_SCHEMA_VERSION) {
       throw new Error(`Persistência estruturada v${store.schemaVersion} é mais nova que este plugin.`)
     }
     validateStore(store, path)
-    return { store, initialized: false }
+    return { store, initialized: false, migratedFrom: parsed.schemaVersion === 1 ? 1 : null, source }
   } catch (error) {
-    if (error?.code === 'ENOENT') return { store: emptyStore(), initialized: true }
+    if (error?.code === 'ENOENT') {
+      return { store: emptyStore(), initialized: true, migratedFrom: null, source: null }
+    }
     throw error
   }
+}
+
+async function preserveBeforeMigration(casa, loaded) {
+  if (loaded.migratedFrom === null) return
+  const stamp = new Date().toISOString().replace(/[^0-9]/g, '')
+  const backup = `${caminhoDaPersistenciaContexto(casa)}.before-v1-to-v2.${stamp}.backup`
+  await writeFile(backup, loaded.source, { encoding: 'utf8', flag: 'wx' })
 }
 
 async function save(casa, store) {
@@ -194,7 +226,8 @@ export async function lerPersistenciaContexto(casa) {
   const release = await acquireLock(casa)
   try {
     const loaded = await load(casa)
-    if (loaded.initialized) await save(casa, loaded.store)
+    await preserveBeforeMigration(casa, loaded)
+    if (loaded.initialized || loaded.migratedFrom !== null) await save(casa, loaded.store)
     return loaded.store
   } finally {
     await release()
@@ -240,6 +273,7 @@ export async function registrarCheckpoint(casa, input, { at } = {}) {
   const release = await acquireLock(casa)
   try {
     const loaded = await load(casa)
+    await preserveBeforeMigration(casa, loaded)
     loaded.store.checkpoints = [...loaded.store.checkpoints, checkpoint].slice(-policy.maximumCheckpoints)
     await save(casa, loaded.store)
     return { result: 'recorded', checkpoint }
@@ -266,9 +300,30 @@ export async function registrarDescoberta(casa, input, { at } = {}) {
   const release = await acquireLock(casa)
   try {
     const loaded = await load(casa)
+    await preserveBeforeMigration(casa, loaded)
     loaded.store.backlog = [...loaded.store.backlog, item].slice(-policy.maximumBacklogItems)
     await save(casa, loaded.store)
     return { result: item.decision, discovery: item }
+  } finally {
+    await release()
+  }
+}
+
+export async function resolverDescoberta(casa, id, input, { at } = {}) {
+  const discoveryId = safeText(id, 'Identificador da descoberta', 12, 240)
+  const resolution = safeText(input?.resolution, 'Resolução da descoberta', 3, 500)
+  const resolvedAt = now(at)
+  const release = await acquireLock(casa)
+  try {
+    const loaded = await load(casa)
+    await preserveBeforeMigration(casa, loaded)
+    const discovery = loaded.store.backlog.find((item) => item.id === discoveryId)
+    if (!discovery) return { result: 'not-found', discovery: null }
+    const resolved = { ...discovery, implemented: true, resolution, resolvedAt }
+    loaded.store.backlog = loaded.store.backlog.filter((item) => item.id !== discoveryId)
+    loaded.store.resolvedDiscoveries = [...loaded.store.resolvedDiscoveries, resolved].slice(-100)
+    await save(casa, loaded.store)
+    return { result: 'resolved', discovery: resolved }
   } finally {
     await release()
   }

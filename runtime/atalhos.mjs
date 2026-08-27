@@ -4,12 +4,18 @@ import { isAbsolute, join } from 'node:path'
 
 import { pareceConterSegredo } from './memoria.mjs'
 
-export const SHORTCUT_STORE_SCHEMA_VERSION = 1
-export const SHORTCUT_POLICY_VERSION = 1
+export const SHORTCUT_STORE_SCHEMA_VERSION = 2
+export const SHORTCUT_POLICY_VERSION = 2
 
 const POLICY_PATH = new URL('../contratos/aprendizado/atalhos.json', import.meta.url)
-const STATUS = new Set(['observing', 'candidate', 'validated'])
+const STATUS = new Set(['observing', 'active', 'validated'])
+const ARCHIVE_REASONS = new Set(['identity-merged', 'inactive', 'repeated-failure'])
 const SCOPE_TYPES = new Set(['user', 'project', 'task', 'environment'])
+const FAMILIAS_OPERACIONAIS_GERAIS = new Set([
+  'delegar e acompanhar uma execucao',
+  'alterar e verificar artefatos',
+  'investigar e verificar artefatos'
+])
 
 function normalizar(text) {
   return text
@@ -28,7 +34,8 @@ function storeVazio(now = new Date().toISOString()) {
   return {
     schemaVersion: SHORTCUT_STORE_SCHEMA_VERSION,
     store: { id: 'omni-local-shortcut-learning', createdAt: now, updatedAt: now },
-    shortcuts: []
+    shortcuts: [],
+    archive: []
   }
 }
 
@@ -75,6 +82,8 @@ function atalhoValido(item) {
     item &&
       typeof item.id === 'string' &&
       item.id.startsWith('shortcut-') &&
+      typeof item.family === 'string' &&
+      item.family.length > 0 &&
       typeof item.goal === 'string' &&
       item.goal.length > 0 &&
       escopoValido(item.scope) &&
@@ -95,11 +104,37 @@ function atalhoValido(item) {
       item.failureCount >= 0 &&
       Number.isInteger(item.inconsistentCount) &&
       item.inconsistentCount >= 0 &&
+      Number.isInteger(item.usageCount) &&
+      item.usageCount >= 0 &&
+      (item.lastSucceededAt === null || dataValida(item.lastSucceededAt)) &&
+      (item.lastUsedAt === null || dataValida(item.lastUsedAt)) &&
+      Array.isArray(item.mergedFrom) &&
+      item.mergedFrom.every((id) => typeof id === 'string' && id.startsWith('shortcut-')) &&
       Array.isArray(item.observations) &&
       item.observations.every(observacaoValida) &&
       validationValid &&
       dataValida(item.createdAt) &&
       dataValida(item.updatedAt)
+  )
+}
+
+function arquivoValido(item) {
+  return Boolean(
+    item &&
+      typeof item.id === 'string' &&
+      item.id.startsWith('shortcut-archive-') &&
+      typeof item.shortcutId === 'string' &&
+      item.shortcutId.startsWith('shortcut-') &&
+      typeof item.family === 'string' &&
+      item.family.length > 0 &&
+      escopoValido(item.scope) &&
+      ARCHIVE_REASONS.has(item.reason) &&
+      (item.mergedInto === null || (typeof item.mergedInto === 'string' && item.mergedInto.startsWith('shortcut-'))) &&
+      Number.isInteger(item.successCount) &&
+      item.successCount >= 0 &&
+      Number.isInteger(item.failureCount) &&
+      item.failureCount >= 0 &&
+      dataValida(item.archivedAt)
   )
 }
 
@@ -110,30 +145,165 @@ function validarStore(store, path) {
     !dataValida(store.store.createdAt) ||
     !dataValida(store.store.updatedAt) ||
     !Array.isArray(store.shortcuts) ||
-    !store.shortcuts.every(atalhoValido)
+    !store.shortcuts.every(atalhoValido) ||
+    !Array.isArray(store.archive) ||
+    !store.archive.every(arquivoValido)
   ) {
     throw new Error(`Aprendizado de atalhos fora do contrato v${SHORTCUT_STORE_SCHEMA_VERSION}: ${path}`)
   }
+}
+
+function familiaCanonica(goal) {
+  return normalizar(String(goal ?? ''))
+    .replace(/^(?:corrigir|validar|implementar|analisar|organizar|consultar|executar)\s*:\s*/, '')
+    .trim()
+}
+
+function passosComVerificacao(steps) {
+  const verificationPattern = /\b(?:verific|valid|confer|evidenci)/i
+  const verification = steps.find((step) => verificationPattern.test(normalizar(step))) ?? 'verificar o resultado'
+  const withoutVerification = steps.filter((step) => !verificationPattern.test(normalizar(step)))
+  const reportIndex = withoutVerification.findIndex((step) => /\b(?:report|retorn|resum)/i.test(normalizar(step)))
+  if (reportIndex < 0) return [...withoutVerification, verification]
+  return [
+    ...withoutVerification.slice(0, reportIndex),
+    verification,
+    ...withoutVerification.slice(reportIndex)
+  ]
+}
+
+function normalizarPassosDoStore(store) {
+  const actions = []
+  for (const item of store.shortcuts) {
+    const normalized = passosComVerificacao(item.shortcutSteps)
+    if (JSON.stringify(normalized) === JSON.stringify(item.shortcutSteps)) continue
+    item.shortcutSteps = normalized
+    actions.push({ shortcutId: item.id, action: 'verification-order-normalized' })
+  }
+  return actions
+}
+
+function arquivarResumo(store, item, reason, archivedAt, mergedInto = null) {
+  store.archive.push({
+    id: `shortcut-archive-${randomUUID()}`,
+    shortcutId: item.id,
+    family: item.family,
+    scope: item.scope,
+    reason,
+    mergedInto,
+    successCount: item.successCount,
+    failureCount: item.failureCount,
+    archivedAt
+  })
+}
+
+function enriquecerV1(item) {
+  const successful = item.observations.filter((observation) => observation.success && observation.consistent)
+  const family = familiaCanonica(item.goal)
+  return {
+    ...item,
+    family,
+    goal: family,
+    scope: FAMILIAS_OPERACIONAIS_GERAIS.has(family) ? { type: 'user' } : item.scope,
+    shortcutSteps: passosComVerificacao(item.shortcutSteps),
+    status: item.status === 'validated' ? 'validated' : item.successCount > 0 ? 'active' : 'observing',
+    usageCount: 0,
+    lastSucceededAt: successful.at(-1)?.recordedAt ?? null,
+    lastUsedAt: null,
+    mergedFrom: []
+  }
+}
+
+function chaveDeIdentidade(item) {
+  return `${item.scope.type}:${item.scope.id ?? ''}:${item.family}`
+}
+
+function consolidarIdentidades(store, policy, at) {
+  const groups = new Map()
+  for (const item of store.shortcuts) {
+    const key = chaveDeIdentidade(item)
+    groups.set(key, [...(groups.get(key) ?? []), item])
+  }
+  const consolidated = []
+  for (const items of groups.values()) {
+    const ordered = [...items].sort((left, right) =>
+      right.successCount - left.successCount ||
+      left.shortcutSteps.length - right.shortcutSteps.length ||
+      Date.parse(left.createdAt) - Date.parse(right.createdAt)
+    )
+    const keeper = ordered[0]
+    for (const duplicate of ordered.slice(1)) {
+      keeper.successCount += duplicate.successCount
+      keeper.failureCount += duplicate.failureCount
+      keeper.inconsistentCount += duplicate.inconsistentCount
+      keeper.consecutiveSuccesses = Math.max(keeper.consecutiveSuccesses, duplicate.consecutiveSuccesses)
+      keeper.observations = [...keeper.observations, ...duplicate.observations]
+        .sort((left, right) => Date.parse(left.recordedAt) - Date.parse(right.recordedAt))
+        .slice(-policy.maximumObservationsPerShortcut)
+      keeper.mergedFrom.push(duplicate.id, ...duplicate.mergedFrom)
+      keeper.lastSucceededAt = [keeper.lastSucceededAt, duplicate.lastSucceededAt]
+        .filter(Boolean)
+        .sort()
+        .at(-1) ?? null
+      if (duplicate.status === 'validated') {
+        keeper.status = 'validated'
+        keeper.validation = duplicate.validation
+      } else if (keeper.status === 'observing' && duplicate.status === 'active') {
+        keeper.status = 'active'
+      }
+      arquivarResumo(store, duplicate, 'identity-merged', at, keeper.id)
+    }
+    if (keeper.successCount >= policy.validationSuccessfulRuns && keeper.status !== 'validated') {
+      keeper.status = 'validated'
+      const observationId = keeper.observations.filter((item) => item.success && item.consistent).at(-1)?.id
+      keeper.validation = observationId
+        ? { status: 'passed', validatedAt: keeper.lastSucceededAt ?? at, observationId }
+        : null
+    }
+    consolidated.push(keeper)
+  }
+  store.shortcuts = consolidated
+  return store
+}
+
+function migrarV1(source, policy) {
+  const original = JSON.parse(source)
+  const at = new Date().toISOString()
+  const migrated = {
+    ...original,
+    schemaVersion: 2,
+    shortcuts: original.shortcuts.map(enriquecerV1),
+    archive: []
+  }
+  consolidarIdentidades(migrated, policy, at)
+  migrated.store.updatedAt = at
+  return migrated
 }
 
 async function lerPolitica() {
   const policy = JSON.parse(await readFile(POLICY_PATH, 'utf8'))
   if (
     policy?.schemaVersion !== SHORTCUT_POLICY_VERSION ||
-    policy.policy !== 'shortcut-learning-v1' ||
-    !Number.isInteger(policy.minimumConsecutiveSuccesses) ||
-    policy.minimumConsecutiveSuccesses < 2 ||
-    !Number.isInteger(policy.validationRunsRequired) ||
-    policy.validationRunsRequired < 1 ||
+    policy.policy !== 'shortcut-learning-v2' ||
+    policy.activationSuccessfulRuns !== 1 ||
+    !Number.isInteger(policy.validationSuccessfulRuns) ||
+    policy.validationSuccessfulRuns < 2 ||
     !Number.isInteger(policy.maximumObservationsPerShortcut) ||
-    policy.maximumObservationsPerShortcut < policy.minimumConsecutiveSuccesses ||
-    policy.validationRunsRequired !== 1 ||
+    policy.maximumObservationsPerShortcut < policy.validationSuccessfulRuns ||
     !Number.isInteger(policy.minimumRemovedSteps) ||
     policy.minimumRemovedSteps < 1 ||
-    policy.automaticPromotion !== false ||
+    !Number.isInteger(policy.observingInactivityDays) ||
+    policy.observingInactivityDays < 1 ||
+    !Number.isInteger(policy.activeInactivityDays) ||
+    policy.activeInactivityDays < policy.observingInactivityDays ||
+    !Number.isInteger(policy.validatedInactivityDays) ||
+    policy.validatedInactivityDays < policy.activeInactivityDays ||
+    !Number.isInteger(policy.maximumFailuresBeforeArchive) ||
+    policy.maximumFailuresBeforeArchive < 2 ||
+    policy.automaticPortablePromotion !== false ||
     policy.storeRawOutcome !== false
   ) {
-    throw new Error('Política de aprendizado de atalhos fora do contrato seguro v1.')
+    throw new Error('Política de aprendizado de atalhos fora do contrato seguro v2.')
   }
   return policy
 }
@@ -159,17 +329,21 @@ async function adquirirTrava(casa) {
   throw new Error('O aprendizado de atalhos está ocupado por outra escrita.')
 }
 
-async function carregar(casa) {
+async function carregar(casa, policy) {
   const path = caminhoDosAtalhos(casa)
   try {
-    const store = JSON.parse(await readFile(path, 'utf8'))
+    const source = await readFile(path, 'utf8')
+    const parsed = JSON.parse(source)
+    const store = parsed.schemaVersion === 1 ? migrarV1(source, policy) : parsed
     if (store.schemaVersion > SHORTCUT_STORE_SCHEMA_VERSION) {
       throw new Error(`Aprendizado v${store.schemaVersion} é mais novo que este plugin.`)
     }
     validarStore(store, path)
-    return { store, initialized: false }
+    return { store, initialized: false, migratedFrom: parsed.schemaVersion === 1 ? 1 : null, source }
   } catch (error) {
-    if (error?.code === 'ENOENT') return { store: storeVazio(), initialized: true }
+    if (error?.code === 'ENOENT') {
+      return { store: storeVazio(), initialized: true, migratedFrom: null, source: null }
+    }
     throw error
   }
 }
@@ -184,13 +358,50 @@ async function gravar(casa, store) {
   await rename(temporary, path)
 }
 
+function aplicarDecaimento(store, policy, at) {
+  const nowMs = Date.parse(at)
+  const actions = []
+  const active = []
+  for (const item of store.shortcuts) {
+    const days = item.status === 'validated'
+      ? policy.validatedInactivityDays
+      : item.status === 'active' ? policy.activeInactivityDays : policy.observingInactivityDays
+    const reference = item.lastUsedAt ?? item.lastSucceededAt ?? item.updatedAt
+    if (nowMs - Date.parse(reference) < days * 24 * 60 * 60 * 1000) {
+      active.push(item)
+      continue
+    }
+    arquivarResumo(store, item, 'inactive', at)
+    actions.push({ shortcutId: item.id, action: 'inactive' })
+  }
+  store.shortcuts = active
+  return actions
+}
+
 export async function prepararAtalhos(casa) {
+  const policy = await lerPolitica()
   const release = await adquirirTrava(casa)
   try {
-    const loaded = await carregar(casa)
-    if (loaded.initialized) await gravar(casa, loaded.store)
+    const loaded = await carregar(casa, policy)
+    const maintenanceAt = new Date().toISOString()
+    const maintenance = [
+      ...normalizarPassosDoStore(loaded.store),
+      ...aplicarDecaimento(loaded.store, policy, maintenanceAt)
+    ]
+    if (loaded.migratedFrom !== null) {
+      const stamp = new Date().toISOString().replace(/[^0-9]/g, '')
+      await writeFile(`${caminhoDosAtalhos(casa)}.before-v1-to-v2.${stamp}.backup`, loaded.source, {
+        encoding: 'utf8',
+        flag: 'wx'
+      })
+    }
+    if (loaded.initialized || loaded.migratedFrom !== null || maintenance.length) {
+      await gravar(casa, loaded.store)
+    }
     return {
-      result: loaded.initialized ? 'initialized' : 'ready',
+      result: loaded.initialized ? 'initialized' : loaded.migratedFrom !== null ? 'migrated' : 'ready',
+      migratedFrom: loaded.migratedFrom,
+      maintenance,
       schemaVersion: loaded.store.schemaVersion,
       store: loaded.store
     }
@@ -201,6 +412,83 @@ export async function prepararAtalhos(casa) {
 
 export async function lerAtalhos(casa) {
   return (await prepararAtalhos(casa)).store
+}
+
+function tokens(value) {
+  return new Set(normalizar(value).replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter((token) => token.length > 2))
+}
+
+function tokensDaFamilia(family) {
+  const result = tokens(family)
+  const normalized = normalizar(family)
+  const aliases = [
+    [/deleg|execucao/, ['agente', 'sessao', 'prompt', 'executor', 'mandar', 'acompanhar']],
+    [/alterar|artefato/, ['corrigir', 'ajustar', 'editar', 'arquivo', 'codigo', 'implementar']],
+    [/investigar|verificar/, ['analisar', 'diagnosticar', 'causa', 'conferir', 'testar']]
+  ]
+  for (const [pattern, words] of aliases) {
+    if (pattern.test(normalized)) for (const word of words) result.add(word)
+  }
+  return result
+}
+
+export function selecionarAtalhosRelevantes(store, intent, { projectId, taskId, environmentId, limit = 3 } = {}) {
+  const intentTokens = tokens(intent)
+  const scopeMatches = (scope) => scope.type === 'user' ||
+    (scope.type === 'project' && scope.id === projectId) ||
+    (scope.type === 'task' && scope.id === taskId) ||
+    (scope.type === 'environment' && scope.id === environmentId)
+  return store.shortcuts
+    .filter((item) => ['active', 'validated'].includes(item.status) && scopeMatches(item.scope))
+    .map((item) => {
+      const familyTokens = tokensDaFamilia(item.family)
+      const overlap = [...familyTokens].filter((token) => intentTokens.has(token)).length
+      const score = overlap / Math.max(1, familyTokens.size) + (item.status === 'validated' ? 0.1 : 0)
+      return { item, score }
+    })
+    .filter(({ score }) => score > 0)
+    .sort((left, right) => right.score - left.score || right.item.successCount - left.item.successCount)
+    .slice(0, limit)
+    .map(({ item }) => item)
+}
+
+export async function registrarUsoAtalhos(casa, ids, { now } = {}) {
+  const wanted = new Set(ids)
+  if (!wanted.size) return { result: 'unchanged', updated: 0 }
+  const policy = await lerPolitica()
+  await prepararAtalhos(casa)
+  const usedAt = now ? new Date(now).toISOString() : new Date().toISOString()
+  const release = await adquirirTrava(casa)
+  try {
+    const loaded = await carregar(casa, policy)
+    let updated = 0
+    for (const item of loaded.store.shortcuts) {
+      if (!wanted.has(item.id)) continue
+      item.usageCount += 1
+      item.lastUsedAt = usedAt
+      item.updatedAt = usedAt
+      updated += 1
+    }
+    if (updated) await gravar(casa, loaded.store)
+    return { result: updated ? 'updated' : 'unchanged', updated }
+  } finally {
+    await release()
+  }
+}
+
+export async function executarManutencaoAtalhos(casa, { now } = {}) {
+  const policy = await lerPolitica()
+  await prepararAtalhos(casa)
+  const at = now ? new Date(now).toISOString() : new Date().toISOString()
+  const release = await adquirirTrava(casa)
+  try {
+    const loaded = await carregar(casa, policy)
+    const actions = aplicarDecaimento(loaded.store, policy, at)
+    if (actions.length) await gravar(casa, loaded.store)
+    return { result: 'maintained', actions, active: loaded.store.shortcuts.length, archived: loaded.store.archive.length }
+  } finally {
+    await release()
+  }
 }
 
 function validarTexto(text, label, minimum, maximum) {
@@ -219,14 +507,8 @@ function validarPassos(steps, label) {
   return steps.map((step) => validarTexto(step, `Etapa de ${label}`, 1, 160))
 }
 
-function chave({ goal, scope, baselineSteps, shortcutSteps }) {
-  return [
-    scope.type,
-    scope.id ?? '',
-    normalizar(goal),
-    baselineSteps.map(normalizar).join('>'),
-    shortcutSteps.map(normalizar).join('>')
-  ].join('::')
+function chave({ family, goal, scope }) {
+  return [scope.type, scope.id ?? '', family ?? familiaCanonica(goal)].join('::')
 }
 
 function validarDuracao(durationMs) {
@@ -254,8 +536,15 @@ function aplicarObservacao(item, observation, policy) {
   if (observation.success && observation.consistent) {
     item.successCount += 1
     item.consecutiveSuccesses += 1
-    if (item.status !== 'validated' && item.consecutiveSuccesses >= policy.minimumConsecutiveSuccesses) {
-      item.status = 'candidate'
+    item.lastSucceededAt = observation.recordedAt
+    if (item.status !== 'validated') item.status = 'active'
+    if (item.consecutiveSuccesses >= policy.validationSuccessfulRuns) {
+      item.status = 'validated'
+      item.validation = {
+        status: 'passed',
+        validatedAt: observation.recordedAt,
+        observationId: observation.id
+      }
     }
     return
   }
@@ -263,14 +552,19 @@ function aplicarObservacao(item, observation, policy) {
   else item.inconsistentCount += 1
   item.consecutiveSuccesses = 0
   item.status = 'observing'
-  item.validation = null
+  item.validation = observation.success
+    ? { status: 'failed', validatedAt: observation.recordedAt, observationId: observation.id }
+    : null
 }
 
 export async function registrarObservacaoAtalho(casa, input, { now } = {}) {
   const policy = await lerPolitica()
-  const goal = validarTexto(input?.goal, 'Objetivo', 3, 240)
+  await prepararAtalhos(casa)
+  const declaredGoal = validarTexto(input?.goal, 'Objetivo', 3, 240)
+  const family = familiaCanonica(declaredGoal)
+  const goal = family
   const baselineSteps = validarPassos(input?.baselineSteps, 'referência')
-  const shortcutSteps = validarPassos(input?.shortcutSteps, 'atalho')
+  const shortcutSteps = passosComVerificacao(validarPassos(input?.shortcutSteps, 'atalho'))
   if (baselineSteps.length - shortcutSteps.length < policy.minimumRemovedSteps) {
     throw new Error('O atalho precisa remover ao menos uma etapa da referência.')
   }
@@ -284,13 +578,14 @@ export async function registrarObservacaoAtalho(casa, input, { now } = {}) {
 
   const release = await adquirirTrava(casa)
   try {
-    const loaded = await carregar(casa)
+    const loaded = await carregar(casa, policy)
     const store = loaded.store
-    const inputKey = chave({ goal, scope, baselineSteps, shortcutSteps })
+    const inputKey = chave({ family, scope })
     let item = store.shortcuts.find((candidate) => chave(candidate) === inputKey)
     if (!item) {
       item = {
         id: `shortcut-${randomUUID()}`,
+        family,
         goal,
         scope,
         baselineSteps,
@@ -301,12 +596,19 @@ export async function registrarObservacaoAtalho(casa, input, { now } = {}) {
         successCount: 0,
         failureCount: 0,
         inconsistentCount: 0,
+        usageCount: 0,
+        lastSucceededAt: null,
+        lastUsedAt: null,
+        mergedFrom: [],
         observations: [],
         validation: null,
         createdAt: recordedAt,
         updatedAt: recordedAt
       }
       store.shortcuts.push(item)
+    } else if (shortcutSteps.length < item.shortcutSteps.length) {
+      item.baselineSteps = baselineSteps
+      item.shortcutSteps = shortcutSteps
     }
     if (item.outcomeFingerprint === null && input.success) item.outcomeFingerprint = outcomeFingerprint
     const consistent = input.success && item.outcomeFingerprint === outcomeFingerprint
@@ -318,9 +620,15 @@ export async function registrarObservacaoAtalho(casa, input, { now } = {}) {
       consistent
     })
     aplicarObservacao(item, observation, policy)
+    let result = item.status
+    if (item.failureCount + item.inconsistentCount >= policy.maximumFailuresBeforeArchive) {
+      arquivarResumo(store, item, 'repeated-failure', recordedAt)
+      store.shortcuts = store.shortcuts.filter((shortcut) => shortcut.id !== item.id)
+      result = 'archived'
+    }
     await gravar(casa, store)
     return {
-      result: item.status,
+      result,
       shortcut: item,
       observation,
       promotion: 'not-performed'
@@ -332,6 +640,7 @@ export async function registrarObservacaoAtalho(casa, input, { now } = {}) {
 
 export async function validarAtalho(casa, id, input, { now } = {}) {
   const policy = await lerPolitica()
+  await prepararAtalhos(casa)
   const outcome = validarTexto(input?.outcome, 'Resultado', 2, 240)
   if (typeof input?.success !== 'boolean') throw new Error('A validação precisa declarar sucesso ou falha.')
   const durationMs = validarDuracao(input?.durationMs)
@@ -340,11 +649,11 @@ export async function validarAtalho(casa, id, input, { now } = {}) {
 
   const release = await adquirirTrava(casa)
   try {
-    const loaded = await carregar(casa)
+    const loaded = await carregar(casa, policy)
     const item = loaded.store.shortcuts.find((shortcut) => shortcut.id === id)
     if (!item) return { result: 'not-found', shortcut: null }
-    if (item.status !== 'candidate') {
-      return { result: 'not-ready', shortcut: item, requiredStatus: 'candidate' }
+    if (!['active', 'validated'].includes(item.status)) {
+      return { result: 'not-ready', shortcut: item, requiredStatus: 'active' }
     }
     const consistent = input.success && item.outcomeFingerprint === outcomeFingerprint
     const observation = novaObservacao({
@@ -355,16 +664,24 @@ export async function validarAtalho(casa, id, input, { now } = {}) {
       consistent
     })
     aplicarObservacao(item, observation, policy)
+    let result
     if (input.success && consistent) {
       item.status = 'validated'
       item.validation = { status: 'passed', validatedAt: recordedAt, observationId: observation.id }
+      result = 'validated'
     } else {
       item.status = 'observing'
       item.validation = { status: 'failed', validatedAt: recordedAt, observationId: observation.id }
+      result = 'validation-failed'
+      if (item.failureCount + item.inconsistentCount >= policy.maximumFailuresBeforeArchive) {
+        arquivarResumo(loaded.store, item, 'repeated-failure', recordedAt)
+        loaded.store.shortcuts = loaded.store.shortcuts.filter((shortcut) => shortcut.id !== item.id)
+        result = 'archived'
+      }
     }
     await gravar(casa, loaded.store)
     return {
-      result: item.status === 'validated' ? 'validated' : 'validation-failed',
+      result,
       shortcut: item,
       observation,
       promotion: 'not-performed'

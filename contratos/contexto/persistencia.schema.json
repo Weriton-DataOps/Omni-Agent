@@ -1,11 +1,11 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/Weriton-DataOps/Omni-Agent/contratos/contexto/persistencia.schema.json",
-  "title": "Omni Structured Context Store V1",
+  "title": "Omni Structured Context Store V2",
   "type": "object",
-  "required": ["schemaVersion", "store", "checkpoints", "backlog"],
+  "required": ["schemaVersion", "store", "checkpoints", "backlog", "resolvedDiscoveries"],
   "properties": {
-    "schemaVersion": { "const": 1 },
+    "schemaVersion": { "const": 2 },
     "store": {
       "type": "object",
       "required": ["id", "createdAt", "updatedAt"],
@@ -17,7 +17,8 @@
       "additionalProperties": false
     },
     "checkpoints": { "type": "array", "maxItems": 50, "items": { "$ref": "#/$defs/checkpoint" } },
-    "backlog": { "type": "array", "maxItems": 100, "items": { "$ref": "#/$defs/discovery" } }
+    "backlog": { "type": "array", "maxItems": 100, "items": { "$ref": "#/$defs/discovery" } },
+    "resolvedDiscoveries": { "type": "array", "maxItems": 100, "items": { "$ref": "#/$defs/resolvedDiscovery" } }
   },
   "$defs": {
     "textList": {
@@ -90,6 +91,32 @@
         "recordedAt": { "type": "string", "format": "date-time" }
       },
       "additionalProperties": false
+    },
+    "resolvedDiscovery": {
+      "allOf": [
+        { "$ref": "#/$defs/discoveryBase" },
+        {
+          "type": "object",
+          "required": ["implemented", "resolution", "resolvedAt"],
+          "properties": {
+            "implemented": { "const": true },
+            "resolution": { "type": "string", "minLength": 3, "maxLength": 500 },
+            "resolvedAt": { "type": "string", "format": "date-time" }
+          }
+        }
+      ]
+    },
+    "discoveryBase": {
+      "type": "object",
+      "required": ["id", "title", "reason", "source", "decision", "recordedAt"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^discovery-" },
+        "title": { "type": "string", "minLength": 3, "maxLength": 240 },
+        "reason": { "type": "string", "minLength": 3, "maxLength": 500 },
+        "source": { "type": "string", "minLength": 2, "maxLength": 240 },
+        "decision": { "enum": ["backlog", "required-for-dod"] },
+        "recordedAt": { "type": "string", "format": "date-time" }
+      }
     }
   },
   "additionalProperties": false

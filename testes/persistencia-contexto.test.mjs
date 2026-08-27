@@ -1,13 +1,15 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import test from 'node:test'
 
 import {
   caminhoDaPersistenciaContexto,
+  lerPersistenciaContexto,
   registrarCheckpoint,
-  registrarDescoberta
+  registrarDescoberta,
+  resolverDescoberta
 } from '../runtime/persistencia-contexto.mjs'
 
 const task = {
@@ -79,6 +81,44 @@ test('descoberta fora do DoD vai ao backlog e nunca é implementada automaticame
     })
     assert.equal(required.result, 'required-for-dod')
     assert.equal(required.discovery.implemented, false)
+
+    const resolved = await resolverDescoberta(home, optional.discovery.id, {
+      resolution: 'correção implementada e coberta por teste automatizado'
+    })
+    assert.equal(resolved.result, 'resolved')
+    assert.equal(resolved.discovery.implemented, true)
+    const store = await lerPersistenciaContexto(home)
+    assert.equal(store.backlog.length, 1)
+    assert.equal(store.resolvedDiscoveries.length, 1)
+    assert.match(store.resolvedDiscoveries[0].resolution, /teste automatizado/)
+  } finally {
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
+test('store v1 migra com backup antes de ganhar histórico de resoluções', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'omni-context-migration-'))
+  try {
+    const path = caminhoDaPersistenciaContexto(home)
+    await mkdir(dirname(path), { recursive: true })
+    const source = `${JSON.stringify({
+      schemaVersion: 1,
+      store: {
+        id: 'omni-local-structured-context',
+        createdAt: '2030-01-01T00:00:00Z',
+        updatedAt: '2030-01-01T00:00:00Z'
+      },
+      checkpoints: [],
+      backlog: []
+    }, null, 2)}\n`
+    await writeFile(path, source, 'utf8')
+    const store = await lerPersistenciaContexto(home)
+    assert.equal(store.schemaVersion, 2)
+    assert.deepEqual(store.resolvedDiscoveries, [])
+    const files = await readdir(dirname(path))
+    const backup = files.find((name) => name.includes('.before-v1-to-v2.') && name.endsWith('.backup'))
+    assert.ok(backup)
+    assert.equal(await readFile(join(dirname(path), backup), 'utf8'), source)
   } finally {
     await rm(home, { recursive: true, force: true })
   }
