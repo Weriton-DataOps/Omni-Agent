@@ -176,6 +176,24 @@ considerado aprovado antes da execução:
 5. verificar se evals observados permanecem úteis e sem falsos positivos;
 6. acompanhar os cinco trabalhos de falha bloqueados sem contornar permissão ou ambiente ausente.
 
+### Ponto de partida da auditoria de 27/08
+
+A auditoria de amanhã começa a partir do diálogo que reservou a rodada para o fim do dia e definiu o
+DoD comportamental como teste de uso real. O roteiro resumido que deve ser retomado é:
+
+1. conversar naturalmente com o Omni por 8 a 12 turnos e observar personalidade, humor, analogias,
+   raciocínio e iniciativa sem pedir que ele os encene;
+2. declarar duas preferências numa sessão e conferir se o Omni as aplica em outra sessão quando forem
+   relevantes, sem repeti-las;
+3. corrigir um comportamento durante uma tarefa segura, repetir a mesma família de tarefa e verificar
+   se o turno seguinte mudou;
+4. conferir se memória, falhas, atalhos, evals e varredura registraram somente evidência válida, sem
+   duplicar contadores, guardar conversa bruta ou enviar memória pessoal ao Git.
+
+O início da rodada deve primeiro recuperar este ponto de partida, executar `/plugin` → **Restart** e
+registrar o estado anterior. O roteiro detalhado e os campos de evidência continuam em
+[`definition-of-done-2026-08-27.md`](definition-of-done-2026-08-27.md).
+
 ## Fechamento desta rodada
 
 - sintaxe: aprovada;
