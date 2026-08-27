@@ -40,6 +40,14 @@
         "Passou a agrupar execuções bem-sucedidas repetidas em atalhos e candidatas de melhoria operacional.",
         "Adicionou deduplicação por evidência, execução automática em segundo plano e relatório sem conversa bruta."
       ]
+    },
+    {
+      "version": "0.16.1",
+      "changes": [
+        "Tornou permanente o ciclo completo da varredura solicitada: avaliar, materializar, testar, commitar e publicar.",
+        "Padronizou o relatório final separando o que valeu subir do que foi realmente confirmado no origin/main.",
+        "Manteve a varredura automática de manutenção silenciosa e sem publicação remota."
+      ]
     }
   ]
 }

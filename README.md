@@ -77,6 +77,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\omni.ps1 varredura
 A varredura roda também na abertura da sessão e, no máximo uma vez por hora, após uma resposta. Ela
 é uma rede de conferência; o aprendizado por hooks continua sendo o caminho principal.
 
+Quando a varredura é solicitada pelo proprietário, o Omni completa avaliação, materialização
+portável, gates, commit e push sem pausas intermediárias. O relatório final separa descobertas,
+descartes, validações, itens que valeram publicação e itens realmente confirmados no `origin/main`.
+A manutenção automática em segundo plano permanece silenciosa e não publica por conta própria.
+
 Uma única configuração local liga o aprendizado ao repositório fonte:
 
 ```powershell

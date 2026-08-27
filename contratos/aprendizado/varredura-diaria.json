@@ -9,6 +9,25 @@
   "maximumScanHistory": 60,
   "sources": ["claude-code-jsonl"],
   "targets": ["memory", "failures", "shortcuts", "operational-improvements"],
+  "requestedWorkflow": {
+    "actions": ["scan", "deduplicate", "evaluate", "materialize-portable", "run-gates", "commit", "push", "report"],
+    "publishOnlyPortableArtifacts": true,
+    "requireGreenGatesBeforeCommit": true,
+    "requireOriginMainConfirmation": true
+  },
+  "report": {
+    "requiredSections": [
+      "before-and-after",
+      "findings",
+      "discarded-with-reasons",
+      "validated",
+      "eligible-for-publication",
+      "actually-published",
+      "gates",
+      "local-or-observing"
+    ],
+    "publicationEvidence": ["changed-files", "commit", "origin-main-confirmation"]
+  },
   "privacy": {
     "storeRawConversation": false,
     "storeRawToolResults": false,

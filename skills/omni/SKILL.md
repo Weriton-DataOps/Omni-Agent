@@ -71,8 +71,18 @@ independentes até seus próprios contratos serem ativados.
 - Os hooks continuam sendo os sensores principais. Uma varredura diária em segundo plano confere as
   sessões ativadas pelo Omni, recupera somente lacunas e agrupa rotinas bem-sucedidas repetidas em
   atalhos. Ela guarda fingerprints e contagens, nunca a conversa ou resultados brutos.
-- Quando o pedido for `varredura`, execute `varredura-dia --forcar`. Mostre apenas atividades
-  conferidas, lacunas recuperadas e a mudança nos totais de memória, falhas, atalhos e melhorias.
+- Quando o proprietário pedir `varredura`, execute automaticamente o ciclo completo: rode
+  `varredura-dia --forcar`, elimine ruído e duplicatas, avalie as candidatas, materialize somente os
+  aprendizados portáveis no repositório canônico, execute todos os gates e, se estiverem verdes,
+  faça commit e push. Essa solicitação já autoriza essas etapas; não pare entre elas para pedir nova
+  confirmação. Memória pessoal, conversa, erros e dados privados nunca entram no Git.
+- Ao terminar uma varredura solicitada, entregue sempre um relatório com: totais antes e depois; o
+  que foi encontrado; o que foi descartado e por quê; o que foi validado; o que valeu subir; o que
+  realmente subiu; arquivos alterados, commit e confirmação do `origin/main`; gates e resultados;
+  e tudo que permaneceu local ou em observação. Diferencie explicitamente “valeu subir” de “subiu”.
+  Nunca afirme publicação sem confirmar o commit remoto.
+- A varredura automática de manutenção continua silenciosa, não faz commit ou push sozinha e não
+  interrompe a conversa. O ciclo completo acima vale para a varredura pedida pelo proprietário.
 
 ## Atualização
 

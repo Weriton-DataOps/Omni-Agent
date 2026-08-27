@@ -27,7 +27,7 @@ function success(value = '') {
   }
 }
 
-function runner({ before = '0.16.0', after = '0.17.0', marketplace = canonicalMarketplace } = {}) {
+function runner({ before = '0.16.1', after = '0.17.0', marketplace = canonicalMarketplace } = {}) {
   const calls = []
   let pluginListCalls = 0
   return {
@@ -66,7 +66,7 @@ test('atualiza, valida e orienta a aplicação conforme a interface', async () =
   })
 
   assert.equal(result.status, 'updated')
-  assert.equal(result.previousInstalledVersion, '0.16.0')
+  assert.equal(result.previousInstalledVersion, '0.16.1')
   assert.equal(result.installedVersion, '0.17.0')
   assert.equal(result.reloadRequired, true)
   assert.equal(result.applyInstructions.vscode.command, '/plugin')
@@ -79,12 +79,12 @@ test('atualiza, valida e orienta a aplicação conforme a interface', async () =
 })
 
 test('versão atual é validada sem pedir nova sessão', async () => {
-  const fake = runner({ before: '0.16.0', after: '0.16.0' })
+  const fake = runner({ before: '0.16.1', after: '0.16.1' })
   const result = await atualizarPlugin({
     casa: 'C:\\omni-test',
     run: fake.run,
     resolveCli: async () => 'claude-test',
-    checkVersion: async () => ({ latestVersion: '0.16.0', status: 'current' })
+    checkVersion: async () => ({ latestVersion: '0.16.1', status: 'current' })
   })
 
   assert.equal(result.status, 'current')
@@ -132,6 +132,16 @@ test('registro da 0.16.0 descreve a conferência diária sem conversa bruta', as
   assert.match(text, /varredura diária/i)
   assert.match(text, /atalhos.*melhoria operacional/i)
   assert.match(text, /sem conversa bruta/i)
+})
+
+test('registro da 0.16.1 fixa o ciclo e o relatório da varredura solicitada', async () => {
+  const changes = await lerMudancasAtualizacao(pluginRoot, '0.16.0', '0.16.1')
+  assert.equal(changes.length, 3)
+  assert.ok(changes.every((item) => item.version === '0.16.1'))
+  const text = changes.map((item) => item.change).join(' ')
+  assert.match(text, /avaliar.*materializar.*testar.*publicar/i)
+  assert.match(text, /valeu subir.*origin\/main/i)
+  assert.match(text, /manutenção silenciosa/i)
 })
 
 test('resumo público contém somente transição, mudanças e recarga necessária', () => {

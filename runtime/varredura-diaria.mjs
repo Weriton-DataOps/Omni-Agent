@@ -51,6 +51,12 @@ async function contrato() {
     value.contract !== 'omni-daily-activity-scan-v1' ||
     !Number.isInteger(value.automaticIntervalMinutes) ||
     !Number.isInteger(value.maximumFilesPerScan) ||
+    value.requestedWorkflow?.publishOnlyPortableArtifacts !== true ||
+    value.requestedWorkflow?.requireGreenGatesBeforeCommit !== true ||
+    value.requestedWorkflow?.requireOriginMainConfirmation !== true ||
+    !Array.isArray(value.report?.requiredSections) ||
+    !value.report.requiredSections.includes('eligible-for-publication') ||
+    !value.report.requiredSections.includes('actually-published') ||
     value.privacy?.storeRawConversation !== false ||
     value.privacy?.storeRawToolResults !== false
   ) throw new Error('Contrato da varredura diaria fora da versao 1.')
