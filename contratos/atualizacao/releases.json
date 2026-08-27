@@ -48,6 +48,14 @@
         "Padronizou o relatório final separando o que valeu subir do que foi realmente confirmado no origin/main.",
         "Manteve a varredura automática de manutenção silenciosa e sem publicação remota."
       ]
+    },
+    {
+      "version": "0.17.0",
+      "changes": [
+        "Colocou a personalidade-base v1 na frente de cada resposta, com intensidade alta por padrão.",
+        "Reforçou inteligência perceptível, humor, sarcasmo e analogias como parte do raciocínio, não como enfeite opcional.",
+        "Removeu amortecedores de estilo e ampliou os evals contra respostas genéricas e secas, preservando verdade, segurança e respeito."
+      ]
     }
   ]
 }

@@ -10,6 +10,11 @@ test('manifesto e núcleo formam uma identidade única', async () => {
   const persona = await lerPersonalidadeAtiva()
   assert.equal(persona.manifest.id, 'omni-persona-v1-candidate')
   assert.match(persona.nucleus, /PERSONALIDADE omni-persona-v1-candidate\./)
+  assert.match(persona.nucleus, /personalidade não é enfeite/i)
+  assert.match(persona.nucleus, /intensidade padrão ALTA/i)
+  assert.match(persona.nucleus, /analogias são ferramenta central/i)
+  assert.doesNotMatch(persona.nucleus, /no máximo uma/i)
+  assert.doesNotMatch(persona.nucleus, /humor é zero/i)
 })
 
 test('contrato não pode escapar do diretório de personalidade', async () => {

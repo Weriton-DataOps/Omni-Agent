@@ -27,7 +27,7 @@ function success(value = '') {
   }
 }
 
-function runner({ before = '0.16.1', after = '0.17.0', marketplace = canonicalMarketplace } = {}) {
+function runner({ before = '0.17.0', after = '0.18.0', marketplace = canonicalMarketplace } = {}) {
   const calls = []
   let pluginListCalls = 0
   return {
@@ -61,30 +61,30 @@ test('atualiza, valida e orienta a aplicação conforme a interface', async () =
     casa: 'C:\\omni-test',
     run: fake.run,
     resolveCli: async () => 'claude-test',
-    checkVersion: async () => ({ latestVersion: '0.17.0', status: 'outdated' }),
-    readChanges: async () => [{ version: '0.17.0', change: 'Mudança testada.' }]
+    checkVersion: async () => ({ latestVersion: '0.18.0', status: 'outdated' }),
+    readChanges: async () => [{ version: '0.18.0', change: 'Mudança testada.' }]
   })
 
   assert.equal(result.status, 'updated')
-  assert.equal(result.previousInstalledVersion, '0.16.1')
-  assert.equal(result.installedVersion, '0.17.0')
+  assert.equal(result.previousInstalledVersion, '0.17.0')
+  assert.equal(result.installedVersion, '0.18.0')
   assert.equal(result.reloadRequired, true)
   assert.equal(result.applyInstructions.vscode.command, '/plugin')
   assert.equal(result.applyInstructions.vscode.action, 'Clique em Restart.')
   assert.equal(result.applyInstructions.terminal.command, '/reload-plugins')
   assert.equal(result.applyInstructions.preservesSession, true)
   assert.deepEqual(result.verifiedBy, ['claude-plugin-list', 'github-manifest'])
-  assert.deepEqual(result.changes, [{ version: '0.17.0', change: 'Mudança testada.' }])
+  assert.deepEqual(result.changes, [{ version: '0.18.0', change: 'Mudança testada.' }])
   assert.ok(fake.calls.some(({ args }) => args.includes('update') && args.includes('omni@omni-hub')))
 })
 
 test('versão atual é validada sem pedir nova sessão', async () => {
-  const fake = runner({ before: '0.16.1', after: '0.16.1' })
+  const fake = runner({ before: '0.17.0', after: '0.17.0' })
   const result = await atualizarPlugin({
     casa: 'C:\\omni-test',
     run: fake.run,
     resolveCli: async () => 'claude-test',
-    checkVersion: async () => ({ latestVersion: '0.16.1', status: 'current' })
+    checkVersion: async () => ({ latestVersion: '0.17.0', status: 'current' })
   })
 
   assert.equal(result.status, 'current')
@@ -142,6 +142,16 @@ test('registro da 0.16.1 fixa o ciclo e o relatório da varredura solicitada', a
   assert.match(text, /avaliar.*materializar.*testar.*publicar/i)
   assert.match(text, /valeu subir.*origin\/main/i)
   assert.match(text, /manutenção silenciosa/i)
+})
+
+test('registro da 0.17.0 descreve a personalidade em alta intensidade', async () => {
+  const changes = await lerMudancasAtualizacao(pluginRoot, '0.16.1', '0.17.0')
+  assert.equal(changes.length, 3)
+  assert.ok(changes.every((item) => item.version === '0.17.0'))
+  const text = changes.map((item) => item.change).join(' ')
+  assert.match(text, /personalidade-base v1.*intensidade alta/i)
+  assert.match(text, /inteligência.*humor.*sarcasmo.*analogias/i)
+  assert.match(text, /genéricas e secas/i)
 })
 
 test('resumo público contém somente transição, mudanças e recarga necessária', () => {

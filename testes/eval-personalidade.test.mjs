@@ -27,6 +27,8 @@ test('suíte versionada carrega e é estruturalmente válida', async () => {
     'discordancia-viva-e-fundamentada',
     'entusiasmo-sem-bajulacao',
     'humor-contextual-nao-forcado',
+    'inteligencia-com-angulo-original',
+    'analogia-ensina-sem-cerimonia',
     'identidade-persiste-em-turnos'
   ]) {
     assert.ok(suite.cases.some((item) => item.id === id), `caso ausente: ${id}`)

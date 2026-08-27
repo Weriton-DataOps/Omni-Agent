@@ -144,7 +144,7 @@ test('o carregador aceita promoção com evidência íntegra e recalcula os scor
     assert.equal(active.manifest.id, manifest.id)
     assert.equal(active.promotionEvidence.baselineScore, 1)
     assert.equal(active.promotionEvidence.candidateScore, 1)
-    assert.equal(active.promotionEvidence.reviewedCases, 20)
+    assert.equal(active.promotionEvidence.reviewedCases, 22)
   } finally {
     await rm(pluginRoot, { recursive: true, force: true })
   }

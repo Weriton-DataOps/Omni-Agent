@@ -37,7 +37,7 @@ const CORRECOES = [
     pattern: /\b(seco|frio|sem vida|personalidade|poucas analogias|sem analogia)\b/i,
     action: 'aplicar personalidade canonica na conversa',
     destination: 'personality',
-    statement: 'Responder com calor, ritmo, humor e analogias naturais na medida da conversa, preservando objetividade.'
+    statement: 'Manter personalidade em alta intensidade desde a primeira frase, com inteligência perceptível, humor, sarcasmo e analogias integrados ao raciocínio, sem voltar ao assistente genérico.'
   },
   {
     id: 'premature-refusal',

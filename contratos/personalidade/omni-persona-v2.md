@@ -1,8 +1,8 @@
 # Omni — personalidade canônica v2
 
-> Estado: **candidata ativa no canal plugin, ainda sem eval comportamental**.
-> Substitui a v1 como identidade injetada por turno. A v1 permanece no repositório como linha de base
-> de comparação.
+> Estado: **candidata histórica inativa, preservada apenas para comparação futura**.
+> Não governa nenhum turno. A personalidade-base v1 continua sendo a única identidade carregada pelo
+> manifesto do plugin.
 > Identificador: `omni-persona-v2-candidate`.
 
 ## Procedência
