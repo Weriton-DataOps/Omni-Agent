@@ -4,10 +4,20 @@
     {
       "name": "conversation",
       "description": "Conversar como o Omni usando a personalidade canonica e contexto relevante.",
-      "when_to_use": ["pergunta", "explicacao", "conversa"],
-      "when_not_to_use": ["acao que exige uma capacidade nao declarada"],
-      "inputs": ["texto"],
-      "outputs": ["resposta"],
+      "when_to_use": [
+        "pergunta",
+        "explicacao",
+        "conversa"
+      ],
+      "when_not_to_use": [
+        "acao que exige uma capacidade nao declarada"
+      ],
+      "inputs": [
+        "texto"
+      ],
+      "outputs": [
+        "resposta"
+      ],
       "risk": "low",
       "permissions": [],
       "latency": "model-dependent",
@@ -18,99 +28,265 @@
     {
       "name": "context-retrieval",
       "description": "Selecionar e ranquear memória confirmada por relevância híbrida para um turno.",
-      "when_to_use": ["antes de responder", "consulta de contexto"],
-      "when_not_to_use": ["nunca carregar toda a memoria"],
-      "inputs": ["intent"],
-      "outputs": ["rankedMemory", "fastProjection", "deepProjection"],
+      "when_to_use": [
+        "antes de responder",
+        "consulta de contexto"
+      ],
+      "when_not_to_use": [
+        "nunca carregar toda a memoria"
+      ],
+      "inputs": [
+        "intent"
+      ],
+      "outputs": [
+        "rankedMemory",
+        "fastProjection",
+        "deepProjection"
+      ],
       "risk": "low",
-      "permissions": ["read-local-runtime"],
+      "permissions": [
+        "read-local-runtime"
+      ],
       "latency": "local",
       "cost": "none",
-      "required_tools": ["filesystem"],
+      "required_tools": [
+        "filesystem"
+      ],
       "recommended_agent": "omni"
     },
     {
       "name": "memory-write",
       "description": "Registrar pedido explicito ou aprendizagem candidata no runtime local.",
-      "when_to_use": ["lembrar explicito", "licao observada"],
-      "when_not_to_use": ["fala comum", "segredo", "inferencia sem evidencia"],
-      "inputs": ["text", "type", "scope", "evidence"],
-      "outputs": ["memoryRecord"],
+      "when_to_use": [
+        "lembrar explicito",
+        "licao observada"
+      ],
+      "when_not_to_use": [
+        "fala comum",
+        "segredo",
+        "inferencia sem evidencia"
+      ],
+      "inputs": [
+        "text",
+        "type",
+        "scope",
+        "evidence"
+      ],
+      "outputs": [
+        "memoryRecord"
+      ],
       "risk": "medium",
-      "permissions": ["write-local-runtime"],
+      "permissions": [
+        "write-local-runtime"
+      ],
       "latency": "local",
       "cost": "none",
-      "required_tools": ["filesystem"],
+      "required_tools": [
+        "filesystem"
+      ],
       "recommended_agent": "omni"
     },
     {
       "name": "memory-maintenance",
       "description": "Expirar, atualizar, consolidar e aposentar memória local com histórico auditável.",
-      "when_to_use": ["manutenção periódica", "decisão explícita sobre memória", "duplicata ou obsolescência"],
-      "when_not_to_use": ["exclusão permanente automática", "fusão semântica sem confirmação"],
-      "inputs": ["memoryIds", "policy", "ownerDecision"],
-      "outputs": ["maintenanceReport", "archiveEntries", "consolidationProposals"],
+      "when_to_use": [
+        "manutenção periódica",
+        "decisão explícita sobre memória",
+        "duplicata ou obsolescência"
+      ],
+      "when_not_to_use": [
+        "exclusão permanente automática",
+        "fusão semântica sem confirmação"
+      ],
+      "inputs": [
+        "memoryIds",
+        "policy",
+        "ownerDecision"
+      ],
+      "outputs": [
+        "maintenanceReport",
+        "archiveEntries",
+        "consolidationProposals"
+      ],
       "risk": "medium",
-      "permissions": ["read-local-runtime", "write-local-runtime"],
+      "permissions": [
+        "read-local-runtime",
+        "write-local-runtime"
+      ],
       "latency": "local",
       "cost": "none",
-      "required_tools": ["filesystem"],
+      "required_tools": [
+        "filesystem"
+      ],
       "recommended_agent": "omni"
     },
     {
       "name": "plugin-update",
       "description": "Atualizar e validar o plugin do Omni por pedido explícito.",
-      "when_to_use": ["comando atualizar explícito"],
-      "when_not_to_use": ["atualização silenciosa", "durante conversa comum"],
-      "inputs": ["marketplace canônico", "plugin instalado"],
-      "outputs": ["versão validada", "necessidade de reload"],
+      "when_to_use": [
+        "comando atualizar explícito"
+      ],
+      "when_not_to_use": [
+        "atualização silenciosa",
+        "durante conversa comum"
+      ],
+      "inputs": [
+        "marketplace canônico",
+        "plugin instalado"
+      ],
+      "outputs": [
+        "versão validada",
+        "necessidade de reload"
+      ],
       "risk": "medium",
-      "permissions": ["network", "write-plugin-cache"],
+      "permissions": [
+        "network",
+        "write-plugin-cache"
+      ],
       "latency": "network-dependent",
       "cost": "none",
-      "required_tools": ["claude-code-cli"],
+      "required_tools": [
+        "claude-code-cli"
+      ],
       "recommended_agent": "omni"
     },
     {
       "name": "shortcut-learning",
       "description": "Observar repetição de um caminho menor, acumular evidência e validar o atalho localmente.",
-      "when_to_use": ["execução real concluída", "resultado verificável", "validação independente de candidata"],
-      "when_not_to_use": ["plano", "hipótese", "exemplo", "resultado não verificado", "promoção automática"],
-      "inputs": ["goal", "baselineSteps", "shortcutSteps", "verifiedOutcome"],
-      "outputs": ["observation", "shortcutState", "validationState"],
+      "when_to_use": [
+        "execução real concluída",
+        "resultado verificável",
+        "validação independente de candidata"
+      ],
+      "when_not_to_use": [
+        "plano",
+        "hipótese",
+        "exemplo",
+        "resultado não verificado",
+        "promoção automática"
+      ],
+      "inputs": [
+        "goal",
+        "baselineSteps",
+        "shortcutSteps",
+        "verifiedOutcome"
+      ],
+      "outputs": [
+        "observation",
+        "shortcutState",
+        "validationState"
+      ],
       "risk": "medium",
-      "permissions": ["write-local-runtime"],
+      "permissions": [
+        "write-local-runtime"
+      ],
       "latency": "local",
       "cost": "none",
-      "required_tools": ["filesystem"],
+      "required_tools": [
+        "filesystem"
+      ],
       "recommended_agent": "omni"
     },
     {
       "name": "self-improvement-pipeline",
       "description": "Classificar aprendizado, avaliar proposta reutilizável e materializar artefatos somente após aprovação explícita.",
-      "when_to_use": ["atalho validado", "aprendizado reutilizável comprovado", "decisão explícita do proprietário"],
-      "when_not_to_use": ["experiência transitória", "memória pessoal", "evidência incompleta", "promoção automática"],
-      "inputs": ["validatedSource", "evaluation", "ownerDecision", "portableConfirmation"],
-      "outputs": ["promotionProposal", "evaluationReport", "versionableArtifacts"],
+      "when_to_use": [
+        "atalho validado",
+        "aprendizado reutilizável comprovado",
+        "decisão explícita do proprietário"
+      ],
+      "when_not_to_use": [
+        "experiência transitória",
+        "memória pessoal",
+        "evidência incompleta",
+        "promoção automática"
+      ],
+      "inputs": [
+        "validatedSource",
+        "evaluation",
+        "ownerDecision",
+        "portableConfirmation"
+      ],
+      "outputs": [
+        "promotionProposal",
+        "evaluationReport",
+        "versionableArtifacts"
+      ],
       "risk": "high",
-      "permissions": ["read-local-runtime", "write-local-runtime", "write-source-tree-on-explicit-approval"],
+      "permissions": [
+        "read-local-runtime",
+        "write-local-runtime",
+        "write-source-tree-on-explicit-approval"
+      ],
       "latency": "local",
       "cost": "none",
-      "required_tools": ["filesystem", "git-readonly-status"],
+      "required_tools": [
+        "filesystem",
+        "git-readonly-status"
+      ],
       "recommended_agent": "omni"
     },
     {
       "name": "failure-learning",
       "description": "Detectar recorrência de falhas por evidências distintas, validar correção e encaminhar padrão comprovado.",
-      "when_to_use": ["falha real de ação", "assinatura estável", "teste real da correção"],
-      "when_not_to_use": ["falha isolada como regra", "evidência duplicada", "causa sem suporte", "log bruto ou segredo"],
-      "inputs": ["agent", "actionSummary", "failureClass", "signatureFingerprint", "distinctEvidence", "fixTest"],
-      "outputs": ["failurePattern", "rootCauseAnalysis", "failureEval", "improvementProposal"],
+      "when_to_use": [
+        "falha real de ação",
+        "assinatura estável",
+        "teste real da correção"
+      ],
+      "when_not_to_use": [
+        "falha isolada como regra",
+        "evidência duplicada",
+        "causa sem suporte",
+        "log bruto ou segredo"
+      ],
+      "inputs": [
+        "agent",
+        "actionSummary",
+        "failureClass",
+        "signatureFingerprint",
+        "distinctEvidence",
+        "fixTest"
+      ],
+      "outputs": [
+        "failurePattern",
+        "rootCauseAnalysis",
+        "failureEval",
+        "improvementProposal"
+      ],
       "risk": "medium",
-      "permissions": ["write-local-runtime"],
+      "permissions": [
+        "write-local-runtime"
+      ],
       "latency": "local",
       "cost": "none",
-      "required_tools": ["filesystem"],
+      "required_tools": [
+        "filesystem"
+      ],
+      "recommended_agent": "omni"
+    },
+    {
+      "name": "learned-recuperar-executar-fielmente-o-pedido-atual",
+      "description": "Aplicar a recuperação validada para falha de executar fielmente o pedido atual.",
+      "when_to_use": [
+        "falha logic durante executar fielmente o pedido atual"
+      ],
+      "when_not_to_use": [
+        "falha diferente do padrão validado",
+        "sem possibilidade de repetir a verificação"
+      ],
+      "inputs": [
+        "contexto da falha",
+        "estado da ação"
+      ],
+      "outputs": [
+        "recuperação verificada"
+      ],
+      "risk": "medium",
+      "permissions": [],
+      "latency": "procedure-dependent",
+      "cost": "tool-dependent",
+      "required_tools": [],
       "recommended_agent": "omni"
     }
   ]

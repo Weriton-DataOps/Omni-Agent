@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "id": "improvement-a12b2896-0db3-447e-90bf-dc20f0fb2a95",
+  "category": "failure-pattern",
+  "source": {
+    "kind": "failure-pattern",
+    "id": "failure-pattern-e9bc04c0-14a9-4465-8e4e-97d98ba2f112",
+    "evidenceCount": 6,
+    "validationStatus": "passed"
+  },
+  "evaluation": {
+    "protocol": "self-improvement-eval-v1",
+    "passed": true,
+    "gates": [
+      {
+        "id": "failure-pattern-evaluated",
+        "passed": true
+      },
+      {
+        "id": "repeated-failure-evidence",
+        "passed": true
+      },
+      {
+        "id": "root-cause-and-fix-recorded",
+        "passed": true
+      },
+      {
+        "id": "repeated-fix-tests",
+        "passed": true
+      },
+      {
+        "id": "source-snapshot-current",
+        "passed": true
+      },
+      {
+        "id": "capability-draft-complete",
+        "passed": true
+      },
+      {
+        "id": "no-automatic-promotion",
+        "passed": true
+      }
+    ],
+    "evaluatedAt": "2026-08-27T18:13:44.830Z"
+  },
+  "approval": {
+    "decision": "approved",
+    "portable": true,
+    "roleFit": true,
+    "decidedAt": "2026-08-27T18:26:07.926Z"
+  },
+  "artifacts": {
+    "skill": "skills/learned-recuperar-executar-fielmente-o-pedido-atual/SKILL.md",
+    "skillSha256": "fcdb5ba1326e290119610f54c68f12a6ff56b0522d7180dd7ad42382d272b0d0",
+    "capabilityCatalog": "contratos/capacidades/catalogo.json"
+  },
+  "status": "materialized-pending-version"
+}
