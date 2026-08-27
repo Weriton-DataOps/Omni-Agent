@@ -217,3 +217,54 @@ test('concorrencia nao perde ocorrencias, segredo e recusado e schema futuro e p
     await rm(futureHome, { recursive: true, force: true })
   }
 })
+
+test('reanalise substitui diagnostico errado e zera testes da hipotese antiga', async () => {
+  const casa = await home('omni-failures-reanalise-')
+  try {
+    await registrarFalha(casa, { ...failure, evidenceId: 'ocorrencia-1' })
+    await registrarFalha(casa, { ...failure, evidenceId: 'ocorrencia-2' })
+    const candidate = await registrarFalha(casa, { ...failure, evidenceId: 'ocorrencia-3' })
+    const id = candidate.pattern.id
+
+    const errada = await analisarPadraoFalha(casa, id, {
+      rootCause: 'o executor encerrou o processo antes do fim',
+      hypothesis: 'manter o executor vivo ate a consulta terminar'
+    })
+    assert.equal(errada.result, 'analyzed')
+
+    await testarCorrecaoFalha(casa, id, {
+      evidenceId: 'teste-da-hipotese-antiga',
+      outcome: 'passou pela razao errada',
+      success: true
+    })
+
+    // O diagnostico medido chega depois. Antes desta correcao a reanalise era recusada
+    // com not-ready e o CLI carimbava sucesso por cima.
+    const certa = await analisarPadraoFalha(casa, id, {
+      rootCause: 'latencia de I/O em share de rede estoura o timeout padrao',
+      hypothesis: 'usar consulta que le apenas refs e index, sem percorrer o worktree'
+    })
+    assert.equal(certa.result, 'analyzed')
+    assert.match(certa.pattern.analysis.rootCause, /latencia de I\/O/)
+    assert.equal(certa.pattern.status, 'analyzed')
+    assert.equal(certa.pattern.fixTests.length, 0, 'teste da hipotese antiga nao pode sobreviver')
+    assert.equal(certa.pattern.evaluation, null)
+  } finally {
+    await rm(casa, { recursive: true, force: true })
+  }
+})
+
+test('reanalise continua recusada depois da avaliacao concluida', async () => {
+  const casa = await home('omni-failures-pos-eval-')
+  try {
+    const pattern = await evaluatedPattern(casa)
+    const recusada = await analisarPadraoFalha(casa, pattern.id, {
+      rootCause: 'tentativa tardia de reescrever a historia',
+      hypothesis: 'nao deve ser aceita apos a avaliacao'
+    })
+    assert.equal(recusada.result, 'not-ready')
+    assert.match(recusada.pattern.analysis.rootCause, /banco ainda nao estava pronto/)
+  } finally {
+    await rm(casa, { recursive: true, force: true })
+  }
+})
