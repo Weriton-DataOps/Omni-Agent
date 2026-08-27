@@ -90,6 +90,14 @@
         "Manteve a promoção para skill, capacidade ou regra portátil como ciclo separado e revisável.",
         "Passou a fechar descobertas concluídas sem apagar o histórico auditável nem deixá-las eternamente no backlog."
       ]
+    },
+    {
+      "version": "0.19.1",
+      "changes": [
+        "Fechou o ciclo existente de checkpoint, delegação, eval parcial e recarga sem adicionar uma nova capacidade.",
+        "Alinhou o eval de atalhos ao uso local no primeiro sucesso, à validação em três sucessos e à promoção portátil separada.",
+        "Criou a linha de base das auditorias de 26/08 e o protocolo comparável para sete dias de observação."
+      ]
     }
   ]
 }

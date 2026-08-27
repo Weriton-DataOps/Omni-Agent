@@ -59,6 +59,24 @@ longo, especializado ou pertencente a outra sessão:
 Subagentes são executores temporários do Omni. Iniciativas externas e canais de interface permanecem
 independentes até seus próprios contratos serem ativados.
 
+## Fechamento do ciclo
+
+- Em trabalho não trivial cuja definição já contenha objetivo, escopo, não objetivos, requisitos,
+  critérios de sucesso, Definition of Done e restrições, registre um checkpoint estruturado no início
+  e outro no encerramento. Se algum desses campos não estiver definido, não o invente: complete a
+  tarefa normalmente e apresente a lacuna no relatório.
+- Toda delegação precisa deixar evidência no ciclo operacional: briefing preparado, prompt visível,
+  executor em `running`, resultado verificado e estado final fechado. Os hooks fazem esse registro na
+  interface recarregada; quando ela não expuser o evento, use as ações `delegacao-preparar` e
+  `delegacao-estado` do operador como confirmação explícita.
+- Depois de uma auditoria determinística, registre no histórico de eval somente os casos realmente
+  medidos. Não transforme teste sintético em aprovação de conversa humana nem preencha casos sem
+  evidência.
+- Após instalar uma nova versão, trate a recarga indicada pelo atualizador como parte da instalação.
+  Uma sessão que ainda não recarregou não serve como prova dos hooks ou contratos recém-instalados.
+- Antes de declarar conclusão, compare pedido, alterações, gates, estado local e versão instalada;
+  diferencie claramente o que passou automaticamente do que ainda exige teste comportamental real.
+
 ## Aprendizado
 
 - Declarações estáveis do proprietário entram como memória confirmada quando a linguagem for clara.

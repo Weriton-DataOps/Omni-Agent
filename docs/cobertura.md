@@ -17,7 +17,9 @@ teste humano.
 - conferência diária assíncrona, limitada às sessões ativadas pelo Omni, com deduplicação contra os
   sensores em tempo real;
 - recuperação de lacunas em memória, falhas e melhorias, mais agrupamento de rotinas repetidas em
-  atalhos candidatos;
+  famílias de atalhos;
+- primeiro sucesso verificado tornando o atalho local efetivo, três sucessos validando-o e
+  falha ou desuso permitindo suspensão e arquivamento;
 - correções do proprietário alimentando falhas e candidatas de melhoria no mesmo turno;
 - delegação com estados `prepared → visible → running → blocked/completed → closed`;
 - conclusão de subagente alimentando evidência e observação de atalho;
@@ -27,6 +29,7 @@ teste humano.
 - configuração local da árvore-fonte e materialização automática de melhoria repetida;
 - dados pessoais e conversa bruta fora do Git;
 - atualização do plugin, evals determinísticos existentes e gates de schema.
+- fechamento contratual de checkpoint, delegação, eval parcial e recarga da versão instalada.
 
 ## Implementado, aguardando validação comportamental
 
@@ -39,6 +42,7 @@ teste humano.
 - comparação pedido × ação × resultado reduzindo vacilos reais;
 - observação de respostas gerando evals úteis sem falsos positivos.
 - varredura de um dia real aumentando apenas campos sustentados por evidência e sem duplicar hooks.
+- checkpoint e delegação aparecendo no estado de uma sessão real depois da recarga do plugin.
 
 Esses itens formam o Definition of Done reservado para 27/08/2026 em
 [`validacao/definition-of-done-2026-08-27.md`](validacao/definition-of-done-2026-08-27.md).

@@ -79,12 +79,12 @@ test('atualiza, valida e orienta a aplicação conforme a interface', async () =
 })
 
 test('versão atual é validada sem pedir nova sessão', async () => {
-  const fake = runner({ before: '0.19.0', after: '0.19.0' })
+  const fake = runner({ before: '0.19.1', after: '0.19.1' })
   const result = await atualizarPlugin({
     casa: 'C:\\omni-test',
     run: fake.run,
     resolveCli: async () => 'claude-test',
-    checkVersion: async () => ({ latestVersion: '0.19.0', status: 'current' })
+    checkVersion: async () => ({ latestVersion: '0.19.1', status: 'current' })
   })
 
   assert.equal(result.status, 'current')
@@ -194,6 +194,16 @@ test('registro da 0.19.0 descreve atalhos efetivos, consolidação e esqueciment
   assert.match(text, /desuso.*falhas repetidas/i)
   assert.match(text, /skill.*ciclo separado/i)
   assert.match(text, /fechar descobertas.*histórico.*backlog/i)
+})
+
+test('registro da 0.19.1 descreve o fechamento auditável das conexões', async () => {
+  const changes = await lerMudancasAtualizacao(pluginRoot, '0.19.0', '0.19.1')
+  assert.equal(changes.length, 3)
+  assert.ok(changes.every((item) => item.version === '0.19.1'))
+  const text = changes.map((item) => item.change).join(' ')
+  assert.match(text, /checkpoint.*delegação.*eval parcial.*recarga/i)
+  assert.match(text, /primeiro sucesso.*três sucessos.*promoção portátil/i)
+  assert.match(text, /auditorias de 26\/08.*sete dias/i)
 })
 
 test('resumo público contém somente transição, mudanças e recarga necessária', () => {
