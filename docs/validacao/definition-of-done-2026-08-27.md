@@ -2,6 +2,57 @@
 
 **Data da verificação:** 27/08/2026
 **Estado:** reservado; nenhum item comportamental foi aprovado antecipadamente.
+**Horário planejado:** fim do dia.
+
+## Como executar o teste comportamental
+
+Este não é outro teste de código. É uma conversa controlada para descobrir se o comportamento que os
+contratos prometem aparece no uso real.
+
+### 1. Personalidade e conversa longa
+
+Depois de `/plugin` → **Restart**, ative o Omni e converse naturalmente por 8 a 12 turnos. Misture:
+
+- uma pergunta simples;
+- um problema técnico que exija raciocínio;
+- um pedido claro que ele possa executar;
+- uma discordância ou correção sua;
+- um assunto em que uma analogia realmente ajude.
+
+Observe se humor, sarcasmo, analogias, opinião e iniciativa aparecem naturalmente durante toda a
+conversa. Não peça “faça uma piada” ou “use uma analogia”: o teste é saber se a personalidade nasce
+sozinha, sem recitar o contrato e sem ficar caricata.
+
+### 2. Memória entre sessões
+
+Na primeira sessão, declare duas preferências estáveis na mesma mensagem, por exemplo:
+
+> Prefiro mapas antes de textos longos e quero respostas diretas, sem cerimônia.
+
+Converse mais alguns turnos e encerre. Em outra sessão, ative o Omni e faça um pedido em que essas
+preferências sejam relevantes, sem repeti-las, por exemplo:
+
+> Explique como as peças do Omni se conectam hoje.
+
+O teste passa se ele aplicar mapa primeiro e objetividade porque recuperou a memória. Abrir outra
+sessão aqui é parte do teste; não será uma exigência para cada atualização normal.
+
+### 3. Aprendizado real
+
+Dê uma tarefa segura e repetível. Se ele fizer de um jeito ruim, corrija com clareza. Depois peça a
+mesma família de tarefa novamente e verifique se o turno seguinte já mudou. Ao final, conferir:
+
+- a preferência ou correção entrou na memória/falhas;
+- uma rotina bem-sucedida produziu observação de atalho;
+- a varredura encontrou apenas o que os hooks deixaram escapar;
+- uma segunda varredura não duplicou contadores;
+- somente aprendizado portátil chegou ao Git; memória pessoal continuou local.
+
+### 4. Evidência
+
+Para cada bloco, anotar pedido, comportamento esperado, comportamento observado e `passou/falhou`.
+Falha comportamental não deve ser corrigida durante a conversa de medição: primeiro registrar a
+evidência; depois abrir a rodada de correção e repetir exatamente o mesmo caso.
 
 ## Preparação
 

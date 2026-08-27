@@ -165,9 +165,13 @@ porém, foi considerada nas auditorias de sensores, delegação, falhas e varred
 
 ## Pendências honestas para o próximo dia
 
+**Rodada reservada para 27/08/2026, no fim do dia.** Nenhum item abaixo deve ser esquecido ou
+considerado aprovado antes da execução:
+
 1. recarregar o plugin na sessão do VS Code;
 2. executar uma delegação real e confirmar o ciclo inteiro no estado;
-3. conversar por tempo suficiente para avaliar personalidade, analogias, humor e iniciativa;
+3. rodar o DoD comportamental: personalidade, conversa longa, memória entre sessões e aprendizado
+   real, seguindo o roteiro em `definition-of-done-2026-08-27.md`;
 4. confirmar que o checkpoint inicial/final aparece em trabalho não trivial;
 5. verificar se evals observados permanecem úteis e sem falsos positivos;
 6. acompanhar os cinco trabalhos de falha bloqueados sem contornar permissão ou ambiente ausente.
