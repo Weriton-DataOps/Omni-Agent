@@ -71,6 +71,11 @@ async function readPolicy() {
     !Number.isInteger(policy.maximumFixTestsPerPattern) ||
     policy.maximumFixTestsPerPattern < policy.minimumSuccessfulFixTests ||
     policy.requireDistinctEvidence !== true ||
+    policy.diagnosticSignature?.version !== 'failure-signature-v2' ||
+    !Array.isArray(policy.diagnosticSignature.components) ||
+    policy.diagnosticSignature.storeRawCommand !== false ||
+    policy.diagnosticSignature.storeRawPath !== false ||
+    policy.diagnosticSignature.storeRawToolInput !== false ||
     policy.automaticGlobalRule !== false ||
     policy.automaticPromotion !== false ||
     policy.storeRawError !== false ||

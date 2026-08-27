@@ -23,6 +23,9 @@ ação → falha real → assinatura em hash
 - repetição do mesmo identificador de execução é deduplicada;
 - uma falha isolada nunca cria regra, memória, procedimento ou skill;
 - somente três ocorrências distintas da mesma ação, classe e assinatura formam um padrão candidato;
+- a assinatura v2 separa ferramenta, classe, código de saída, família do comando, contexto e família segura do erro;
+- caminhos, argumentos variáveis e entradas sensíveis são normalizados ou resumidos em hash antes da assinatura;
+- o mesmo `Exit code 1` em `git`, `npm`, PowerShell ou outro contexto não forma um único padrão genérico;
 - causa raiz e hipótese são registradas separadamente e não podem conter segredo;
 - dois testes reais, distintos, bem-sucedidos e com resultado consistente são exigidos;
 - uma candidata agenda automaticamente um subagente em segundo plano, sem nova pergunta ao proprietário;

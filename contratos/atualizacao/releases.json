@@ -72,6 +72,14 @@
         "Corrigiu a corrida entre o eval da falha e o fechamento do trabalho em segundo plano.",
         "Garantiu que o subagente anexe a evidência final antes do job ser encerrado e permite reparar recibos antigos sem fingerprint."
       ]
+    },
+    {
+      "version": "0.18.2",
+      "changes": [
+        "Separou falhas genéricas de código de saída pela família real do comando e pelo contexto de execução.",
+        "Normalizou caminhos e argumentos variáveis sem persistir comando, entrada da ferramenta ou dado sensível.",
+        "Passou a preservar a família diagnóstica também nas falhas recuperadas pela varredura diária."
+      ]
     }
   ]
 }

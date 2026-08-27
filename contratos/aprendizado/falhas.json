@@ -16,6 +16,20 @@
   "maximumObservationsPerPattern": 50,
   "maximumFixTestsPerPattern": 20,
   "requireDistinctEvidence": true,
+  "diagnosticSignature": {
+    "version": "failure-signature-v2",
+    "components": [
+      "tool",
+      "failure-class",
+      "exit-code",
+      "command-family",
+      "environment-fingerprint",
+      "safe-error-family"
+    ],
+    "storeRawCommand": false,
+    "storeRawPath": false,
+    "storeRawToolInput": false
+  },
   "automaticCandidateValidation": {
     "enabled": true,
     "executor": "background-subagent",

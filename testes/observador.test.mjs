@@ -6,7 +6,12 @@ import test from 'node:test'
 
 import { lerCicloOperacional } from '../runtime/ciclo-operacional.mjs'
 import { lerFalhas } from '../runtime/falhas.mjs'
-import { observarFerramenta, observarFimSubagente, observarPrompt } from '../runtime/observador.mjs'
+import {
+  assinaturaDiagnosticaFalha,
+  observarFerramenta,
+  observarFimSubagente,
+  observarPrompt
+} from '../runtime/observador.mjs'
 import { lerAtalhos } from '../runtime/atalhos.mjs'
 
 async function home() {
@@ -42,11 +47,73 @@ test('falha de ferramenta é classificada sem guardar erro bruto', async () => {
       error: `Exit code 1\n token=${secret}`
     })
     const cycle = await lerCicloOperacional(casa)
+    const failures = await lerFalhas(casa)
     assert.equal(cycle.events.length, 1)
     assert.equal(JSON.stringify(cycle).includes(secret), false)
+    assert.equal(JSON.stringify(failures).includes(secret), false)
   } finally {
     await rm(casa, { recursive: true, force: true })
   }
+})
+
+test('assinatura v2 separa famílias de comando com o mesmo Exit code 1', async () => {
+  const casa = await home()
+  try {
+    for (const [index, command] of ['git status', 'git status', 'npm test'].entries()) {
+      await observarFerramenta(casa, {
+        hook_event_name: 'PostToolUseFailure',
+        session_id: 's-family',
+        tool_use_id: `family-${index}`,
+        tool_name: 'Bash',
+        tool_input: { command },
+        cwd: 'C:\\projeto',
+        error: 'Exit code 1'
+      })
+    }
+    const failures = await lerFalhas(casa)
+    assert.equal(failures.patterns.length, 2)
+    assert.deepEqual(failures.patterns.map((pattern) => pattern.occurrences).sort(), [1, 2])
+  } finally {
+    await rm(casa, { recursive: true, force: true })
+  }
+})
+
+test('assinatura v2 estabiliza caminhos variáveis sem expor comando ou segredo', () => {
+  const secret = ['ghp', 'abcdefghijklmnopqrstuvwxyz123456'].join('_')
+  const first = assinaturaDiagnosticaFalha({
+    tool_name: 'Bash',
+    tool_input: { command: `robocopy C:\\tmp\\run-101 C:\\destino "${secret}"` },
+    cwd: 'C:\\projeto',
+    error: 'Exit code 1'
+  })
+  const second = assinaturaDiagnosticaFalha({
+    tool_name: 'Bash',
+    tool_input: { command: 'robocopy C:\\tmp\\run-202 C:\\destino "outro-valor"' },
+    cwd: 'C:\\projeto',
+    error: 'Exit code 1'
+  })
+  assert.equal(first, second)
+  assert.equal(first.includes(secret), false)
+  assert.equal(first.includes('C:\\tmp'), false)
+})
+
+test('assinatura v2 distingue contexto e ferramenta de mensageria', () => {
+  const base = {
+    tool_name: 'Bash',
+    tool_input: { command: 'git status' },
+    error: 'permission denied'
+  }
+  const projectA = assinaturaDiagnosticaFalha({ ...base, cwd: 'C:\\projeto-a' })
+  const projectB = assinaturaDiagnosticaFalha({ ...base, cwd: 'C:\\projeto-b' })
+  const message = assinaturaDiagnosticaFalha({
+    tool_name: 'SendMessage',
+    tool_input: { message: 'conteúdo privado', recipient: 'agente' },
+    cwd: 'C:\\projeto-a',
+    error: 'permission denied'
+  })
+  assert.notEqual(projectA, projectB)
+  assert.notEqual(projectA, message)
+  assert.equal(message.includes('conteúdo privado'), false)
 })
 
 test('conclusão de subagente registra delegação e atalho observado', async () => {

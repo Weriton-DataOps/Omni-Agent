@@ -9,7 +9,7 @@ import { lerAtalhos, registrarObservacaoAtalho, validarAtalho } from './atalhos.
 import { lerCicloOperacional, proporMelhoriaOperacional } from './ciclo-operacional.mjs'
 import { lerFalhas } from './falhas.mjs'
 import { lerMemoria, pareceConterSegredo, registrarMemoriaAnalisada } from './memoria.mjs'
-import { observarFerramenta, observarPrompt } from './observador.mjs'
+import { assinaturaDiagnosticaFalha, observarFerramenta, observarPrompt } from './observador.mjs'
 import { analisarExperiencias } from './pipeline-memoria.mjs'
 
 export const DAILY_SCAN_SCHEMA_VERSION = 1
@@ -234,6 +234,7 @@ function novaAtividade(record, content, file, lineNumber) {
     projectId: textoSeguro(record.cwd, 500),
     tools: [],
     toolById: new Map(),
+    toolFamilyById: new Map(),
     failures: [],
     finalAnswerLength: 0,
     startedAt: timestampDaLinha(record, new Date().toISOString()),
@@ -249,13 +250,26 @@ function aplicarLinha(activity, record) {
     if (record.message?.role === 'assistant' && content.type === 'tool_use') {
       const name = textoSeguro(content.name, 100) ?? 'Tool'
       activity.tools.push({ name, id: content.id ?? null })
-      if (content.id) activity.toolById.set(content.id, name)
+      if (content.id) {
+        activity.toolById.set(content.id, name)
+        const diagnostic = assinaturaDiagnosticaFalha({
+          tool_name: name,
+          tool_input: content.input,
+          cwd: activity.cwd,
+          error: 'execution failed'
+        })
+        activity.toolFamilyById.set(
+          content.id,
+          diagnostic.match(/(?:^|\|)family=([^|]+)/)?.[1] ?? `${name.toLowerCase()}:input-unavailable`
+        )
+      }
     }
     if (record.message?.role === 'user' && content.type === 'tool_result' && content.is_error === true) {
       const raw = typeof content.content === 'string' ? content.content : JSON.stringify(content.content ?? '')
       activity.failures.push({
         toolUseId: content.tool_use_id ?? hash(`${activity.evidence}:${activity.failures.length}`),
         toolName: activity.toolById.get(content.tool_use_id) ?? 'Tool',
+        toolInputFamily: activity.toolFamilyById.get(content.tool_use_id) ?? null,
         error: textoSeguro(raw.split(/\r?\n/)[0], 300) ?? 'falha registrada sem conteudo bruto'
       })
     }
@@ -458,6 +472,7 @@ async function processarAtividade(casa, activity, cobertura) {
       cwd: activity.cwd,
       tool_use_id: failure.toolUseId,
       tool_name: failure.toolName,
+      tool_input_family: failure.toolInputFamily,
       error: failure.error
     })
     if (observed.failure?.pattern) results.failures += 1

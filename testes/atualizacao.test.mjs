@@ -27,7 +27,7 @@ function success(value = '') {
   }
 }
 
-function runner({ before = '0.18.1', after = '0.19.0', marketplace = canonicalMarketplace } = {}) {
+function runner({ before = '0.18.2', after = '0.19.0', marketplace = canonicalMarketplace } = {}) {
   const calls = []
   let pluginListCalls = 0
   return {
@@ -66,7 +66,7 @@ test('atualiza, valida e orienta a aplicação conforme a interface', async () =
   })
 
   assert.equal(result.status, 'updated')
-  assert.equal(result.previousInstalledVersion, '0.18.1')
+  assert.equal(result.previousInstalledVersion, '0.18.2')
   assert.equal(result.installedVersion, '0.19.0')
   assert.equal(result.reloadRequired, true)
   assert.equal(result.applyInstructions.vscode.command, '/plugin')
@@ -79,12 +79,12 @@ test('atualiza, valida e orienta a aplicação conforme a interface', async () =
 })
 
 test('versão atual é validada sem pedir nova sessão', async () => {
-  const fake = runner({ before: '0.18.1', after: '0.18.1' })
+  const fake = runner({ before: '0.18.2', after: '0.18.2' })
   const result = await atualizarPlugin({
     casa: 'C:\\omni-test',
     run: fake.run,
     resolveCli: async () => 'claude-test',
-    checkVersion: async () => ({ latestVersion: '0.18.1', status: 'current' })
+    checkVersion: async () => ({ latestVersion: '0.18.2', status: 'current' })
   })
 
   assert.equal(result.status, 'current')
@@ -172,6 +172,16 @@ test('registro da 0.18.1 descreve o fechamento com evidência', async () => {
   const text = changes.map((item) => item.change).join(' ')
   assert.match(text, /corrida.*eval.*fechamento/i)
   assert.match(text, /evidência final.*fingerprint/i)
+})
+
+test('registro da 0.18.2 descreve assinaturas diagnósticas discriminantes', async () => {
+  const changes = await lerMudancasAtualizacao(pluginRoot, '0.18.1', '0.18.2')
+  assert.equal(changes.length, 3)
+  assert.ok(changes.every((item) => item.version === '0.18.2'))
+  const text = changes.map((item) => item.change).join(' ')
+  assert.match(text, /família real do comando.*contexto/i)
+  assert.match(text, /sem persistir comando.*entrada da ferramenta/i)
+  assert.match(text, /varredura diária/i)
 })
 
 test('resumo público contém somente transição, mudanças e recarga necessária', () => {

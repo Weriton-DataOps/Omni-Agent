@@ -82,13 +82,122 @@ function classeDeErro(input) {
   return 'tool-error'
 }
 
-function assinaturaErro(input) {
-  const firstLine = texto(String(input?.error ?? '').split(/\r?\n/)[0], 160)
-  return `${input?.tool_name ?? 'tool'}:${firstLine ?? 'execution-failed'}`
-}
-
 function codigoErro(input) {
   return String(input?.error ?? '').match(/(?:exit code|code)\s*[:=]?\s*(-?\d+)/i)?.[1] ?? 'unknown'
+}
+
+function comandoDaEntrada(input) {
+  if (typeof input?.tool_input === 'string') return input.tool_input
+  const toolInput = input?.tool_input
+  if (!toolInput || typeof toolInput !== 'object') return null
+  for (const field of ['command', 'cmd', 'script', 'code']) {
+    if (typeof toolInput[field] === 'string' && toolInput[field].trim()) return toolInput[field]
+  }
+  return null
+}
+
+function nomeExecutavel(value) {
+  return String(value ?? '')
+    .replace(/^["']|["']$/g, '')
+    .split(/[\\/]/)
+    .at(-1)
+    .replace(/\.(?:exe|cmd|bat)$/i, '')
+    .toLowerCase()
+}
+
+function tokensDoComando(command) {
+  return String(command ?? '').match(/"[^"]*"|'[^']*'|[^\s]+/g) ?? []
+}
+
+function segmentoExecutavel(command) {
+  const segments = String(command ?? '').split(/&&|\|\||[;\n]/)
+  return segments.find((segment) => {
+    const executable = nomeExecutavel(tokensDoComando(segment)[0])
+    return executable && !['cd', 'chdir', 'set-location', 'pushd', 'popd'].includes(executable)
+  }) ?? segments[0] ?? ''
+}
+
+function formaDoComando(command) {
+  return String(command ?? '')
+    .toLowerCase()
+    .replace(/(?:[a-z]:[\\/]|\.{0,2}[\\/]|~[\\/])[^\s"']+/gi, '<path>')
+    .replace(/https?:\/\/\S+/gi, '<url>')
+    .replace(/"[^"]*"|'[^']*'/g, '<quoted>')
+    .replace(/\b[0-9a-f]{20,}\b/gi, '<opaque>')
+    .replace(/\b\d+\b/g, '<n>')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function familiaDoComando(command) {
+  if (!command) return 'command-unavailable'
+  const segment = segmentoExecutavel(command)
+  const tokens = tokensDoComando(segment)
+  const executable = nomeExecutavel(tokens[0]) || 'shell'
+  const semantic = tokens.slice(1).filter((token) => !token.startsWith('-'))
+
+  if (executable === 'git') {
+    const first = nomeExecutavel(semantic[0]) || 'command'
+    const second = first === 'worktree' ? nomeExecutavel(semantic[1]) : ''
+    return `git:${first}${second ? `:${second}` : ''}`
+  }
+  if (['npm', 'npm.cmd', 'pnpm', 'yarn'].includes(executable)) {
+    const first = nomeExecutavel(semantic[0]) || 'command'
+    const second = first === 'run' ? nomeExecutavel(semantic[1]) : ''
+    return `${executable.replace('.cmd', '')}:${first}${second ? `:${second}` : ''}`
+  }
+  if (['node', 'python', 'python3', 'py'].includes(executable)) {
+    return `${executable}:script:${nomeExecutavel(semantic[0]) || 'inline'}`
+  }
+  if (['powershell', 'pwsh'].includes(executable)) {
+    const fileIndex = tokens.findIndex((token) => /^-(?:file|f)$/i.test(token))
+    if (fileIndex >= 0) return `powershell:file:${nomeExecutavel(tokens[fileIndex + 1]) || 'script'}`
+    const commandIndex = tokens.findIndex((token) => /^-(?:command|c)$/i.test(token))
+    if (commandIndex >= 0) {
+      const nested = nomeExecutavel(tokens[commandIndex + 1])
+      return `powershell:command:${nested || 'inline'}`
+    }
+  }
+  if (/^[a-z]+-[a-z]+$/i.test(executable)) return `powershell-cmdlet:${executable}`
+  return `${executable}:shape-${hash(formaDoComando(segment)).slice(0, 12)}`
+}
+
+function familiaDaFerramenta(input) {
+  if (typeof input?.tool_input_family === 'string' && input.tool_input_family.trim()) {
+    return input.tool_input_family.trim().slice(0, 120)
+  }
+  const tool = nomeExecutavel(input?.tool_name) || 'tool'
+  if (/sendmessage|send-message/.test(tool)) return 'message:dispatch'
+  const command = comandoDaEntrada(input)
+  if (command) return familiaDoComando(command)
+  const keys = input?.tool_input && typeof input.tool_input === 'object'
+    ? Object.keys(input.tool_input).filter((key) => !/message|content|prompt|text/i.test(key)).sort()
+    : []
+  return keys.length ? `${tool}:fields-${hash(keys.join(':')).slice(0, 12)}` : `${tool}:input-unavailable`
+}
+
+function familiaDoErro(input) {
+  const firstLine = String(input?.error ?? '').split(/\r?\n/)[0].trim().toLowerCase()
+  if (!firstLine) return 'execution-failed'
+  if (/^exit code\s*[:=]?\s*-?\d+\s*$/i.test(firstLine)) return 'exit-code-only'
+  if (/permission|denied|forbidden|unauthorized/.test(firstLine)) return 'permission'
+  if (/timeout|timed out/.test(firstLine)) return 'timeout'
+  if (/not found|enoent/.test(firstLine)) return 'not-found'
+  if (/syntax|parse/.test(firstLine)) return 'syntax'
+  return `detail-${hash(formaDoComando(firstLine)).slice(0, 12)}`
+}
+
+export function assinaturaDiagnosticaFalha(input) {
+  const cwdFingerprint = input?.cwd ? hash(String(input.cwd).toLowerCase()).slice(0, 12) : 'unknown'
+  return [
+    'failure-signature-v2',
+    `tool=${nomeExecutavel(input?.tool_name) || 'tool'}`,
+    `class=${classeDeErro(input)}`,
+    `code=${codigoErro(input)}`,
+    `family=${familiaDaFerramenta(input)}`,
+    `context=${cwdFingerprint}`,
+    `error=${familiaDoErro(input)}`
+  ].join('|')
 }
 
 function recuperacaoParaClasse(failureClass) {
@@ -162,7 +271,7 @@ export async function observarFerramenta(casa, input) {
     agent: 'omni',
     action: `executar ${texto(input.tool_name, 80) ?? 'ferramenta'}`,
     failureClass: classeDeErro(input),
-    signature: assinaturaErro(input),
+    signature: assinaturaDiagnosticaFalha(input),
     evidenceId: input.tool_use_id ?? `${input.session_id}:${hash(input.error)}`
   })
   if (failure.result === 'candidate') {
