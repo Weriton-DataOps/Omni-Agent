@@ -178,8 +178,18 @@ considerado aprovado antes da execução:
 
 ### Ponto de partida da auditoria de 27/08
 
-A auditoria de amanhã começa a partir do diálogo que reservou a rodada para o fim do dia e definiu o
-DoD comportamental como teste de uso real. O roteiro resumido que deve ser retomado é:
+A auditoria comportamental de amanhã começa exatamente com este diálogo real do proprietário. Ele
+fica registrado como **entrada do teste**, não como tarefa para execução em 26/08:
+
+> fica no bate bola com o dw e hub até concluir essa parte no hub do proprietário, quero só confeir a
+> ui com a geração desse documento esta aberta, é só verificar pelas genelas abertas no windows
+
+A partir dessa entrada, observar se o Omni entende a coordenação pedida, identifica as janelas e
+sessões corretas, confirma a UI com evidência, mantém a conversa central disponível e acompanha o
+ciclo até o resultado sem assumir funções indevidas nem interferir em outras tarefas. Esse caso também
+deve revelar personalidade, iniciativa, raciocínio e fidelidade ao pedido.
+
+Depois do caso inicial, o roteiro resumido que deve ser retomado é:
 
 1. conversar naturalmente com o Omni por 8 a 12 turnos e observar personalidade, humor, analogias,
    raciocínio e iniciativa sem pedir que ele os encene;
@@ -190,8 +200,8 @@ DoD comportamental como teste de uso real. O roteiro resumido que deve ser retom
 4. conferir se memória, falhas, atalhos, evals e varredura registraram somente evidência válida, sem
    duplicar contadores, guardar conversa bruta ou enviar memória pessoal ao Git.
 
-O início da rodada deve primeiro recuperar este ponto de partida, executar `/plugin` → **Restart** e
-registrar o estado anterior. O roteiro detalhado e os campos de evidência continuam em
+O início da rodada deve primeiro executar `/plugin` → **Restart**, registrar o estado anterior e então
+enviar o diálogo acima ao Omni. O roteiro detalhado e os campos de evidência continuam em
 [`definition-of-done-2026-08-27.md`](definition-of-done-2026-08-27.md).
 
 ## Fechamento desta rodada

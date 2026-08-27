@@ -4,6 +4,17 @@
 **Estado:** reservado; nenhum item comportamental foi aprovado antecipadamente.
 **Horário planejado:** fim do dia.
 
+## Caso inicial real
+
+Depois da preparação e da recarga do plugin, iniciar a avaliação enviando exatamente:
+
+> fica no bate bola com o dw e hub até concluir essa parte no hub do proprietário, quero só confeir a
+> ui com a geração desse documento esta aberta, é só verificar pelas genelas abertas no windows
+
+Essa frase está registrada como entrada do teste de 27/08. Não deve ser executada antecipadamente.
+Avaliar compreensão do pedido, escolha das janelas/sessões, confirmação visual baseada em evidência,
+coordenação sem invasão de função, continuidade até o resultado e presença da personalidade do Omni.
+
 ## Como executar o teste comportamental
 
 Este não é outro teste de código. É uma conversa controlada para descobrir se o comportamento que os
