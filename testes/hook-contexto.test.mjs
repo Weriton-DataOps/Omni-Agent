@@ -223,6 +223,82 @@ test('compactação reinjeta a personalidade somente em sessão ativada', async 
   }
 })
 
+test('retomada recupera ativação perdida somente do comando humano da própria sessão', async () => {
+  const { raiz, env } = await ambiente()
+  const session_id = 'sessao-recuperada-do-transcript'
+  const transcript_path = join(raiz, 'sessao-recuperada.jsonl')
+  try {
+    await writeFile(transcript_path, `${JSON.stringify({
+      type: 'user',
+      message: {
+        role: 'user',
+        content: '<command-message>omni:omni</command-message>\n<command-name>/omni:omni</command-name>'
+      },
+      origin: { kind: 'human' },
+      isSidechain: false,
+      sessionId: session_id
+    })}\n`, 'utf8')
+
+    const retomada = await tratarHook({
+      hook_event_name: 'SessionStart',
+      session_id,
+      source: 'resume',
+      transcript_path
+    }, env)
+    assert.equal(retomada.hookSpecificOutput?.hookEventName, 'SessionStart')
+    assert.match(retomada.hookSpecificOutput?.additionalContext, /Inventor Cúmplice/)
+
+    const turno = await tratarHook({
+      hook_event_name: 'UserPromptSubmit',
+      session_id,
+      prompt: 'Continue daqui.'
+    }, env)
+    assert.match(turno.hookSpecificOutput?.additionalContext, /PERSONALIDADE CANÔNICA/)
+  } finally {
+    await rm(raiz, { recursive: true, force: true })
+  }
+})
+
+test('retomada não confunde citação, metadado, sidechain ou outra sessão com ativação', async () => {
+  const { raiz, env } = await ambiente()
+  const comando = '<command-message>omni:omni</command-message>\n<command-name>/omni:omni</command-name>'
+  const base = {
+    type: 'user',
+    message: { role: 'user', content: comando },
+    origin: { kind: 'human' },
+    isSidechain: false
+  }
+  const casos = [
+    (sessionId) => ({ ...base, sessionId, message: { role: 'user', content: `citação: ${comando}` } }),
+    (sessionId) => ({ ...base, sessionId, isMeta: true }),
+    (sessionId) => ({ ...base, sessionId, isSidechain: true }),
+    () => ({ ...base, sessionId: 'outra-sessao' }),
+    (sessionId) => ({ ...base, sessionId, message: { role: 'user', content: [{ type: 'text', text: comando }] } }),
+    (sessionId) => ({ ...base, sessionId, type: 'assistant', message: { role: 'assistant', content: comando } })
+  ]
+  try {
+    for (const [indice, criarRegistro] of casos.entries()) {
+      const session_id = `sessao-inativa-${indice}`
+      const registro = criarRegistro(session_id)
+      const transcript_path = join(raiz, `sessao-inativa-${indice}.jsonl`)
+      await writeFile(
+        transcript_path,
+        `linha parcial inválida\n${JSON.stringify(registro)}\n`,
+        'utf8'
+      )
+      const retomada = await tratarHook({
+        hook_event_name: 'SessionStart',
+        session_id,
+        source: 'resume',
+        transcript_path
+      }, env)
+      assert.equal(retomada.hookSpecificOutput, undefined)
+    }
+  } finally {
+    await rm(raiz, { recursive: true, force: true })
+  }
+})
+
 test('chamada implícita da Skill Omni ativa a sessão sem autoaprovar a ferramenta', async () => {
   const { raiz, env } = await ambiente()
   try {
@@ -309,6 +385,9 @@ test('contexto deep permanece inline e preserva personalidade e ajuste explícit
     assert.match(contexto, /mais humor nascido deste contexto/)
     assert.match(contexto, /analogia forte que ajude a entender/)
     assert.match(contexto, /CONTEXTO AUXILIAR TRUNCADO/)
+    assert.match(contexto, /REGRA CRÍTICA DE PRECEDÊNCIA E ENTREGA/)
+    assert.match(contexto, /Responda ao pedido atual como Omni/)
+    assert.ok(contexto.trimEnd().endsWith('</omni-contexto-interno>'))
   } finally {
     await rm(raiz, { recursive: true, force: true })
   }
@@ -637,6 +716,33 @@ test('StopFailure executa o mesmo gate de auditoria antes de encerrar', async ()
     }, env)
     assert.equal(result.decision, 'block')
     assert.match(result.reason, /requested-action-not-executed/)
+    assert.match(result.reason, /Inventor Cúmplice/)
+    assert.match(result.reason, /servir para qualquer assistente genérico/)
+  } finally {
+    await rm(raiz, { recursive: true, force: true })
+  }
+})
+
+test('Stop bloqueado preserva a voz da v3 durante a autocorreção', async () => {
+  const { raiz, env } = await ambiente()
+  const session_id = 'sessao-stop-auditado-com-voz'
+  try {
+    await tratarHook(
+      { hook_event_name: 'UserPromptSubmit', session_id, prompt: '/omni:omni' },
+      env
+    )
+    await tratarHook(
+      { hook_event_name: 'UserPromptSubmit', session_id, prompt: 'corrija o arquivo quebrado' },
+      env
+    )
+    const result = await tratarHook({
+      hook_event_name: 'Stop',
+      session_id
+    }, env)
+    assert.equal(result.decision, 'block')
+    assert.match(result.reason, /requested-action-not-executed/)
+    assert.match(result.reason, /Inventor Cúmplice/)
+    assert.match(result.reason, /autocorreção não vira memorando corporativo/)
   } finally {
     await rm(raiz, { recursive: true, force: true })
   }

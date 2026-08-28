@@ -140,13 +140,20 @@ uso.
 | AUD-177 | contexto profundo acima do limite deixa a v3 reduzida a prévia de arquivo | corrigido; todo `additionalContext` do hook fica em até 9.500 caracteres e preserva núcleo, adaptador textual e ajuste explícito antes de truncar seções auxiliares com aviso |
 | AUD-178 | chamada implícita da Skill pode executar sem ativar a personalidade | corrigido; `PreToolUse` reconhece estritamente `omni` ou `omni:omni` nos campos suportados e injeta a v3 sem emitir `permissionDecision` |
 | AUD-179 | a própria candidata v3 pode se promover sem raiz de confiança | deliberadamente bloqueado; a v3 continua ativa para uso e eval, mas promoção futura para `approved` exige evidência confiável e raiz de confiança independente |
+| AUD-180 | reiniciar uma sessão ativada por release antiga sempre recria seu marcador | falso; a sessão `ba4c4e89-…` perdeu o marcador e recebeu zero injeções após o restart; a `0.21.2` recupera somente do comando humano canônico no transcript da própria sessão e rejeita citação, metadado, sidechain e sessão alheia |
+| AUD-181 | preservar apenas o início dos 9.500 caracteres mantém toda a governança | falso; o corte podia remover a ordem final e blocos operacionais; a `0.21.2` reserva o sufixo crítico e ordena ajuste, automação e auditoria antes da memória truncável |
+| AUD-182 | “resuma” deve reduzir também a presença da personalidade | recusado; comprimento e voz são eixos separados, com precedência v3 explícita no hook, na skill e no contrato |
+| AUD-183 | correção disparada por `Stop` recebe a mesma personalidade do prompt seguinte | falso; essa continuação não passa por `UserPromptSubmit`; agora o motivo de bloqueio carrega uma âncora compacta da v3 |
+| AUD-184 | a v3 instalada prova que a conversa já está aprovada | falso; os circuitos e regressões são verificáveis, mas a aderência real continua pendente do teste do proprietário em uma sessão recarregada |
+| AUD-185 | todo achado `unresolved` deve bloquear todas as releases futuras | falso; achado comprovadamente anterior ao marco explícito da release fica como aviso histórico sem apagar nem fingir correção |
+| AUD-186 | basta um segundo `Stop` marcar o turno como `blocked` para rebaixar falha nova a aviso | falso e corrigido; `blocked + closedAt` não basta: se o fechamento não anteceder `releaseAuditScopeStartedAt`, continua erro e bloqueia a release |
 
 ## Estado de fechamento
 
-- gates focais desta correção: sintaxe do hook e 29 testes de `hook-contexto` + pacote verdes;
-- gates de fechamento: `npm run check`, 302/302 testes, `npm pack --dry-run`, `claude plugin validate . --strict` e gate real contra `%APPDATA%\omni` verdes; payload final com 83 arquivos e fingerprint verificado;
-- publicação e instalação: a `0.21.0` foi confirmada no `origin/main` e relida da instalação; a `0.21.1`
-  desta correção só será considerada concluída depois da mesma confirmação externa e do novo readback;
+- gates focais desta correção: recuperação de ativação, falsos positivos, truncamento, continuidade do `Stop`, precedência v3 e histórico do gate verdes;
+- gates de fechamento: `npm run check`, 306/306 testes, `npm pack --dry-run`, `claude plugin validate . --strict` e gate real contra `%APPDATA%\omni` verdes; payload final com 83 arquivos e fingerprint `4f208d8a…` verificado;
+- publicação e instalação: a `0.21.1` continua confirmada no `origin/main` e relida da instalação; a `0.21.2`
+  desta correção só será considerada concluída depois da mesma confirmação externa, instalação e novo readback;
 - guardião v2: fonte canônica e testes prontos; troca do hook global não executada sem aprovação
   explícita da mudança de autorização;
 - comportamento real: deliberadamente pendente de conversa do proprietário;
@@ -154,8 +161,8 @@ uso.
 
 O gate real ficou em `observing`, sem erros. Permaneceram como avisos — e não foram apagados para
 embelezar a release — o DoD comportamental ausente, a confiança externa da personalidade pendente,
-seis delegações históricas sem verificação e melhorias prontas ainda não materializadas. Os dois
-avisos falsos de readback histórico foram separados e corrigidos na `0.20.1`. Os demais itens
+15 delegações sem verificação, sete achados históricos encerrados e quatro melhorias prontas ainda
+não materializadas. Achado de turno ativo continua sendo erro e bloqueia release. Os demais itens
 seguem para a observação de uso; não invalidam os circuitos determinísticos desta versão.
 
 O protocolo comparável continua em

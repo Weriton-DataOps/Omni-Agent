@@ -15,11 +15,13 @@
     ".claude-plugin/plugin.json"
   ],
   "identity": {
-    "version": "0.21.1",
-    "releaseFingerprint": "509d1fd2ef792a60e98725db522d172812dd8d23390085bc6719dd96accc5d54",
+    "version": "0.21.2",
+    "releaseFingerprint": "4f208d8a728fabe3a67dd6a01470e1f2dc6e3d7b802f0e712b4dc7cd82b6ab11",
+    "releaseAuditScopeStartedAt": "2026-08-28T19:00:00.000Z",
     "required": [
       "version",
-      "releaseFingerprint"
+      "releaseFingerprint",
+      "releaseAuditScopeStartedAt"
     ],
     "sameVersionDifferentFingerprint": "diverged",
     "missingFingerprint": "legacy-unverifiable"

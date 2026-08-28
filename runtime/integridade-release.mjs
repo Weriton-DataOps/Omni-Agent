@@ -82,10 +82,18 @@ export async function lerIdentidadeRelease(pluginRoot) {
     if (hasDeclaredFingerprint && !RELEASE_FINGERPRINT.test(contract.identity.releaseFingerprint ?? '')) {
       throw new Error('Fingerprint declarado no contrato da release é inválido.')
     }
+    const releaseAuditScopeStartedAt = contract.identity.releaseAuditScopeStartedAt
+    if (
+      releaseAuditScopeStartedAt !== undefined &&
+      (typeof releaseAuditScopeStartedAt !== 'string' || !Number.isFinite(Date.parse(releaseAuditScopeStartedAt)))
+    ) {
+      throw new Error('Marco inicial da auditoria da release é inválido.')
+    }
     const declared = hasDeclaredFingerprint ? contract.identity.releaseFingerprint : null
     return {
       version: contract.identity.version,
       releaseFingerprint: declared,
+      releaseAuditScopeStartedAt: releaseAuditScopeStartedAt ?? null,
       manifestVersion,
       versionMatchesManifest: contract.identity.version === manifestVersion,
       source: 'release-integrity-contract'
@@ -96,6 +104,7 @@ export async function lerIdentidadeRelease(pluginRoot) {
     return {
       version: manifestVersion,
       releaseFingerprint: null,
+      releaseAuditScopeStartedAt: null,
       manifestVersion,
       versionMatchesManifest: true,
       source: 'legacy-plugin-manifest'

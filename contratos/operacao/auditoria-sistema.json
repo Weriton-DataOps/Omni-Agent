@@ -26,6 +26,7 @@
     "duplicate-active-failure-jobs",
     "unverified-delegations",
     "unresolved-turn-findings",
+    "historical-unresolved-turn-findings",
     "duplicate-portable-rules",
     "evaluated-learning-without-route",
     "materialized-learning-without-installed-readback",
@@ -33,6 +34,22 @@
     "operational-implementation-required",
     "operational-materialized-without-installed-readback"
   ],
+  "turnFindingLifecycle": {
+    "activeOrInconsistent": {
+      "findingStates": ["open", "unresolved"],
+      "severityBeforeRelease": "error"
+    },
+    "terminalHistorical": {
+      "turnState": "blocked",
+      "requiresValidClosedAt": true,
+      "proof": "closedAt-before-releaseAuditScopeStartedAt",
+      "releaseScopeSource": "contratos/atualizacao/integridade.json#identity.releaseAuditScopeStartedAt",
+      "findingState": "unresolved",
+      "severityBeforeRelease": "warning",
+      "preserveOriginalFindingState": true,
+      "doesNotClaimCorrection": true
+    }
+  },
   "metrics": [
     "findingCorrectionRate",
     "findingRecurrenceRate",

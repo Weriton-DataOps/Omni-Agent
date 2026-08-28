@@ -119,6 +119,7 @@ const FINDING_ROUTES = Object.freeze({
   'trusted-personality-eval-missing': 'execute `eval-personalidade-plano` e registre somente uma rodada observada',
   'learned-personality-cases-pending': 'complete o cenário executável dos casos aprendidos antes de promovê-los',
   'duplicate-active-failure-jobs': 'a sincronização da fila é o reparo local determinístico; confira o resultado desta auditoria',
+  'historical-unresolved-turn-findings': 'mantenha o histórico visível na auditoria de uso; ele não afirma correção e não bloqueia uma release posterior não relacionada',
   'materialized-learning-without-installed-readback': 'rode `atualizar` e exija readback do payload instalado',
   'operational-improvement-ready-without-materialization': 'materialize a candidata na fonte canônica configurada; sem configuração ela continua pronta e isto ainda não é release',
   'operational-implementation-required': 'implemente o alvo de código com mutação auditada, readback do mesmo artefato e gates; o runtime não fabrica esse patch',
@@ -280,7 +281,20 @@ export async function auditarSaudeSistema(casa, {
   const allFindings = turns.flatMap((turn) => turn.findings ?? [])
   const allCorrections = turns.flatMap((turn) => turn.corrections ?? [])
   const verifiedCorrections = allCorrections.filter((item) => item.state === 'verified').length
-  const unresolvedTurnFindings = allFindings.filter((item) => ['open', 'unresolved'].includes(item.state)).length
+  const releaseAuditScopeStartedAt = releaseIdentity.releaseAuditScopeStartedAt
+  const historicalBeforeReleaseScope = (turn) =>
+    turn.state === 'blocked' &&
+    typeof turn.closedAt === 'string' &&
+    Number.isFinite(Date.parse(turn.closedAt)) &&
+    typeof releaseAuditScopeStartedAt === 'string' &&
+    Number.isFinite(Date.parse(releaseAuditScopeStartedAt)) &&
+    Date.parse(turn.closedAt) < Date.parse(releaseAuditScopeStartedAt)
+  const unresolvedTurnFindings = turns.reduce((sum, turn) => sum + (turn.findings ?? []).filter((item) =>
+    item.state === 'open' || (item.state === 'unresolved' && !historicalBeforeReleaseScope(turn))
+  ).length, 0)
+  const historicalUnresolvedTurnFindings = turns.reduce((sum, turn) => sum + (turn.findings ?? []).filter((item) =>
+    item.state === 'unresolved' && historicalBeforeReleaseScope(turn)
+  ).length, 0)
   const actionCount = turns.reduce((sum, turn) => sum + (turn.actions?.length ?? 0), 0)
   const evidenceCount = turns.reduce((sum, turn) => sum + (turn.evidence?.length ?? 0), 0)
   const behaviorRuns = behavior.runs ?? []
@@ -330,6 +344,7 @@ export async function auditarSaudeSistema(casa, {
   if (duplicatesAfter > 0) findings.push(finding('duplicate-active-failure-jobs', 'error', duplicatesAfter, timestamp))
   if (unverifiedDelegations > 0) findings.push(finding('unverified-delegations', 'warning', unverifiedDelegations, timestamp))
   if (unresolvedTurnFindings > 0) findings.push(finding('unresolved-turn-findings', 'error', unresolvedTurnFindings, timestamp))
+  if (historicalUnresolvedTurnFindings > 0) findings.push(finding('historical-unresolved-turn-findings', 'warning', historicalUnresolvedTurnFindings, timestamp))
   if (portableDuplicates > 0) findings.push(finding('duplicate-portable-rules', 'error', portableDuplicates, timestamp))
   if (unroutedEvaluatedFailures > 0) findings.push(finding('evaluated-learning-without-route', 'warning', unroutedEvaluatedFailures, timestamp))
   if (materializedWithoutReadback > 0) findings.push(finding('materialized-learning-without-installed-readback', 'warning', materializedWithoutReadback, timestamp))

@@ -82,6 +82,7 @@ test('contrato canônico declara a versão e exatamente o fingerprint do payload
   assert.equal(Object.hasOwn(manifest, 'releaseFingerprint'), false)
   assert.equal(contract.identity.version, manifest.version)
   assert.match(contract.identity.releaseFingerprint ?? '', /^[a-f0-9]{64}$/)
+  assert.ok(Number.isFinite(Date.parse(contract.identity.releaseAuditScopeStartedAt)))
   assert.equal(contract.identity.releaseFingerprint, actual.fingerprint)
 })
 
@@ -98,6 +99,7 @@ test('bundle sem contrato continua legível, mas fica marcado como legado não v
     const integrity = await verificarIntegridadeRelease(path)
     assert.equal(identity.source, 'legacy-plugin-manifest')
     assert.equal(identity.releaseFingerprint, null)
+    assert.equal(identity.releaseAuditScopeStartedAt, null)
     assert.equal(integrity.status, 'legacy-unverifiable')
   } finally {
     await rm(path, { recursive: true, force: true })

@@ -12,9 +12,10 @@ test('marketplace usa o plugin do próprio repositório e versão semântica', a
   const packageManifest = JSON.parse(await readFile(file('package.json'), 'utf8'))
   assert.equal(marketplace.plugins[0].source, './')
   assert.equal(manifest.name, 'omni')
-  assert.equal(manifest.version, '0.21.1')
+  assert.equal(manifest.version, '0.21.2')
   assert.equal(packageManifest.version, manifest.version)
   assert.equal(releaseIdentity.identity.version, manifest.version)
+  assert.ok(Number.isFinite(Date.parse(releaseIdentity.identity.releaseAuditScopeStartedAt)))
   assert.equal(Object.hasOwn(manifest, 'releaseFingerprint'), false)
 })
 
@@ -40,6 +41,9 @@ test('runtime, schema e manifesto concordam sobre as versões', async () => {
   )
   const dailyScan = JSON.parse(
     await readFile(file('contratos/aprendizado/varredura-diaria.json'), 'utf8')
+  )
+  const systemAuditPolicy = JSON.parse(
+    await readFile(file('contratos/operacao/auditoria-sistema.json'), 'utf8')
   )
   const promotionResultSchema = JSON.parse(
     await readFile(file('contratos/eval/resultado-personalidade.schema.json'), 'utf8')
@@ -106,6 +110,11 @@ test('runtime, schema e manifesto concordam sobre as versões', async () => {
   assert.equal(failurePolicy.automaticPromotion, false)
   assert.equal(failurePolicy.storeRawError, false)
   assert.equal(failurePolicy.storeRawTestOutcome, false)
+  assert.ok(systemAuditPolicy.findings.includes('historical-unresolved-turn-findings'))
+  assert.equal(systemAuditPolicy.turnFindingLifecycle.activeOrInconsistent.severityBeforeRelease, 'error')
+  assert.equal(systemAuditPolicy.turnFindingLifecycle.terminalHistorical.requiresValidClosedAt, true)
+  assert.equal(systemAuditPolicy.turnFindingLifecycle.terminalHistorical.proof, 'closedAt-before-releaseAuditScopeStartedAt')
+  assert.equal(systemAuditPolicy.turnFindingLifecycle.terminalHistorical.preserveOriginalFindingState, true)
   assert.equal(failurePolicy.automaticCandidateValidation.enabled, true)
   assert.equal(failurePolicy.automaticCandidateValidation.executor, 'background-subagent')
   assert.equal(failurePolicy.automaticCandidateValidation.requiresOwnerPrompt, false)
@@ -329,6 +338,8 @@ test('skill começa em pt-BR e descreve ação, delegação e proteção técnic
   assert.match(skill, /hook entrega a personalidade canônica já na ativação/is)
   assert.match(skill, /consulta não é pedágio para começar a conversar/is)
   assert.match(skill, /personalidade canônica indicada pelo manifesto/i)
+  assert.match(skill, /v3 e o runtime da release corrente substituem qualquer instrução v1\/v2/i)
+  assert.match(skill, /se um assistente genérico poderia dizer exatamente aquilo, reescreva/i)
   assert.doesNotMatch(skill, /personalidade-base v1/i)
   assert.match(skill, /torne o prompt completo visível na sessão de destino/)
   assert.match(skill, /inicie o executor/)

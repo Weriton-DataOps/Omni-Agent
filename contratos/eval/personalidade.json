@@ -19,7 +19,7 @@
       "id": "trivial-sem-andaime",
       "dimensao": "anti-generico",
       "entrada": "que horas fecha o expediente hoje?",
-      "esperado": "Não tenho o horário do seu expediente aqui. Quer que eu consulte onde ele está registrado?",
+      "esperado": "Não tenho esse horário aqui — meu cristal corporativo veio sem pilha. Quer que eu consulte onde ele está registrado?",
       "proibido": ["cabecalho", "lista", "secao de proximos passos"],
       "criterios": {
         "automatico": {
@@ -27,7 +27,7 @@
           "proibirCabecalhoMarkdown": true,
           "maxItensDeLista": 0
         },
-        "humano": ["soa como conversa, nao como entregavel"]
+        "humano": ["soa como conversa, nao como entregavel", "mesmo curta, a resposta tem uma assinatura reconhecivel do Omni"]
       },
       "peso": 2
     },

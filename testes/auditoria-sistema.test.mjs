@@ -17,6 +17,7 @@ import {
 import {
   abrirTurnoAuditoria,
   auditarParada,
+  lerAuditoriaAutocorrecao,
   registrarAcaoAuditoria
 } from '../runtime/auditoria-autocorrecao.mjs'
 import {
@@ -33,7 +34,11 @@ async function temporary(prefix) {
   return mkdtemp(join(tmpdir(), prefix))
 }
 
-async function pluginFixture({ version = '1.2.3', rules = [] } = {}) {
+async function pluginFixture({
+  version = '1.2.3',
+  rules = [],
+  releaseAuditScopeStartedAt = '2026-08-28T12:00:00.000Z'
+} = {}) {
   const root = await temporary('omni-system-audit-plugin-')
   for (const area of ['contratos', 'hooks', 'runtime', 'scripts', 'skills']) {
     await mkdir(join(root, area), { recursive: true })
@@ -58,7 +63,11 @@ async function pluginFixture({ version = '1.2.3', rules = [] } = {}) {
     `${JSON.stringify({
       schemaVersion: 1,
       contract: 'omni-release-integrity-v1',
-      identity: { version: '1.2.3', releaseFingerprint: integrity.fingerprint }
+      identity: {
+        version: '1.2.3',
+        releaseFingerprint: integrity.fingerprint,
+        releaseAuditScopeStartedAt
+      }
     }, null, 2)}\n`,
     'utf8'
   )
@@ -334,6 +343,71 @@ test('detecta lacunas a partir dos stores e do payload reais, sem flags sintéti
     assert.equal(result.run.status, 'repair-required')
     const raw = await readFile(caminhoDaAuditoriaSistema(casa), 'utf8')
     assert.equal(raw.includes(marker), false)
+  } finally {
+    await rm(casa, { recursive: true, force: true })
+    await rm(pluginRoot, { recursive: true, force: true })
+  }
+})
+
+test('somente achado comprovadamente anterior ao marco da release vira histórico', async () => {
+  const casa = await temporary('omni-system-audit-historical-home-')
+  const pluginRoot = await pluginFixture()
+  const historicalSession = 'sessao-achado-historico'
+  const currentSession = 'sessao-achado-atual'
+  try {
+    await abrirTurnoAuditoria(casa, {
+      session_id: historicalSession,
+      prompt: 'corrija o contrato pendente'
+    }, { at: '2026-08-28T10:00:00.000Z' })
+    const historicalFirstStop = await auditarParada(casa, {
+      session_id: historicalSession,
+      last_assistant_message: 'Ainda não executei.'
+    }, { at: '2026-08-28T10:01:00.000Z' })
+    assert.equal(historicalFirstStop.decision, 'block')
+
+    await auditarParada(casa, {
+      session_id: historicalSession,
+      stop_hook_active: true,
+      last_assistant_message: 'Bloqueio real permaneceu sem execução.'
+    }, { at: '2026-08-28T10:02:00.000Z' })
+    const storeBefore = await lerAuditoriaAutocorrecao(casa)
+    const terminalTurn = storeBefore.turns.at(-1)
+    assert.equal(terminalTurn.state, 'blocked')
+    assert.ok(Number.isFinite(Date.parse(terminalTurn.closedAt)))
+    assert.ok(terminalTurn.findings.some((item) => item.state === 'unresolved'))
+
+    const historicalAudit = await auditarSaudeSistema(casa, { pluginRoot, repair: false })
+    assert.equal(
+      historicalAudit.run.findings.some((item) => item.code === 'unresolved-turn-findings'),
+      false
+    )
+    assert.ok(historicalAudit.run.findings.some((item) =>
+      item.code === 'historical-unresolved-turn-findings' && item.severity === 'warning'
+    ))
+    assert.notEqual(historicalAudit.run.status, 'repair-required')
+    const storeAfter = await lerAuditoriaAutocorrecao(casa)
+    assert.ok(storeAfter.turns.at(-1).findings.some((item) => item.state === 'unresolved'))
+
+    await abrirTurnoAuditoria(casa, {
+      session_id: currentSession,
+      prompt: 'corrija a falha encontrada nesta release'
+    }, { at: '2026-08-28T12:10:00.000Z' })
+    const currentFirstStop = await auditarParada(casa, {
+      session_id: currentSession,
+      last_assistant_message: 'Ainda não executei.'
+    }, { at: '2026-08-28T12:11:00.000Z' })
+    assert.equal(currentFirstStop.decision, 'block')
+    await auditarParada(casa, {
+      session_id: currentSession,
+      stop_hook_active: true,
+      last_assistant_message: 'A falha nova continuou sem correção.'
+    }, { at: '2026-08-28T12:12:00.000Z' })
+
+    const currentAudit = await auditarSaudeSistema(casa, { pluginRoot, repair: false })
+    assert.ok(currentAudit.run.findings.some((item) =>
+      item.code === 'unresolved-turn-findings' && item.severity === 'error'
+    ))
+    assert.equal(currentAudit.run.status, 'repair-required')
   } finally {
     await rm(casa, { recursive: true, force: true })
     await rm(pluginRoot, { recursive: true, force: true })

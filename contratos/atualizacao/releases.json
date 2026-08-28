@@ -157,6 +157,17 @@
         "Passou a reconhecer a chamada implicita da Skill Omni por PreToolUse e a injetar a personalidade sem conceder aprovacao automatica a ferramenta.",
         "Limitou todo contexto adicional do hook a 9.500 caracteres, preservando o nucleo, o adaptador textual e o ajuste explicito antes de truncar contexto auxiliar."
       ]
+    },
+    {
+      "version": "0.21.2",
+      "changes": [
+        "Recuperou em retomadas a ativacao perdida por releases antigas usando somente o comando humano autenticado no transcript da propria sessao.",
+        "Deu precedencia explicita a v3 e a raiz corrente do plugin sobre personalidade, skill ou caminho de cache antigo presentes no historico.",
+        "Preservou a ordem comportamental critica no fim do contexto de 9.500 caracteres e priorizou ajustes, automacao e auditoria antes da memoria truncavel.",
+        "Manteve uma ancora compacta da v3 durante autocorrecoes de Stop e depois de ferramentas sem adicionar chamada de modelo ou loop lexical.",
+        "Fixou que resumir muda comprimento, nao identidade, e tornou o exemplo trivial e o eval curto reconheciveis como Omni.",
+        "Separou achado novo, que continua bloqueando a release, de falha comprovadamente anterior ao marco explicito da 0.21.2, que permanece auditavel sem condenar correcoes futuras."
+      ]
     }
   ]
 }
