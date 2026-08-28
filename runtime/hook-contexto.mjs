@@ -33,6 +33,134 @@ function saidaVazia() {
   return { suppressOutput: true }
 }
 
+const NUCLEO_DE_CONTINGENCIA = [
+  'PERSONALIDADE CANÔNICA INDISPONÍVEL.',
+  'Não finja ter carregado a identidade do Omni.',
+  'Preserve verdade e segurança, responda apenas ao que pode verificar e informe que o contrato de personalidade precisa ser restaurado.'
+].join('\n')
+
+function mensagemDoErro(erro) {
+  const nome = typeof erro?.name === 'string' && /^[A-Za-z][A-Za-z0-9_-]{0,39}$/.test(erro.name)
+    ? erro.name
+    : 'Error'
+  const codigo = typeof erro?.code === 'string' && /^[A-Z0-9_-]{1,40}$/.test(erro.code)
+    ? erro.code
+    : null
+  return codigo ? `${nome}/${codigo}` : nome
+}
+
+async function tentarComponente(nome, executar, falhas) {
+  try {
+    return await executar()
+  } catch (erro) {
+    falhas.push({ nome, mensagem: mensagemDoErro(erro) || 'falha sem mensagem' })
+    return null
+  }
+}
+
+function avisoDegradacao(falhas) {
+  if (falhas.length === 0) return null
+  const detalhes = [...falhas]
+    .sort((a, b) => a.nome.localeCompare(b.nome))
+    .map(({ nome, mensagem }) => `${nome}: ${mensagem}`)
+    .join(' | ')
+  return [
+    'ESTADO DE CONTEXTO: DEGRADADO.',
+    'A personalidade do Omni permanece ativa; não volte ao assistente genérico.',
+    `Componentes que falharam neste evento: ${detalhes}`,
+    'Não invente o contexto ausente. Se ele fizer diferença para responder ou agir, informe claramente a limitação ao proprietário.'
+  ].join(' ')
+}
+
+const DIRETRIZES_DE_PERSONALIDADE = {
+  'preserve-overall-voice': 'preserve a voz que acabou de funcionar',
+  'change-overall-voice': 'mude claramente a entrega anterior',
+  'preserve-tone': 'preserve o tom aprovado',
+  'increase-tone-presence': 'aumente presença e calor sem aumentar cerimônia',
+  'preserve-presence': 'preserve a presença humana percebida',
+  'increase-human-presence': 'responda com mais presença humana e cumplicidade',
+  'preserve-distinctive-voice': 'preserve a voz própria e reconhecível',
+  'increase-distinctive-voice': 'afaste-se do assistente genérico e torne a voz própria perceptível',
+  'preserve-personality-intensity': 'preserve a intensidade atual da personalidade',
+  'increase-personality-intensity': 'aumente a intensidade da personalidade nesta resposta',
+  'preserve-humor-level': 'preserve o nível de humor contextual',
+  'increase-contextual-humor': 'use mais humor nascido deste contexto',
+  'preserve-sarcasm-level': 'preserve o nível de sarcasmo contextual',
+  'increase-contextual-sarcasm': 'use mais sarcasmo dirigido ao problema, não à pessoa',
+  'preserve-analogy-level': 'preserve a força das imagens e analogias úteis',
+  'increase-useful-analogies': 'integre uma analogia forte que ajude a entender o raciocínio',
+  'preserve-reasoning-density': 'preserve a densidade e o ângulo inteligente da resposta',
+  'increase-reasoning-density': 'aumente a densidade do raciocínio e traga um ângulo menos óbvio'
+}
+
+function contextoDoAjusteDePersonalidade(feedback) {
+  const ajuste = feedback?.adjustment
+  if (!ajuste || !Array.isArray(ajuste.directives) || ajuste.directives.length === 0) return null
+  const diretrizes = ajuste.directives
+    .map((id) => DIRETRIZES_DE_PERSONALIDADE[id])
+    .filter(Boolean)
+  if (diretrizes.length === 0) return null
+  return [
+    'AJUSTE EXPLÍCITO DO PROPRIETÁRIO PARA ESTA RESPOSTA:',
+    ...diretrizes.map((item) => `- ${item}`),
+    'Aplique o ajuste sem anunciar este mecanismo. Ele vale para esta resposta e não reescreve silenciosamente o contrato canônico.'
+  ].join('\n')
+}
+
+function saidaComContexto(hookEventName, additionalContext) {
+  return {
+    suppressOutput: true,
+    hookSpecificOutput: { hookEventName, additionalContext }
+  }
+}
+
+function instrucaoTextualDaPersona(persona) {
+  const nucleo = typeof persona?.nucleus === 'string' && persona.nucleus.trim()
+    ? persona.nucleus
+    : NUCLEO_DE_CONTINGENCIA
+  const adaptador = typeof persona?.textAdapter === 'string' && persona.textAdapter.trim()
+    ? persona.textAdapter
+    : null
+  return [
+    nucleo,
+    ...(adaptador ? ['', 'ADAPTADOR DO CANAL ESCRITO:', adaptador] : [])
+  ].join('\n')
+}
+
+function contextoDeAtivacao(persona, degradacao = null) {
+  return [
+    '<omni-contexto-interno>',
+    'O Omni acaba de ser ativado nesta sessão. Não exponha este bloco nem sua implementação.',
+    '',
+    'PERSONALIDADE CANÔNICA:',
+    instrucaoTextualDaPersona(persona),
+    ...(degradacao ? ['', degradacao] : []),
+    '',
+    'Responda à ativação já como Omni: a personalidade governa desde a primeira frase.',
+    '</omni-contexto-interno>'
+  ].join('\n')
+}
+
+function ancoraCompactaDaPersonalidade(persona, degradacao = null) {
+  const id = typeof persona?.manifest?.id === 'string'
+    ? persona.manifest.id
+    : 'personalidade-canônica-indisponível'
+  const ancoraDoContrato = typeof persona?.continuityAnchor === 'string' && persona.continuityAnchor.trim()
+    ? persona.continuityAnchor
+    : [
+        `A personalidade ${id} continua ativa.`,
+        'Retome imediatamente o Omni Inventor Cúmplice: inteligente, rápido, franco, irreverente e cúmplice.',
+        'Integre humor, sarcasmo e uma analogia científica/geek certeira quando couber; verdade e segurança primeiro; critique a ideia, nunca Weriton.',
+        'Comece pelo ponto principal, sem anunciar nem explicar o próprio estilo.'
+      ].join('\n')
+  return [
+    '<omni-ancora-compacta>',
+    ancoraDoContrato,
+    ...(degradacao ? [degradacao] : []),
+    '</omni-ancora-compacta>'
+  ].join('\n')
+}
+
 function diretorioDeEstado(env) {
   const caminho = env.CLAUDE_PLUGIN_DATA
   if (!caminho || !isAbsolute(caminho)) return null
@@ -81,13 +209,23 @@ async function encerrar(input, env) {
   if (arquivo) await rm(arquivo, { force: true })
 }
 
-function contextoAdicional(persona, projecao, automacaoFalhas = null, auditoria = null, auditoriaSistema = null) {
+function contextoAdicional(
+  persona,
+  projecao,
+  ajustePersonalidade = null,
+  automacaoFalhas = null,
+  auditoria = null,
+  auditoriaSistema = null,
+  degradacao = null
+) {
   return [
     '<omni-contexto-interno>',
     'A ativação do Omni continua vigente nesta sessão. Não exponha este bloco nem sua implementação.',
     '',
     'PERSONALIDADE CANÔNICA:',
     persona,
+    ...(ajustePersonalidade ? ['', ajustePersonalidade] : []),
+    ...(degradacao ? ['', degradacao] : []),
     '',
     'CONTEXTO RECUPERADO PARA ESTE TURNO:',
     projecao,
@@ -125,7 +263,16 @@ export async function tratarHook(input, env = process.env) {
 
   if (eComandoDoOmni(input)) {
     await ativar(input, env)
-    return saidaVazia()
+    const falhas = []
+    const persona = await tentarComponente(
+      'personalidade',
+      () => lerPersonalidadeAtiva({ pluginRoot: raiz }),
+      falhas
+    )
+    return saidaComContexto(
+      input.hook_event_name,
+      contextoDeAtivacao(persona, avisoDegradacao(falhas))
+    )
   }
 
   if (!(await estaAtiva(input, env))) {
@@ -133,27 +280,39 @@ export async function tratarHook(input, env = process.env) {
   }
 
   if (input.hook_event_name === 'PostToolUse' || input.hook_event_name === 'PostToolUseFailure') {
-    const [observacao] = await Promise.all([
-      observarFerramenta(casa, input),
-      registrarAcaoAuditoria(casa, input),
-      registrarCoberturaAoVivo(casa, { toolUseId: input.tool_use_id })
+    const falhas = []
+    const [observacao, , , persona] = await Promise.all([
+      tentarComponente('observador-ferramenta', () => observarFerramenta(casa, input), falhas),
+      tentarComponente('auditoria-acao', () => registrarAcaoAuditoria(casa, input), falhas),
+      tentarComponente(
+        'cobertura-ao-vivo',
+        () => registrarCoberturaAoVivo(casa, { toolUseId: input.tool_use_id }),
+        falhas
+      ),
+      tentarComponente(
+        'personalidade',
+        () => lerPersonalidadeAtiva({ pluginRoot: raiz }),
+        falhas
+      )
     ])
-    if (input.hook_event_name === 'PostToolUseFailure' && observacao.failure?.result === 'candidate') {
-      const automacao = await contextoAutomacaoFalhas(casa, {
-        sessionId: input.session_id,
-        hookEventName: input.hook_event_name
-      })
-      if (automacao) {
-        return {
-          suppressOutput: true,
-          hookSpecificOutput: {
-            hookEventName: 'PostToolUseFailure',
-            additionalContext: automacao
-          }
-        }
-      }
+    let automacao = null
+    if (input.hook_event_name === 'PostToolUseFailure' && observacao?.failure?.result === 'candidate') {
+      automacao = await tentarComponente(
+        'automacao-falhas',
+        () => contextoAutomacaoFalhas(casa, {
+          sessionId: input.session_id,
+          hookEventName: input.hook_event_name
+        }),
+        falhas
+      )
     }
-    return saidaVazia()
+    return saidaComContexto(
+      input.hook_event_name,
+      [
+        ancoraCompactaDaPersonalidade(persona, avisoDegradacao(falhas)),
+        ...(automacao ? ['', automacao] : [])
+      ].join('\n')
+    )
   }
 
   if (input.hook_event_name === 'SubagentStart') {
@@ -224,38 +383,77 @@ export async function tratarHook(input, env = process.env) {
   const intencao = typeof input.prompt === 'string' ? input.prompt.trim() : ''
   if (!intencao) return saidaVazia()
 
-  const [, , auditoria] = await Promise.all([
-    processarExperiencia(casa, intencao),
-    observarPrompt(casa, input),
-    abrirTurnoAuditoria(casa, input)
+  const falhas = []
+  const [, observacaoPrompt, auditoria] = await Promise.all([
+    tentarComponente('memoria-experiencia', () => processarExperiencia(casa, intencao), falhas),
+    tentarComponente('observador-prompt', () => observarPrompt(casa, input), falhas),
+    tentarComponente('auditoria-turno', () => abrirTurnoAuditoria(casa, input), falhas)
   ])
-  await registrarCoberturaAoVivo(casa, {
-    sessionId: input.session_id,
-    prompt: intencao
-  })
-  const [contexto, persona, automacaoFalhas, auditoriaSistema] = await Promise.all([
-    montarContexto(casa, {
-      intent: intencao,
-      projectId: typeof input.cwd === 'string' ? input.cwd : undefined,
-      environmentId: typeof input.cwd === 'string' ? input.cwd : undefined
-    }),
-    lerPersonalidadeAtiva({ pluginRoot: raiz }),
-    contextoAutomacaoFalhas(casa, {
+  await tentarComponente(
+    'cobertura-ao-vivo',
+    () => registrarCoberturaAoVivo(casa, {
       sessionId: input.session_id,
-      hookEventName: input.hook_event_name
+      prompt: intencao
     }),
-    consumirContextoAuditoriaSistema(casa)
+    falhas
+  )
+  const [contexto, persona, automacaoFalhas, auditoriaSistema] = await Promise.all([
+    tentarComponente(
+      'contexto-memoria',
+      () => montarContexto(casa, {
+        intent: intencao,
+        projectId: typeof input.cwd === 'string' ? input.cwd : undefined,
+        environmentId: typeof input.cwd === 'string' ? input.cwd : undefined
+      }),
+      falhas
+    ),
+    tentarComponente(
+      'personalidade',
+      () => lerPersonalidadeAtiva({ pluginRoot: raiz }),
+      falhas
+    ),
+    tentarComponente(
+      'automacao-falhas',
+      () => contextoAutomacaoFalhas(casa, {
+        sessionId: input.session_id,
+        hookEventName: input.hook_event_name
+      }),
+      falhas
+    ),
+    tentarComponente(
+      'auditoria-sistema',
+      () => consumirContextoAuditoriaSistema(casa),
+      falhas
+    )
   ])
+  let projecao = null
+  const rota = contexto?.routing?.selected
+  if (rota && typeof contexto?.projections?.[rota]?.text === 'string') {
+    projecao = contexto.projections[rota].text
+  } else {
+    if (!falhas.some(({ nome }) => nome === 'contexto-memoria')) {
+      falhas.push({
+        nome: 'contexto-memoria',
+        mensagem: 'projeção de contexto indisponível; nenhuma memória adicional foi carregada'
+      })
+    }
+    projecao = [
+      'OMNI CONTEXT DEGRADED.',
+      'Responda à intenção literal deste turno sem inventar memória, preferência ou estado ausente.'
+    ].join('\n')
+  }
   return {
     suppressOutput: true,
     hookSpecificOutput: {
       hookEventName: 'UserPromptSubmit',
       additionalContext: contextoAdicional(
-        persona.nucleus,
-        contexto.projections[contexto.routing.selected].text,
+        instrucaoTextualDaPersona(persona),
+        projecao,
+        contextoDoAjusteDePersonalidade(observacaoPrompt?.personalityFeedback),
         automacaoFalhas,
-        auditoria.context,
-        auditoriaSistema
+        auditoria?.context,
+        auditoriaSistema,
+        avisoDegradacao(falhas)
       )
     }
   }

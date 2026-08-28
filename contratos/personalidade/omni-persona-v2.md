@@ -1,8 +1,8 @@
 # Omni — personalidade canônica v2
 
 > Estado: **candidata histórica inativa, preservada apenas para comparação futura**.
-> Não governa nenhum turno. A personalidade-base v1 continua sendo a única identidade carregada pelo
-> manifesto do plugin.
+> Não governa nenhum turno. A v1 governava quando esta candidata foi escrita; o manifesto atual
+> aponta para a v3, que preserva este arquivo apenas como registro histórico.
 > Identificador: `omni-persona-v2-candidate`.
 
 ## Procedência

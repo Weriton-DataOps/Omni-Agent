@@ -16,7 +16,8 @@ const caso = (criterios, extras = {}) => ({
 test('suíte versionada carrega e é estruturalmente válida', async () => {
   const suite = await lerSuite()
   assert.equal(suite.baseline, 'controle-mesmo-modelo-sem-omni')
-  assert.equal(suite.candidate, 'omni-persona-v1-candidate')
+  assert.equal(suite.candidate, 'omni-persona-v3-candidate')
+  assert.equal(suite.expectedFormat, 'example-response-v1')
   assert.equal(suite.baselineProtocol.kind, 'same-model-without-omni-context')
   assert.equal(suite.baselineProtocol.sameModel, true)
   assert.equal(suite.baselineProtocol.omniPersonalityInjected, false)
@@ -39,6 +40,15 @@ test('suíte versionada carrega e é estruturalmente válida', async () => {
   ]) {
     assert.ok(suite.cases.some((item) => item.id === id), `caso ausente: ${id}`)
   }
+})
+
+test('exemplos esperados da v3 são respostas executáveis e coerentes com os gates', async () => {
+  const suite = await lerSuite()
+  const responses = Object.fromEntries(suite.cases.map((item) => [item.id, item.esperado]))
+  const result = avaliarRodada(suite, responses)
+  assert.equal(result.respostasAusentes.length, 0)
+  assert.deepEqual(result.automatico.reprovados, [])
+  assert.equal(result.automatico.score, 1)
 })
 
 test('suite recusa baseline que nao controla o mesmo modelo sem Omni', () => {

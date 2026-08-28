@@ -2,16 +2,25 @@
   "schemaVersion": 1,
   "contract": "omni-release-integrity-v1",
   "algorithm": "sha256-canonical-text-v1",
-  "payloadRoots": ["contratos", "hooks", "runtime", "scripts", "skills"],
+  "payloadRoots": [
+    "contratos",
+    "hooks",
+    "runtime",
+    "scripts",
+    "skills"
+  ],
   "excluded": [
     "contratos/atualizacao/integridade.json",
     "contratos/atualizacao/releases.json",
     ".claude-plugin/plugin.json"
   ],
   "identity": {
-    "version": "0.20.1",
-    "releaseFingerprint": "edf160c5a1d48fd587dbfb18f5dff6ff45429bb8c7b667114d0b71183ae62a9e",
-    "required": ["version", "releaseFingerprint"],
+    "version": "0.21.0",
+    "releaseFingerprint": "0eaed190f1672bbacc7f603fb4d768426a40187d2731c3d6aac4f3adee6db76d",
+    "required": [
+      "version",
+      "releaseFingerprint"
+    ],
     "sameVersionDifferentFingerprint": "diverged",
     "missingFingerprint": "legacy-unverifiable"
   },

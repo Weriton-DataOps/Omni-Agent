@@ -5,7 +5,7 @@ teste humano.
 
 ## Implementado e coberto por teste automatizado
 
-- personalidade-base v1 escolhida pelo manifesto e injetada por turno;
+- personalidade v3 candidata escolhida pelo manifesto, injetada desde a ativação e reforçada após ferramentas;
 - memória local, atômica, versionada, com filtro técnico de segredos;
 - várias unidades de aprendizado extraídas da mesma mensagem;
 - declaração estável e explícita do proprietário confirmada automaticamente;

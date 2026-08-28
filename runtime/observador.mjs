@@ -8,6 +8,10 @@ import {
 import { registrarFalha } from './falhas.mjs'
 import { pareceConterSegredo } from './memoria.mjs'
 import { materializarMelhoriaConfigurada } from './evolucao.mjs'
+import {
+  observarVotoPersonalidade,
+  registrarUltimaRespostaPersonalidade
+} from './feedback-personalidade.mjs'
 
 function feedbackNegativoPersonalidade(value) {
   const prompt = String(value ?? '')
@@ -30,6 +34,22 @@ function feedbackNegativoPersonalidade(value) {
     /\b(?:personalidade|humor|sarcasmo|analogia|analogias)\b.{0,60}\b(?:nao apareceu|nao entrou|nao pegou|nao funciona|nao funcionou|nao esta funcionando|nao esta sendo usada|nao esta usando)\b/,
     /\b(?:nada da|sem sinal de|cade a)\s+personalidade\b/
   ].some((pattern) => pattern.test(evidence))
+}
+
+function falhaSeguraDoFeedback(error) {
+  const name = typeof error?.name === 'string' && /^[A-Za-z][A-Za-z0-9_-]{0,39}$/.test(error.name)
+    ? error.name
+    : 'Error'
+  const code = typeof error?.code === 'string' && /^[A-Z0-9_-]{1,40}$/.test(error.code)
+    ? error.code
+    : null
+  return {
+    result: 'failed',
+    vote: null,
+    response: null,
+    adjustment: null,
+    error: code ? `${name}/${code}` : name
+  }
 }
 
 const CORRECOES = [
@@ -242,7 +262,7 @@ function objetivoDeclarado(prompt) {
 
 export async function observarPrompt(casa, input) {
   const prompt = texto(input?.prompt, 1000)
-  if (!prompt) return { event: null, corrections: [] }
+  if (!prompt) return { event: null, corrections: [], personalityFeedback: null }
   const event = await observarEvento(casa, {
     eventType: 'user-prompt',
     sessionId: input.session_id,
@@ -254,6 +274,11 @@ export async function observarPrompt(casa, input) {
   const corrections = []
   const origin = input?.origin ?? 'owner-live'
   const ownerOrigin = origin === 'owner-live' || origin === 'owner-transcript'
+  const personalityFeedback = await observarVotoPersonalidade(casa, {
+    sessionId: input.session_id,
+    feedback: input.prompt,
+    origin
+  }).catch(falhaSeguraDoFeedback)
   for (const correction of ownerOrigin
     ? CORRECOES.filter((item) => item.matches ? item.matches(prompt) : item.pattern.test(prompt))
     : []) {
@@ -284,7 +309,7 @@ export async function observarPrompt(casa, input) {
       materialization
     })
   }
-  return { event, corrections }
+  return { event, corrections, personalityFeedback }
 }
 
 export async function observarFerramenta(casa, input) {
@@ -389,6 +414,12 @@ export async function observarParada(casa, input) {
       : `Resposta concluida (${answer?.length ?? 0} caracteres)`
   })
   const signals = []
+  const personalityResponse = input?.hook_event_name === 'Stop'
+    ? await registrarUltimaRespostaPersonalidade(casa, {
+        sessionId: input.session_id,
+        answer: input.last_assistant_message
+      }).catch(falhaSeguraDoFeedback)
+    : { result: 'ignored', response: null }
   if (answer && /\b(?:quer que eu|se quiser|posso fazer|me diga se)\b/i.test(answer)) {
     signals.push(await proporMelhoriaOperacional(casa, {
       category: 'conversation-eval',
@@ -403,5 +434,5 @@ export async function observarParada(casa, input) {
       statement: 'Dar respostas concisas com presenca, contexto e uma imagem mental natural quando isso ajudar.'
     }))
   }
-  return { event, signals }
+  return { event, signals, personalityResponse }
 }

@@ -1,4 +1,4 @@
-# Protocolo de eval de personalidade v1
+# Protocolo de eval da personalidade
 
 Implementa a parte determinística das seções 28 e 29 da especificação mestre e define o gate futuro
 de promoção. A avaliação automática e o registro de alegações existem hoje; a decisão confiável de
@@ -47,12 +47,19 @@ recibos internos + identidade externa ──► decisão futura no manifesto
 A baseline não é uma personalidade antiga inventada para o placar. Ela usa o mesmo provedor, modelo,
 versão, configuração e entradas da candidata, mas sem ativação, personalidade, contexto ou memória do
 Omni. O identificador `controle-mesmo-modelo-sem-omni` representa esse controle experimental. A
-candidata é a personalidade v1 escolhida pelo proprietário; a v2 permanece histórica e inativa.
+candidata é `omni-persona-v3-candidate`, escolhida pelo proprietário para teste ativo. A v1 e a v2
+permanecem históricas e não governam a rodada.
 
 A geração das respostas não roda em `npm test`: exige modelo, pode custar dinheiro e não é
-determinística. `runtime/rodada-personalidade.mjs` produz o plano, recebe conjuntos já capturados,
+determinística. Cada campo `esperado` da suíte contém uma resposta-exemplo v3, e os testes garantem
+que essas amostras são compatíveis com os próprios gates automáticos; isso valida o contrato, não o
+comportamento do modelo. `runtime/rodada-personalidade.mjs` produz o plano, recebe conjuntos capturados,
 executa a camada automática, incorpora a revisão do proprietário e registra localmente somente hashes,
 proveniência, gates e resultados. Respostas brutas não entram no histórico nem no Git.
+
+Casos de permanência entre turnos são executados sequencialmente na rodada de conversa real. A
+representação compacta da suíte serve de roteiro; uma resposta única que apenas recite os três turnos
+não prova continuidade.
 
 ## Convenções da camada automática
 
@@ -76,7 +83,7 @@ Uma candidata só sai de `candidate` quando, na mesma suíte:
 6. uma identidade externa autenticada vincula a decisão do proprietário à mesma rodada;
 7. a decisão entra no manifesto da personalidade e o carregador a revalida internamente.
 
-O identificador da personalidade é imutável. `omni-persona-v1-candidate` continua sendo o mesmo ID
+O identificador da personalidade é imutável. `omni-persona-v3-candidate` continua sendo o mesmo ID
 depois da promoção; quem representa o estágio é `status`, não o nome do objeto.
 
 O registro vive no campo `promotion` do manifesto e é `null` enquanto a personalidade for candidata:

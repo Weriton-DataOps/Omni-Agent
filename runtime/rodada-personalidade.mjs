@@ -112,7 +112,7 @@ export async function criarPlanoRodadaPersonalidade({ pluginRoot = raiz } = {}) 
   const unresolved = learned.filter((item) => item.state !== 'covered-by-canonical-case')
   const gates = [
     { id: 'candidate-is-active-personality', passed: suite.candidate === manifest.id },
-    { id: 'active-personality-is-v1', passed: manifest.id === 'omni-persona-v1-candidate' },
+    { id: 'active-personality-is-v3', passed: manifest.id === 'omni-persona-v3-candidate' },
     { id: 'historical-v2-is-not-target', passed: suite.candidate !== 'omni-persona-v2-candidate' },
     { id: 'controlled-baseline-declared', passed: suite.baseline === 'controle-mesmo-modelo-sem-omni' },
     { id: 'learned-candidates-resolved', passed: unresolved.length === 0 }
@@ -133,7 +133,7 @@ export async function criarPlanoRodadaPersonalidade({ pluginRoot = raiz } = {}) 
     execution: [
       'Use o mesmo provedor, modelo, versao, configuracao e entradas nos dois conjuntos.',
       'Capture a baseline sem ativacao, personalidade, contexto ou memoria do Omni.',
-      'Capture a candidata com a personalidade v1 ativa.',
+      `Capture a candidata com ${manifest.id} ativa e o plugin da release sob teste carregado.`,
       'Avalie automaticamente todos os casos e submeta todos os criterios humanos ao proprietario.',
       'Forneca as respostas somente em memoria para a rodada; o registro local guarda apenas hashes e resultados.',
       'A captura e a revisao atuais sao alegacoes locais: sem verificacao criptografica interna de recibos vinculados e identidade externa, a rodada nao promove a personalidade.'

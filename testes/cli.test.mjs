@@ -127,9 +127,13 @@ test('operador registra implementação operacional somente com recibo auditado 
 
 test('operador entrega a personalidade escolhida pelo manifesto', () => {
   const result = executar(['personalidade'], process.env)
-  assert.equal(result.personality.id, 'omni-persona-v1-candidate')
+  assert.equal(result.personality.id, 'omni-persona-v3-candidate')
   assert.match(result.personality.nucleus, /Inventor Cúmplice/)
   assert.match(result.personality.nucleus, /INDEPENDÊNCIA INTELECTUAL/)
+  assert.match(result.personality.textAdapter, /conversa escrita/i)
+  assert.match(result.personality.continuityAnchor, /Inventor Cúmplice/)
+  assert.equal(result.personality.feedback.counts.totalVotes >= 0, true)
+  assert.equal(result.personality.feedback.candidates.length >= 0, true)
 })
 
 test('operador expoe plano e historico da rodada de personalidade', async () => {
@@ -137,7 +141,7 @@ test('operador expoe plano e historico da rodada de personalidade', async () => 
   const env = { ...process.env, OMNI_HOME: join(raiz, 'home') }
   try {
     const plan = executar(['eval-personalidade-plano'], env)
-    assert.equal(plan.evaluation.candidate, 'omni-persona-v1-candidate')
+    assert.equal(plan.evaluation.candidate, 'omni-persona-v3-candidate')
     assert.equal(plan.evaluation.cases.length, 26)
     assert.deepEqual(plan.evaluation.pendingLearnedCandidates, [])
 
@@ -367,6 +371,8 @@ test('operador expõe evals, checkpoints e backlog sem executar melhoria sozinho
     assert.equal(state.evaluation.automaticExecution, false)
     assert.equal(state.evaluation.realBehavior.recordedRuns, 0)
     assert.equal(state.evaluation.realBehavior.passedRuns, 0)
+    assert.equal(state.evaluation.personality.feedback.totalVotes, 0)
+    assert.equal(state.evaluation.personality.feedback.rawConversationStored, false)
     assert.equal(state.systemAudit.recordedRuns, 0)
     assert.equal(state.structuredContext.rawConversationStored, false)
   } finally {

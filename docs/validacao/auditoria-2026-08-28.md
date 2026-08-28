@@ -122,11 +122,23 @@ uso.
 | AUD-159 | entrada antiga incorporada por uma regra canônica deve continuar pendente | corrigido na `0.20.1`; substituição explícita e relida na release encerra a antiga como `superseded`, sem contá-la como efeito |
 | AUD-160 | registro de retração e arquivos substitutos bastam mesmo se a skill continuar ativa | recusado; a reconciliação exige ausência real da skill e da entrada no catálogo instalado |
 | AUD-161 | prova `superseded` inválida pode ser rebaixada e apagada numa leitura | corrigido; somente formato legado migra, enquanto estado v2 inválido falha fechado sem sobrescrever o arquivo |
+| AUD-162 | v3 altera o payload mantendo a versão `0.20.1` | recusado; a entrega recebeu a versão nova `0.21.0` e fingerprint próprio |
+| AUD-163 | personalidade só aparece depois da primeira resposta | corrigido; ativação e expansão do comando recebem o núcleo e o adaptador textual imediatamente |
+| AUD-164 | uso de ferramenta derruba a voz e devolve assistente genérico | corrigido; `PostToolUse` e `PostToolUseFailure` reinjetam uma âncora compacta da v3 |
+| AUD-165 | falha de memória, auditoria ou contexto apaga a personalidade | corrigido; componentes falham isoladamente, a identidade continua ativa e o estado degradado fica explícito |
+| AUD-166 | estado de candidata impede a v3 de governar respostas | falso; o estado bloqueia somente a promoção para `approved`, não a injeção da candidata ativa |
+| AUD-167 | suíte descreve estilo sem mostrar como ele soa | corrigido; os 26 campos `esperado` agora são respostas-exemplo que passam pelos gates automáticos |
+| AUD-168 | voto do proprietário não alcança a resposta seguinte | corrigido; feedback explícito gera ajuste reversível de um turno e sinais repetidos viram candidatas revisáveis |
+| AUD-169 | feedback de personalidade exige guardar conversa ou resposta | recusado; o store contém somente fingerprints, polaridade, dimensões, motivos e contagens |
+| AUD-170 | falha no store de feedback bloqueia conversa, correções e observação | corrigido; o componente falha fechado para a escrita incompatível, mas isolado do restante do turno |
+| AUD-171 | consulta de `personalidade` e `estado` é obrigatória antes de conversar | removido; o hook já entrega a identidade e o operador fica reservado para diagnóstico explícito |
+| AUD-172 | testes estruturais provam que a personalidade já funciona em conversa real | falso; o DoD comportamental e a promoção confiável continuam pendentes de uso do proprietário |
 
 ## Estado de fechamento
 
-- gates determinísticos: `check`, 279/279 testes, `npm pack --dry-run` e `claude plugin validate .` verdes com o fingerprint final;
-- publicação e instalação: a `0.20.0` foi confirmada no `origin/main` e relida da instalação; a correção `0.20.1` só será considerada concluída pela mesma confirmação externa e pelo novo readback;
+- gates determinísticos: `check`, 295/295 testes, `npm pack --dry-run` e `claude plugin validate .` verdes para a `0.21.0`, com o fingerprint final;
+- publicação e instalação: a `0.20.1` foi confirmada no `origin/main` e relida da instalação; a `0.21.0`
+  desta rodada só será considerada concluída depois da mesma confirmação externa e do novo readback;
 - guardião v2: fonte canônica e testes prontos; troca do hook global não executada sem aprovação
   explícita da mudança de autorização;
 - comportamento real: deliberadamente pendente de conversa do proprietário;

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -11,6 +11,7 @@ import { tratarHook } from '../runtime/hook-contexto.mjs'
 import { lembrarExplicitamente, lerMemoria } from '../runtime/memoria.mjs'
 import { caminhoDaCoberturaAoVivo } from '../runtime/varredura-diaria.mjs'
 import { registrarFalha } from '../runtime/falhas.mjs'
+import { registrarUltimaRespostaPersonalidade } from '../runtime/feedback-personalidade.mjs'
 import {
   atualizarDelegacao,
   lerCicloOperacional,
@@ -55,7 +56,11 @@ test('sessao Omni recebe personalidade e memoria relevante em cada novo turno', 
       { hook_event_name: 'UserPromptSubmit', session_id, prompt: '/omni:omni' },
       env
     )
-    assert.equal(ativacao.hookSpecificOutput, undefined)
+    assert.equal(ativacao.hookSpecificOutput?.hookEventName, 'UserPromptSubmit')
+    assert.match(ativacao.hookSpecificOutput?.additionalContext, /PERSONALIDADE CANÔNICA/)
+    assert.match(ativacao.hookSpecificOutput?.additionalContext, /Inventor Cúmplice/)
+    assert.match(ativacao.hookSpecificOutput?.additionalContext, /ADAPTADOR DO CANAL ESCRITO/)
+    assert.match(ativacao.hookSpecificOutput?.additionalContext, /conversa escrita/i)
 
     const turno = await tratarHook(
       { hook_event_name: 'UserPromptSubmit', session_id, prompt: 'Como funciona um buraco negro?' },
@@ -64,6 +69,7 @@ test('sessao Omni recebe personalidade e memoria relevante em cada novo turno', 
     const contexto = turno.hookSpecificOutput?.additionalContext
     assert.match(contexto, /PERSONALIDADE CANÔNICA/)
     assert.match(contexto, /Inventor Cúmplice/)
+    assert.match(contexto, /ADAPTADOR DO CANAL ESCRITO/)
     assert.match(contexto, /prefiro poucas palavras e uma analogia concreta/i)
     assert.match(contexto, /RELEVANT CONFIRMED MEMORY/)
     const liveCoverage = JSON.parse(await readFile(caminhoDaCoberturaAoVivo(env.OMNI_HOME), 'utf8'))
@@ -83,10 +89,24 @@ test('hook não afeta sessão sem ativação e encerra o estado ao fechar', asyn
     )
     assert.equal(inativa.hookSpecificOutput, undefined)
 
-    await tratarHook(
+    const ferramentaInativa = await tratarHook(
+      {
+        hook_event_name: 'PostToolUse',
+        session_id,
+        tool_use_id: 'tool-sessao-inativa',
+        tool_name: 'Read'
+      },
+      env
+    )
+    assert.equal(ferramentaInativa.hookSpecificOutput, undefined)
+
+    const expansao = await tratarHook(
       { hook_event_name: 'UserPromptExpansion', session_id, command_name: 'omni:omni' },
       env
     )
+    assert.equal(expansao.hookSpecificOutput?.hookEventName, 'UserPromptExpansion')
+    assert.match(expansao.hookSpecificOutput?.additionalContext, /PERSONALIDADE CANÔNICA/)
+    assert.match(expansao.hookSpecificOutput?.additionalContext, /ADAPTADOR DO CANAL ESCRITO/)
     const ativa = await tratarHook(
       { hook_event_name: 'UserPromptSubmit', session_id, prompt: 'mensagem do Omni' },
       env
@@ -99,6 +119,104 @@ test('hook não afeta sessão sem ativação e encerra o estado ao fechar', asyn
       env
     )
     assert.equal(encerrada.hookSpecificOutput, undefined)
+  } finally {
+    await rm(raiz, { recursive: true, force: true })
+  }
+})
+
+test('ferramenta reforça âncora compacta sem reinjetar o núcleo inteiro', async () => {
+  const { raiz, env } = await ambiente()
+  const session_id = 'sessao-ancora-pos-ferramenta'
+  try {
+    await tratarHook(
+      { hook_event_name: 'UserPromptSubmit', session_id, prompt: '/omni:omni' },
+      env
+    )
+    const result = await tratarHook({
+      hook_event_name: 'PostToolUse',
+      session_id,
+      tool_use_id: 'tool-ancora-1',
+      tool_name: 'Read',
+      tool_input: { file_path: join(raiz, 'exemplo.txt') },
+      tool_response: 'conteúdo lido',
+      cwd: raiz
+    }, env)
+    const contexto = result.hookSpecificOutput?.additionalContext
+    assert.equal(result.hookSpecificOutput?.hookEventName, 'PostToolUse')
+    assert.match(contexto, /<omni-ancora-compacta>/)
+    assert.match(contexto, /Inventor Cúmplice/)
+    assert.match(contexto, /(?:analogia|imagem) científica (?:\/|ou )geek/i)
+    assert.doesNotMatch(contexto, /PERSONALIDADE CANÔNICA:/)
+    assert.ok(contexto.length < 1_200)
+  } finally {
+    await rm(raiz, { recursive: true, force: true })
+  }
+})
+
+test('feedback explícito do proprietário ajusta a resposta seguinte sem reescrever o contrato', async () => {
+  const { raiz, env } = await ambiente()
+  const session_id = 'sessao-ajuste-personalidade'
+  try {
+    await tratarHook(
+      { hook_event_name: 'UserPromptSubmit', session_id, prompt: '/omni:omni' },
+      env
+    )
+    await registrarUltimaRespostaPersonalidade(env.OMNI_HOME, {
+      sessionId: session_id,
+      answer: 'Resposta anterior propositalmente neutra para o teste.'
+    })
+
+    const turno = await tratarHook({
+      hook_event_name: 'UserPromptSubmit',
+      session_id,
+      origin: 'owner-live',
+      prompt: 'Essa resposta ficou seca e genérica; faltou humor e analogia.'
+    }, env)
+    const contexto = turno.hookSpecificOutput?.additionalContext
+    assert.match(contexto, /AJUSTE EXPLÍCITO DO PROPRIETÁRIO PARA ESTA RESPOSTA/)
+    assert.match(contexto, /mais humor nascido deste contexto/)
+    assert.match(contexto, /analogia forte que ajude a entender/)
+    assert.match(contexto, /afaste-se do assistente genérico/)
+    assert.match(contexto, /vale para esta resposta/)
+  } finally {
+    await rm(raiz, { recursive: true, force: true })
+  }
+})
+
+test('falha de contexto mantém a personalidade com fallback explícito e observável', async () => {
+  const { raiz, env } = await ambiente()
+  const session_id = 'sessao-contexto-degradado'
+  const caminhoBloqueado = join(raiz, 'omni-home-bloqueado')
+  try {
+    await writeFile(caminhoBloqueado, 'isto é um arquivo, não um diretório', 'utf8')
+    env.OMNI_HOME = caminhoBloqueado
+
+    const ativacao = await tratarHook(
+      { hook_event_name: 'UserPromptSubmit', session_id, prompt: '/omni:omni' },
+      env
+    )
+    assert.match(ativacao.hookSpecificOutput?.additionalContext, /Inventor Cúmplice/)
+
+    const turno = await tratarHook(
+      { hook_event_name: 'UserPromptSubmit', session_id, prompt: 'Continue sem inventar contexto.' },
+      env
+    )
+    const contextoTurno = turno.hookSpecificOutput?.additionalContext
+    assert.match(contextoTurno, /PERSONALIDADE CANÔNICA:/)
+    assert.match(contextoTurno, /Inventor Cúmplice/)
+    assert.match(contextoTurno, /ESTADO DE CONTEXTO: DEGRADADO/)
+    assert.match(contextoTurno, /contexto-memoria/i)
+    assert.match(contextoTurno, /não invente o contexto ausente/i)
+
+    const ferramenta = await tratarHook({
+      hook_event_name: 'PostToolUse',
+      session_id,
+      tool_use_id: 'tool-contexto-degradado',
+      tool_name: 'Read',
+      cwd: raiz
+    }, env)
+    assert.match(ferramenta.hookSpecificOutput?.additionalContext, /<omni-ancora-compacta>/)
+    assert.match(ferramenta.hookSpecificOutput?.additionalContext, /ESTADO DE CONTEXTO: DEGRADADO/)
   } finally {
     await rm(raiz, { recursive: true, force: true })
   }
@@ -268,6 +386,8 @@ test('terceira falha de ferramenta dispara o despacho sem esperar outro pedido',
       }, env)
     }
     assert.equal(result.hookSpecificOutput.hookEventName, 'PostToolUseFailure')
+    assert.match(result.hookSpecificOutput.additionalContext, /<omni-ancora-compacta>/)
+    assert.match(result.hookSpecificOutput.additionalContext, /Inventor Cúmplice/)
     assert.match(result.hookSpecificOutput.additionalContext, /AUTOMAÇÃO DE FALHAS/)
     assert.match(result.hookSpecificOutput.additionalContext, /dispatch-requested/i)
     assert.match(result.hookSpecificOutput.additionalContext, /preparada e marcada como `visible`/i)

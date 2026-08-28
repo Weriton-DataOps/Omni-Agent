@@ -51,10 +51,13 @@ personalidade e contratos              memória pessoal
 runtime e hooks                        sessões e delegações
 regras portáveis                       eventos resumidos
 procedimentos portáveis                falhas e atalhos locais
-testes e documentação                  evidências em fingerprints
+testes e documentação                  evidências e votos em fingerprints
 ```
 
-Conversa, log bruto, erro bruto, credencial e dado pessoal permanecem fora do repositório.
+Conversa, resposta bruta, log bruto, erro bruto, credencial e dado pessoal permanecem fora do
+repositório. O feedback explícito sobre a personalidade guarda somente fingerprints, polaridade e
+dimensões; ajusta a resposta seguinte de forma reversível e sinais repetidos viram candidatas
+revisáveis, nunca edição silenciosa da identidade.
 
 ## Estrutura
 

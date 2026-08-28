@@ -59,6 +59,7 @@ fora do Git.
 | auditoria e autocorreção por turno | `runtime/auditoria-autocorrecao.mjs` |
 | auditoria sistêmica | `runtime/auditoria-sistema.mjs` |
 | contexto por turno | `runtime/contexto.mjs` + `runtime/hook-contexto.mjs` |
+| feedback e ajuste da personalidade | `runtime/feedback-personalidade.mjs` + `runtime/observador.mjs` |
 | memória | `runtime/memoria.mjs` + `runtime/pipeline-memoria.mjs` |
 | falhas e atalhos | `runtime/falhas.mjs` + `runtime/atalhos.mjs` |
 | evolução portável | `runtime/evolucao.mjs` |
@@ -82,7 +83,7 @@ mensagem
   ├─ detecta correção do proprietário
   ├─ atualiza objetivo e passo vivos
   └─ monta contexto
-       ├─ personalidade-base v1
+       ├─ personalidade v3 candidata + ajuste explícito do último voto
        ├─ regras operacionais canônicas e aprendidas
        ├─ estado relevante
        ├─ memória confirmada ranqueada
@@ -136,6 +137,7 @@ correção do proprietário ────────────────► 
 falha de ferramenta ─────────────────────► padrão por assinatura
 conclusão verificada ────────────────────► atalho observado
 resposta fraca detectável ───────────────► candidata de personalidade/eval
+voto explícito sobre a resposta ─────────► ajuste reversível do próximo turno + candidata revisável
 
 melhoria repetida
         ↓ classificar natureza

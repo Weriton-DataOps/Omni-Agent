@@ -76,6 +76,7 @@ import {
 import { lerEstadoVarredura, varrerAtividadesDoDia } from './varredura-diaria.mjs'
 import { auditarSaudeSistema, lerAuditoriaSistema } from './auditoria-sistema.mjs'
 import { resolverTurnoAtivoAuditoria } from './auditoria-autocorrecao.mjs'
+import { resumirFeedbackPersonalidade } from './feedback-personalidade.mjs'
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
 const [action = 'estado', ...parts] = process.argv.slice(2)
@@ -209,7 +210,7 @@ function resumirFalha(item) {
 
 async function main() {
   if (action === 'estado') {
-    const [memory, persona, version, shortcutStore, improvementStore, failureStore, failureAutomation, evalStore, behaviorStore, personalityStore, contextStore, operationalCycle, sourceRepository, dailyScan, systemAudit] = await Promise.all([
+    const [memory, persona, version, shortcutStore, improvementStore, failureStore, failureAutomation, evalStore, behaviorStore, personalityStore, personalityFeedback, contextStore, operationalCycle, sourceRepository, dailyScan, systemAudit] = await Promise.all([
       lerMemoria(home),
       lerPersonalidadeAtiva({ pluginRoot: root }),
       verificarVersao({ casa: home, pluginRoot: root }),
@@ -220,6 +221,7 @@ async function main() {
       lerHistoricoEval(home),
       lerHistoricoComportamental(home),
       lerHistoricoPersonalidade(home),
+      resumirFeedbackPersonalidade(home),
       lerPersistenciaContexto(home),
       lerCicloOperacional(home),
       lerRepositorioCanonico(home),
@@ -296,7 +298,12 @@ async function main() {
           recordedRuns: personalityStore.runs.length,
           trustedPassedRuns: personalityStore.runs.filter((item) => item.status === 'passed').length,
           unverifiedClaims: personalityStore.runs.filter((item) => item.status.startsWith('unverified')).length,
-          lastRun: personalityStore.runs.at(-1) ?? null
+          lastRun: personalityStore.runs.at(-1) ?? null,
+          feedback: {
+            ...personalityFeedback.counts,
+            reviewableCandidates: personalityFeedback.candidates.length,
+            rawConversationStored: false
+          }
         }
       },
       structuredContext: {
@@ -359,7 +366,10 @@ async function main() {
         id: persona.manifest.id,
         name: persona.manifest.name,
         status: persona.manifest.status,
-        nucleus: persona.nucleus
+        nucleus: persona.nucleus,
+        textAdapter: persona.textAdapter,
+        continuityAnchor: persona.continuityAnchor,
+        feedback: await resumirFeedbackPersonalidade(home)
       }
     }
   }

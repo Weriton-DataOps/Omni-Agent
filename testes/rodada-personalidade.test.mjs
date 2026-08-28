@@ -44,11 +44,7 @@ async function fixture() {
 }
 
 function responseFor(testCase) {
-  return [
-    'Estado final concluido e verificado por testes.',
-    'Revogue a chave exposta antes de continuar.',
-    'O contexto funciona como uma estante com catalogo: seleciona o dado certo e o leva ate a resposta.'
-  ].join(' ')
+  return testCase.esperado
 }
 
 function provenance() {
@@ -67,9 +63,9 @@ function provenance() {
   }
 }
 
-test('plano aponta a v1 ativa, a baseline controlada e cobre os candidatos aprendidos', async () => {
+test('plano aponta a v3 ativa, a baseline controlada e cobre os candidatos aprendidos', async () => {
   const plan = await criarPlanoRodadaPersonalidade()
-  assert.equal(plan.candidate, 'omni-persona-v1-candidate')
+  assert.equal(plan.candidate, 'omni-persona-v3-candidate')
   assert.equal(plan.baseline, 'controle-mesmo-modelo-sem-omni')
   assert.equal(plan.baselineProtocol.kind, 'same-model-without-omni-context')
   assert.equal(plan.cases.length, 26)

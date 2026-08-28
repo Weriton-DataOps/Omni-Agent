@@ -12,7 +12,7 @@ test('marketplace usa o plugin do próprio repositório e versão semântica', a
   const packageManifest = JSON.parse(await readFile(file('package.json'), 'utf8'))
   assert.equal(marketplace.plugins[0].source, './')
   assert.equal(manifest.name, 'omni')
-  assert.equal(manifest.version, '0.20.1')
+  assert.equal(manifest.version, '0.21.0')
   assert.equal(packageManifest.version, manifest.version)
   assert.equal(releaseIdentity.identity.version, manifest.version)
   assert.equal(Object.hasOwn(manifest, 'releaseFingerprint'), false)
@@ -191,6 +191,7 @@ test('plugin contém somente o núcleo declarado', async () => {
   await stat(file('hooks/hooks.json'))
   await stat(file('contratos/personalidade/omni-persona-v1.md'))
   await stat(file('contratos/personalidade/omni-persona-v2.md'))
+  await stat(file('contratos/personalidade/omni-persona-v3.md'))
 })
 
 test('fronteiras mantêm interface e iniciativas externas independentes do Omni', async () => {
@@ -232,25 +233,26 @@ test('hook injeta contexto por turno somente após ativação do Omni', async ()
   assert.ok(hooks.hooks.Stop[0].hooks.some((hook) => hook.args?.[0]?.endsWith('hook-varredura.mjs')))
 })
 
-test('personalidade-base v1 é a fonte ativa e canais externos continuam planejados', async () => {
+test('personalidade v3 é a fonte ativa e canais externos continuam planejados', async () => {
   const persona = JSON.parse(await readFile(file('contratos/personalidade/manifest.json'), 'utf8'))
   const contract = await readFile(
     new URL(persona.contract, file('contratos/personalidade/manifest.json')),
     'utf8'
   )
-  assert.equal(persona.id, 'omni-persona-v1-candidate')
+  assert.equal(persona.id, 'omni-persona-v3-candidate')
   assert.equal(persona.status, 'active-candidate-pending-evals')
   assert.equal(persona.promotion, null)
   assert.deepEqual(await readdir(file('contratos/eval/resultados/')), ['README.md'])
-  assert.equal(persona.supersedes, null)
+  assert.equal(persona.supersedes, 'omni-persona-v1-candidate')
   assert.equal(persona.channels.plugin, 'active')
   assert.equal(persona.channels.chat, 'planned')
   assert.equal(persona.channels.realtime, 'planned')
   const nucleo = contract.match(/## Núcleo textual\s+```text\s*([\s\S]*?)```/i)[1]
   assert.match(nucleo, /Inventor Cúmplice/)
-  assert.match(nucleo, /INDEPENDÊNCIA INTELECTUAL/)
-  assert.match(nucleo, /REFERÊNCIAS E ANALOGIAS/)
-  assert.match(nucleo, /EXPRESSÃO/)
+  assert.match(nucleo, /Motor Rick/)
+  assert.match(nucleo, /INDEPENDÊNCIA/)
+  assert.match(nucleo, /GALERIA/)
+  assert.match(nucleo, /EIXO DE RESPEITO/)
 })
 
 test('o contrato declarado no manifesto é o que o hook consegue injetar', async () => {
@@ -281,7 +283,7 @@ test('a v2 permanece histórica e fora do alvo da suíte ativa', async () => {
   const persona = JSON.parse(await readFile(file('contratos/personalidade/manifest.json'), 'utf8'))
   const suite = JSON.parse(await readFile(file('contratos/eval/personalidade.json'), 'utf8'))
   const candidate = await readFile(file('contratos/personalidade/omni-persona-v2.md'), 'utf8')
-  assert.equal(persona.supersedes, null)
+  assert.equal(persona.supersedes, 'omni-persona-v1-candidate')
   assert.equal(suite.candidate, persona.id)
   assert.notEqual(suite.candidate, 'omni-persona-v2-candidate')
   assert.match(candidate, /histórica inativa/i)
@@ -301,8 +303,7 @@ test('contexto ativo não carrega nomes ou caminhos estranhos ao Omni', async ()
     'runtime/versao.mjs',
     'runtime/memoria.mjs',
     'contratos/capacidades/catalogo.json',
-    'contratos/personalidade/omni-persona-v1.md',
-    'contratos/personalidade/omni-persona-v2.md'
+    'contratos/personalidade/omni-persona-v3.md'
   ]
   const active = (
     await Promise.all(activeFiles.map((path) => readFile(file(path), 'utf8')))
@@ -319,7 +320,10 @@ test('contexto ativo não carrega nomes ou caminhos estranhos ao Omni', async ()
 test('skill começa em pt-BR e descreve ação, delegação e proteção técnica', async () => {
   const skill = await readFile(file('skills/omni/SKILL.md'), 'utf8')
   assert.match(skill, /Responda em português do Brasil/)
-  assert.match(skill, /consulte\s+silenciosamente `personalidade` e `estado`/is)
+  assert.match(skill, /hook entrega a personalidade canônica já na ativação/is)
+  assert.match(skill, /consulta não é pedágio para começar a conversar/is)
+  assert.match(skill, /personalidade canônica indicada pelo manifesto/i)
+  assert.doesNotMatch(skill, /personalidade-base v1/i)
   assert.match(skill, /torne o prompt completo visível na sessão de destino/)
   assert.match(skill, /inicie o executor/)
   assert.match(skill, /mantenha esta conversa central disponível/i)

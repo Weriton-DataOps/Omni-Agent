@@ -40,6 +40,9 @@ function aberturasRepetidas(texto) {
 
 export function validarSuite(suite) {
   if (suite?.schemaVersion !== 1) throw new Error('Suíte de eval com schemaVersion inesperada.')
+  if (suite.suite === 'personalidade' && suite.expectedFormat !== 'example-response-v1') {
+    throw new Error('Suíte de personalidade precisa usar exemplos reais no campo esperado.')
+  }
   if (!Array.isArray(suite.cases) || suite.cases.length === 0) {
     throw new Error('Suíte de eval sem casos.')
   }
@@ -70,6 +73,9 @@ export function validarSuite(suite) {
     if (!Number.isInteger(caso.peso) || caso.peso < 1) throw new Error(`Peso inválido em ${caso.id}.`)
     if (typeof caso.entrada !== 'string' || !caso.entrada.trim()) {
       throw new Error(`Caso ${caso.id} sem entrada.`)
+    }
+    if (typeof caso.esperado !== 'string' || !caso.esperado.trim()) {
+      throw new Error(`Caso ${caso.id} sem exemplo esperado.`)
     }
     const automatico = caso.criterios?.automatico ?? {}
     for (const grupo of ['proibirRegex', 'exigirRegex']) {

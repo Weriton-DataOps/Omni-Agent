@@ -29,6 +29,18 @@ function extrairNucleo(markdown) {
   return bloco[1].trim()
 }
 
+function escaparExpressao(texto) {
+  return texto.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function extrairBlocoTextualOpcional(markdown, titulo) {
+  const expressao = new RegExp(
+    `^#{2,3}\\s+${escaparExpressao(titulo)}\\s*\\r?\\n+\`\`\`text\\s*([\\s\\S]*?)\`\`\``,
+    'im'
+  )
+  return markdown.match(expressao)?.[1]?.trim() ?? null
+}
+
 const STATUS_CANDIDATA = 'active-candidate-pending-evals'
 const STATUS_PROMOVIDA = 'approved'
 const HASH_SHA256 = /^[a-f0-9]{64}$/
@@ -236,6 +248,8 @@ async function carregar(pluginRoot, verificarEvidenciaConfiavel) {
   const contractPath = caminhoInterno(diretorio, manifesto.contract)
   const markdown = await readFile(contractPath, 'utf8')
   const nucleus = extrairNucleo(markdown)
+  const textAdapter = extrairBlocoTextualOpcional(markdown, 'Adaptador textual v1')
+  const continuityAnchor = extrairBlocoTextualOpcional(markdown, 'Âncora de continuidade')
   if (!nucleus.includes(`PERSONALIDADE ${manifesto.id}.`)) {
     throw new Error('Identidade do núcleo não corresponde ao manifesto.')
   }
@@ -244,7 +258,14 @@ async function carregar(pluginRoot, verificarEvidenciaConfiavel) {
     pluginRoot,
     { verificarEvidenciaConfiavel }
   )
-  return { manifest: manifesto, markdown, nucleus, promotionEvidence }
+  return {
+    manifest: manifesto,
+    markdown,
+    nucleus,
+    textAdapter,
+    continuityAnchor,
+    promotionEvidence
+  }
 }
 
 export async function lerPersonalidadeAtiva({

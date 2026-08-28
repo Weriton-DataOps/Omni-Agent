@@ -85,7 +85,7 @@ a identidade nem substituir a conversa real.
 
 ## Conversa e personalidade
 
-- [ ] personalidade-base v1 aparece sem recitação do contrato;
+- [ ] personalidade v3 candidata aparece desde a primeira resposta, sem recitação do contrato;
 - [ ] diálogo tem personalidade imediatamente reconhecível, com presença, calor e iniciativa;
 - [ ] humor, sarcasmo e analogias aparecem integrados ao raciocínio, sem virar piada pronta;
 - [ ] inteligência aparece em conexões, efeitos de segunda ordem, opinião fundamentada e ângulos originais;
@@ -94,6 +94,8 @@ a identidade nem substituir a conversa real.
 - [ ] Omni compara pedido, ação e resultado antes de concluir;
 - [ ] pedido claro produz ação em vez de oferta genérica;
 - [ ] correção do proprietário muda o turno seguinte.
+- [ ] voto explícito do proprietário ajusta a resposta seguinte, fica ligado ao turno por fingerprints
+  e não persiste conversa bruta;
 - [ ] resultado registrado pelo gate usa duas sessões reais, revisão explícita do proprietário,
   recibos criptográficos verificados internamente e identidade externa autenticada;
 

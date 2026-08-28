@@ -41,7 +41,7 @@ function promotion(evidenceSha256 = HASH_A) {
 function promotedManifest(extras = {}) {
   return {
     schemaVersion: 1,
-    id: 'omni-persona-v1-candidate',
+    id: 'omni-persona-v3-candidate',
     status: 'approved',
     contract: './contrato.md',
     supersedes: null,
@@ -105,12 +105,12 @@ test('a personalidade ativa declara promoção nula enquanto for candidata', asy
 test('promoção preserva o identificador versionado da personalidade', () => {
   const manifest = promotedManifest()
   assert.equal(validarPromocao(manifest), manifest)
-  assert.equal(manifest.id, 'omni-persona-v1-candidate')
+  assert.equal(manifest.id, 'omni-persona-v3-candidate')
 })
 
 test('status approved exige rodada e referência criptográfica', () => {
   assert.throws(
-    () => validarPromocao({ schemaVersion: 1, id: 'omni-persona-v1-candidate', status: 'approved' }),
+    () => validarPromocao({ schemaVersion: 1, id: 'omni-persona-v3-candidate', status: 'approved' }),
     /exige registro da rodada/
   )
   assert.throws(
@@ -124,7 +124,7 @@ test('candidata não pode carregar registro de promoção', () => {
     () =>
       validarPromocao({
         schemaVersion: 1,
-        id: 'omni-persona-v1-candidate',
+        id: 'omni-persona-v3-candidate',
         status: 'active-candidate-pending-evals',
         promotion: promotion()
       }),
@@ -134,7 +134,7 @@ test('candidata não pode carregar registro de promoção', () => {
 
 test('status e identificador desconhecidos não passam', () => {
   assert.throws(
-    () => validarPromocao({ schemaVersion: 1, id: 'omni-persona-v1-candidate', status: 'quase-la' }),
+    () => validarPromocao({ schemaVersion: 1, id: 'omni-persona-v3-candidate', status: 'quase-la' }),
     /não é reconhecido/
   )
   assert.throws(

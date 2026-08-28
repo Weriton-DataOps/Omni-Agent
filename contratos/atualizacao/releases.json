@@ -135,6 +135,17 @@
         "Passou a expor retracoes e supersessoes nas metricas e no estado operacional do Omni.",
         "Exigiu ausencia real da skill e do catalogo antes da retracao e fez estado terminal corrompido falhar fechado sem apagar evidencia."
       ]
+    },
+    {
+      "version": "0.21.0",
+      "changes": [
+        "Ativou a personalidade v3 do Inventor Cumplice com galeria de exemplos, adaptador textual e ancora de continuidade.",
+        "Passou a injetar a identidade desde a ativacao, preserva-la quando memoria ou contexto falham e reforca-la depois de ferramentas.",
+        "Transformou os 26 esperados da suite de personalidade em respostas-exemplo executaveis e alinhou os gates a voz aprovada.",
+        "Ligou votos explicitos do proprietario ao turno por fingerprints, sem guardar conversa bruta, com ajuste reversivel da resposta seguinte.",
+        "Tornou sinais repetidos candidatas revisaveis e expos feedback, adaptador e ancora no operador canonico.",
+        "Removeu a consulta redundante de personalidade e estado que atrasava a primeira resposta sem acrescentar contexto."
+      ]
     }
   ]
 }
