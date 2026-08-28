@@ -9,8 +9,8 @@
     ".claude-plugin/plugin.json"
   ],
   "identity": {
-    "version": "0.20.0",
-    "releaseFingerprint": "83579983a290d55d4bf8bfdfb90fb0460ceaf7a20429a8cfa22bfe0d1f42f4fe",
+    "version": "0.20.1",
+    "releaseFingerprint": "edf160c5a1d48fd587dbfb18f5dff6ff45429bb8c7b667114d0b71183ae62a9e",
     "required": ["version", "releaseFingerprint"],
     "sameVersionDifferentFingerprint": "diverged",
     "missingFingerprint": "legacy-unverifiable"

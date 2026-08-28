@@ -309,7 +309,7 @@ async function localizarEntradaInstalada(pluginRoot, candidate) {
     if (!reference.implementationReceipt) return null
     const raw = await readFile(target)
     if (hash(raw) !== reference.contentFingerprint) return null
-    return { fingerprint: hash(raw) }
+    return { fingerprint: hash(raw), entry: null }
   }
   const document = JSON.parse(await readFile(target, 'utf8'))
   if (!Array.isArray(document[reference.collection])) return null
@@ -323,7 +323,68 @@ async function localizarEntradaInstalada(pluginRoot, candidate) {
     fingerprintSemanticoMelhoria({ destination: item.destination, statement: item.text }) ===
       reference.semanticFingerprint
   )
-  return entry ? { fingerprint: hash(JSON.stringify(entry)) } : null
+  return entry ? {
+    fingerprint: hash(JSON.stringify(entry)),
+    entry,
+    semanticFingerprint: fingerprintSemanticoMelhoria({
+      destination: entry.destination,
+      statement: entry.text
+    })
+  } : null
+}
+
+async function localizarSupersessaoInstalada(
+  pluginRoot,
+  candidate,
+  cycle,
+  installedByCandidate,
+  installedCandidateIds,
+  { version, payloadFingerprint, verifiedAt }
+) {
+  const reference = candidate.artifactRef
+  if (reference?.kind !== 'portable-entry') return null
+  const target = await resolverArtefato(pluginRoot, caminhoPortatil(reference.path))
+  const document = JSON.parse(await readFile(target, 'utf8'))
+  if (!Array.isArray(document[reference.collection])) return null
+
+  const canonicalEntry = document[reference.collection].find((item) => item?.id === reference.entryId)
+  if (!canonicalEntry) return null
+  const semanticFingerprint = fingerprintSemanticoMelhoria({
+    destination: canonicalEntry.destination,
+    statement: canonicalEntry.text
+  })
+  if (semanticFingerprint === reference.semanticFingerprint) return null
+
+  const mergedCandidateIds = canonicalEntry.evidence?.mergedCandidateIds
+  if (!Array.isArray(mergedCandidateIds) || mergedCandidateIds.length === 0) return null
+  const canonicalFingerprint = hash(JSON.stringify(canonicalEntry))
+  const replacements = cycle.improvementCandidates.filter((replacement) => {
+    const installed = installedByCandidate.get(replacement.id)
+    return replacement.id !== candidate.id &&
+      mergedCandidateIds.includes(replacement.id) &&
+      installedCandidateIds.has(replacement.id) &&
+      replacement.fingerprint === canonicalEntry.evidence?.fingerprint &&
+      replacement.artifactRef?.kind === 'portable-entry' &&
+      replacement.artifactRef.path === reference.path &&
+      replacement.artifactRef.collection === reference.collection &&
+      replacement.artifactRef.semanticFingerprint === semanticFingerprint &&
+      installed?.fingerprint === canonicalFingerprint &&
+      installed?.semanticFingerprint === semanticFingerprint
+  })
+  if (replacements.length !== 1) return null
+
+  return {
+    proof: 'explicit-merged-candidate',
+    replacementCandidateId: replacements[0].id,
+    canonicalEntryId: canonicalEntry.id,
+    path: reference.path,
+    collection: reference.collection,
+    semanticFingerprint,
+    artifactFingerprint: canonicalFingerprint,
+    version,
+    payloadFingerprint,
+    verifiedAt
+  }
 }
 
 export async function registrarReadbackOperacionalInstalado(casa, {
@@ -349,10 +410,22 @@ export async function registrarReadbackOperacionalInstalado(casa, {
   }
   const cycle = await lerCicloOperacional(casa)
   let verified = 0
+  let superseded = 0
   const verifiedAt = agora(now)
+  const installedByCandidate = new Map()
+  const installedCandidateIds = new Set()
+  for (const candidate of cycle.improvementCandidates) {
+    if (!candidate.artifactRef || !['materialized-pending-release', 'installed-verified'].includes(candidate.status)) {
+      continue
+    }
+    const installed = await localizarEntradaInstalada(pluginRoot, candidate)
+    if (!installed) continue
+    installedByCandidate.set(candidate.id, installed)
+    installedCandidateIds.add(candidate.id)
+  }
   for (const candidate of cycle.improvementCandidates) {
     if (candidate.status !== 'materialized-pending-release' || !candidate.artifactRef) continue
-    const installed = await localizarEntradaInstalada(pluginRoot, candidate)
+    const installed = installedByCandidate.get(candidate.id)
     if (!installed) continue
     await marcarMelhoriaOperacional(casa, candidate.id, {
       status: 'installed-verified',
@@ -366,5 +439,23 @@ export async function registrarReadbackOperacionalInstalado(casa, {
     }, { at: now })
     verified += 1
   }
-  return { result: 'checked', verified, version, payloadFingerprint }
+  for (const candidate of cycle.improvementCandidates) {
+    if (candidate.status !== 'materialized-pending-release' || !candidate.artifactRef) continue
+    if (installedByCandidate.has(candidate.id)) continue
+    const supersededBy = await localizarSupersessaoInstalada(
+      pluginRoot,
+      candidate,
+      cycle,
+      installedByCandidate,
+      installedCandidateIds,
+      { version, payloadFingerprint, verifiedAt }
+    )
+    if (!supersededBy) continue
+    await marcarMelhoriaOperacional(casa, candidate.id, {
+      status: 'superseded',
+      supersededBy
+    }, { at: now })
+    superseded += 1
+  }
+  return { result: 'checked', verified, superseded, version, payloadFingerprint }
 }

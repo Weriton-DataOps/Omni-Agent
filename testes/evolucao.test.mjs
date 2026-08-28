@@ -4,7 +4,13 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 
-import { caminhoDoCiclo, lerCicloOperacional, proporMelhoriaOperacional } from '../runtime/ciclo-operacional.mjs'
+import {
+  caminhoDoCiclo,
+  fingerprintSemanticoMelhoria,
+  lerCicloOperacional,
+  marcarMelhoriaOperacional,
+  proporMelhoriaOperacional
+} from '../runtime/ciclo-operacional.mjs'
 import {
   materializarMelhoriaOperacional,
   registrarImplementacaoOperacional,
@@ -261,6 +267,124 @@ test('readback operacional so torna efetiva uma entrada presente em release inst
 
     const reinforced = await proporMelhoriaOperacional(casa, input)
     assert.equal(reinforced.candidate.status, 'installed-verified')
+  } finally {
+    await rm(base, { recursive: true, force: true })
+  }
+})
+
+test('readback encerra como superseded a semantica antiga substituida explicitamente por candidata instalada', async () => {
+  const base = await mkdtemp(join(tmpdir(), 'omni-evolution-superseded-'))
+  const casa = join(base, 'home')
+  const repo = join(base, 'repo')
+  try {
+    await mkdir(join(repo, '.git'), { recursive: true })
+    await mkdir(join(repo, 'contratos', 'eval'), { recursive: true })
+    await writeFile(join(repo, 'package.json'), JSON.stringify({ name: 'omni-agent' }), 'utf8')
+    const learnedPath = join(repo, 'contratos', 'eval', 'casos-aprendidos.json')
+    await writeFile(learnedPath, JSON.stringify({
+      schemaVersion: 1, contract: 'omni-learned-eval-cases-v1', cases: []
+    }), 'utf8')
+
+    const oldInput = {
+      category: 'owner-correction',
+      destination: 'personality',
+      statement: 'Responder com calor e analogias naturais na medida da conversa.'
+    }
+    await proporMelhoriaOperacional(casa, oldInput)
+    const oldReady = await proporMelhoriaOperacional(casa, oldInput)
+    await materializarMelhoriaOperacional(casa, oldReady.candidate.id, repo)
+
+    const replacementInput = {
+      category: 'owner-correction',
+      destination: 'personality',
+      statement: 'Manter personalidade intensa com inteligencia, humor, sarcasmo e analogias.'
+    }
+    await proporMelhoriaOperacional(casa, replacementInput)
+    const replacementReady = await proporMelhoriaOperacional(casa, replacementInput)
+    const learned = JSON.parse(await readFile(learnedPath, 'utf8'))
+    const canonical = learned.cases[0]
+    canonical.text = replacementReady.candidate.statement
+    canonical.evidence = {
+      occurrences: replacementReady.candidate.occurrences,
+      fingerprint: replacementReady.candidate.fingerprint,
+      mergedCandidateIds: [replacementReady.candidate.id]
+    }
+    await writeFile(learnedPath, `${JSON.stringify(learned, null, 2)}\n`, 'utf8')
+    await marcarMelhoriaOperacional(casa, replacementReady.candidate.id, {
+      status: 'materialized-pending-release',
+      artifactRef: {
+        kind: 'portable-entry',
+        path: 'contratos/eval/casos-aprendidos.json',
+        collection: 'cases',
+        entryId: replacementReady.candidate.id,
+        semanticFingerprint: fingerprintSemanticoMelhoria(replacementReady.candidate),
+        contentFingerprint: null
+      }
+    })
+
+    const fingerprint = await prepararReleaseIntegra(repo)
+    const readback = await registrarReadbackOperacionalInstalado(casa, {
+      pluginRoot: repo,
+      version: '9.9.9',
+      payloadFingerprint: fingerprint,
+      now: '2026-08-28T18:00:00.000Z'
+    })
+    assert.equal(readback.verified, 1)
+    assert.equal(readback.superseded, 1)
+    const cycle = await lerCicloOperacional(casa)
+    const old = cycle.improvementCandidates.find((item) => item.id === oldReady.candidate.id)
+    const replacement = cycle.improvementCandidates.find((item) => item.id === replacementReady.candidate.id)
+    assert.equal(old.status, 'superseded')
+    assert.equal(old.installedReadback, null)
+    assert.equal(old.supersededBy.proof, 'explicit-merged-candidate')
+    assert.equal(old.supersededBy.replacementCandidateId, replacement.id)
+    assert.equal(old.supersededBy.canonicalEntryId, old.id)
+    assert.equal(old.supersededBy.payloadFingerprint, fingerprint)
+    assert.equal(old.transitionHistory.at(-1).kind, 'installed-semantic-supersession')
+    assert.equal(replacement.status, 'installed-verified')
+
+    const reinforced = await proporMelhoriaOperacional(casa, oldInput)
+    assert.equal(reinforced.candidate.status, 'superseded')
+  } finally {
+    await rm(base, { recursive: true, force: true })
+  }
+})
+
+test('readback nao adivinha supersessao por mudanca de texto sem vinculo explicito', async () => {
+  const base = await mkdtemp(join(tmpdir(), 'omni-evolution-not-superseded-'))
+  const casa = join(base, 'home')
+  const repo = join(base, 'repo')
+  try {
+    await mkdir(join(repo, '.git'), { recursive: true })
+    await mkdir(join(repo, 'contratos', 'operacao'), { recursive: true })
+    await writeFile(join(repo, 'package.json'), JSON.stringify({ name: 'omni-agent' }), 'utf8')
+    const learnedPath = join(repo, 'contratos', 'operacao', 'regras-aprendidas.json')
+    await writeFile(learnedPath, JSON.stringify({
+      schemaVersion: 1, contract: 'omni-learned-rules-v1', rules: []
+    }), 'utf8')
+    const input = {
+      category: 'owner-correction',
+      destination: 'operational-rule',
+      statement: 'Preservar o sentido antigo.'
+    }
+    await proporMelhoriaOperacional(casa, input)
+    const ready = await proporMelhoriaOperacional(casa, input)
+    await materializarMelhoriaOperacional(casa, ready.candidate.id, repo)
+    const learned = JSON.parse(await readFile(learnedPath, 'utf8'))
+    learned.rules[0].text = 'Texto novo sem prova de substituicao.'
+    await writeFile(learnedPath, `${JSON.stringify(learned, null, 2)}\n`, 'utf8')
+
+    const fingerprint = await prepararReleaseIntegra(repo)
+    const readback = await registrarReadbackOperacionalInstalado(casa, {
+      pluginRoot: repo,
+      version: '9.9.9',
+      payloadFingerprint: fingerprint
+    })
+    assert.equal(readback.verified, 0)
+    assert.equal(readback.superseded, 0)
+    const candidate = (await lerCicloOperacional(casa)).improvementCandidates[0]
+    assert.equal(candidate.status, 'materialized-pending-release')
+    assert.equal(candidate.supersededBy, null)
   } finally {
     await rm(base, { recursive: true, force: true })
   }

@@ -125,6 +125,16 @@
         "Preparou e tornou visivel a delegacao automatica antes do despacho e restringiu o sensor de personalidade a feedback negativo inequivoco.",
         "Exigiu familia de verificacao compativel alem do marcador para validar testes de falhas e atalhos."
       ]
+    },
+    {
+      "version": "0.20.1",
+      "changes": [
+        "Encerrou como retracted a skill formalmente retirada e substituida por correcao de runtime, preservando evidencias sem forjar instalacao.",
+        "Encerrou como superseded a melhoria declarativa antiga incorporada explicitamente por uma candidata canonica instalada.",
+        "Removeu falsos avisos de readback pendente sem reduzir a verificacao de release, artefato, semantica ou proveniencia.",
+        "Passou a expor retracoes e supersessoes nas metricas e no estado operacional do Omni.",
+        "Exigiu ausencia real da skill e do catalogo antes da retracao e fez estado terminal corrompido falhar fechado sem apagar evidencia."
+      ]
     }
   ]
 }

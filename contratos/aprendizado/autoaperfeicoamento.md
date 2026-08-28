@@ -26,11 +26,18 @@ experiência
 ```text
 draft → evaluated → approved → materialized-pending-version
    └───────────────→ rejected
+                                  └→ retracted
 ```
 
 `materialized-pending-version` significa que os artefatos foram criados na árvore-fonte, mas ainda
 precisam passar pelos gates do repositório, receber versão, commit e publicação. O runtime nunca faz
-commit ou push.
+commit ou push. Depois da instalação íntegra, o readback fica registrado dentro da promoção; isso não
+apaga a proveniência do estado materializado.
+
+`retracted` é terminal e só aparece quando a própria release instalada contém o registro canônico de
+retração, identifica exatamente a proposta e o artefato retirado e prova os arquivos de runtime e de
+teste que o substituíram. O estado preserva a evidência histórica, mas não cria `installedReadback`
+para uma skill que deixou de existir.
 
 ## Gate para atalhos
 

@@ -298,6 +298,142 @@ test('promoção materializa skill, catálogo e auditoria sem commit ou push', a
   }
 })
 
+test('readback reconcilia skill retraida com runtime instalado sem forjar instalacao da skill', async () => {
+  const home = await temporaryHome('omni-improvement-retracted-')
+  const repo = await sourceRepository()
+  const retractedId = 'improvement-a12b2896-0db3-447e-90bf-dc20f0fb2a95'
+  try {
+    const shortcut = await validatedShortcut(home)
+    const draft = await proporMelhoriaDeAtalho(home, shortcut.id)
+    await avaliarMelhoria(home, draft.proposal.id)
+    await decidirMelhoria(home, draft.proposal.id, 'approve', { portable: true, roleFit: true })
+    await promoverMelhoria(home, draft.proposal.id, repo)
+
+    const storePath = caminhoDoAutoaperfeicoamento(home)
+    const local = JSON.parse(await readFile(storePath, 'utf8'))
+    const proposal = local.proposals[0]
+    proposal.id = retractedId
+    await writeFile(storePath, `${JSON.stringify(local, null, 2)}\n`, 'utf8')
+
+    const auditPath = join(repo, ...proposal.promotion.auditPath.split('/'))
+    const audit = JSON.parse(await readFile(auditPath, 'utf8'))
+    const skillName = proposal.draft.capability.name
+    audit.id = retractedId
+    audit.artifacts = {
+      retractedSkill: proposal.promotion.artifacts.skill,
+      retractedSkillSha256: proposal.promotion.artifacts.skillSha256,
+      retractedCatalogEntry: skillName,
+      replacementRuntime: 'runtime/observador.mjs',
+      replacementTests: 'testes/observador.test.mjs'
+    }
+    audit.retraction = {
+      reason: 'A causa foi corrigida no sensor de runtime; manter a skill duplicaria a implementacao.',
+      preservesEvidence: true,
+      retractedAt: '2026-08-28T00:00:00.000Z'
+    }
+    audit.status = 'retracted-replaced-by-runtime-fix'
+    await writeFile(auditPath, `${JSON.stringify(audit, null, 2)}\n`, 'utf8')
+    const catalogPath = join(repo, 'contratos', 'capacidades', 'catalogo.json')
+    const catalog = JSON.parse(await readFile(catalogPath, 'utf8'))
+    await mkdir(join(repo, 'runtime'), { recursive: true })
+    await mkdir(join(repo, 'testes'), { recursive: true })
+    await writeFile(join(repo, 'runtime', 'observador.mjs'), 'export const detector = "v2"\n', 'utf8')
+    await writeFile(join(repo, 'testes', 'observador.test.mjs'), 'export const regressao = true\n', 'utf8')
+
+    let payloadFingerprint = await prepararReleaseIntegra(repo)
+    await assert.rejects(
+      registrarReadbackInstalado(home, {
+        pluginRoot: repo,
+        version: '9.9.9',
+        payloadFingerprint
+      }),
+      /ainda contem a skill/
+    )
+    await rm(join(repo, 'skills', skillName), { recursive: true, force: true })
+    payloadFingerprint = await prepararReleaseIntegra(repo)
+    await assert.rejects(
+      registrarReadbackInstalado(home, {
+        pluginRoot: repo,
+        version: '9.9.9',
+        payloadFingerprint
+      }),
+      /ainda contem a capacidade/
+    )
+    catalog.capabilities = catalog.capabilities.filter((item) => item.name !== skillName)
+    await writeFile(catalogPath, `${JSON.stringify(catalog, null, 2)}\n`, 'utf8')
+
+    const canonicalAuditPath = proposal.promotion.auditPath
+    local.proposals[0].promotion.auditPath = '../promocao-fora.json'
+    await writeFile(storePath, `${JSON.stringify(local, null, 2)}\n`, 'utf8')
+    payloadFingerprint = await prepararReleaseIntegra(repo)
+    await assert.rejects(
+      registrarReadbackInstalado(home, {
+        pluginRoot: repo,
+        version: '9.9.9',
+        payloadFingerprint
+      }),
+      /auditPath portatil e canonico/
+    )
+    local.proposals[0].promotion.auditPath = canonicalAuditPath
+    await writeFile(storePath, `${JSON.stringify(local, null, 2)}\n`, 'utf8')
+
+    audit.id = 'improvement-outra-proposta'
+    await writeFile(auditPath, `${JSON.stringify(audit, null, 2)}\n`, 'utf8')
+    payloadFingerprint = await prepararReleaseIntegra(repo)
+    await assert.rejects(
+      registrarReadbackInstalado(home, {
+        pluginRoot: repo,
+        version: '9.9.9',
+        payloadFingerprint
+      }),
+      /nao corresponde integralmente/
+    )
+
+    audit.id = retractedId
+    await writeFile(auditPath, `${JSON.stringify(audit, null, 2)}\n`, 'utf8')
+    payloadFingerprint = await prepararReleaseIntegra(repo)
+    const readback = await registrarReadbackInstalado(home, {
+      pluginRoot: repo,
+      version: '9.9.9',
+      payloadFingerprint,
+      now: '2026-08-28T19:00:00.000Z'
+    })
+    assert.equal(readback.verified, 0)
+    assert.equal(readback.retracted, 1)
+
+    const reconciled = await lerAutoaperfeicoamento(home)
+    const retracted = reconciled.proposals[0]
+    assert.equal(retracted.id, retractedId)
+    assert.equal(retracted.status, 'retracted')
+    assert.equal(retracted.promotion.status, 'retracted')
+    assert.equal(Object.hasOwn(retracted.promotion, 'installedReadback'), false)
+    assert.equal(retracted.promotion.retraction.status, 'retracted-replaced-by-runtime-fix')
+    assert.equal(retracted.promotion.retraction.replacedBy.runtime, 'runtime/observador.mjs')
+    assert.deepEqual(retracted.promotion.retraction.replacedBy.tests, ['testes/observador.test.mjs'])
+    assert.equal(retracted.promotion.retraction.evidence.auditPath, canonicalAuditPath)
+    assert.match(retracted.promotion.retraction.evidence.auditSha256, /^[a-f0-9]{64}$/)
+    assert.equal(retracted.promotion.retraction.evidence.preserved, true)
+    assert.equal(retracted.promotion.retraction.evidence.source.id, proposal.source.id)
+    assert.equal(retracted.promotion.retraction.evidence.evaluation.passed, true)
+    assert.equal(retracted.promotion.retraction.observedInstalledRelease.version, '9.9.9')
+    assert.equal(retracted.promotion.retraction.observedInstalledRelease.payloadFingerprint, payloadFingerprint)
+
+    const closed = await decidirMelhoria(home, retractedId, 'reject')
+    assert.equal(closed.result, 'closed')
+    assert.equal(closed.proposal.status, 'retracted')
+    const repeated = await registrarReadbackInstalado(home, {
+      pluginRoot: repo,
+      version: '9.9.9',
+      payloadFingerprint
+    })
+    assert.equal(repeated.retracted, 0)
+    assert.equal(repeated.verified, 0)
+  } finally {
+    await rm(home, { recursive: true, force: true })
+    await rm(repo, { recursive: true, force: true })
+  }
+})
+
 test('runtime antigo recusa store futuro sem sobrescrever', async () => {
   const home = await temporaryHome('omni-improvement-future-')
   try {

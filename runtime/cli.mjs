@@ -256,6 +256,7 @@ async function main() {
         evaluated: improvementStore.proposals.filter((item) => item.status === 'evaluated').length,
         approved: improvementStore.proposals.filter((item) => item.status === 'approved').length,
         materialized: improvementStore.proposals.filter((item) => item.status === 'materialized-pending-version').length,
+        retracted: improvementStore.proposals.filter((item) => item.status === 'retracted').length,
         capabilityProposals: improvementStore.proposals.length,
         operationalCandidates: operationalCycle.improvementCandidates.length,
         totalProposals: improvementStore.proposals.length + operationalCycle.improvementCandidates.length,
@@ -308,7 +309,14 @@ async function main() {
         sessions: operationalCycle.sessions.length,
         delegations: operationalCycle.delegations.length,
         events: operationalCycle.events.length,
-        improvementCandidates: operationalCycle.improvementCandidates.length
+        improvementCandidates: operationalCycle.improvementCandidates.length,
+        improvements: {
+          ready: operationalCycle.improvementCandidates.filter((item) => item.status === 'ready').length,
+          implementationRequired: operationalCycle.improvementCandidates.filter((item) => item.status === 'implementation-required').length,
+          materializedPendingRelease: operationalCycle.improvementCandidates.filter((item) => item.status === 'materialized-pending-release').length,
+          installedVerified: operationalCycle.improvementCandidates.filter((item) => item.status === 'installed-verified').length,
+          superseded: operationalCycle.improvementCandidates.filter((item) => item.status === 'superseded').length
+        }
       },
       dailyAudit: {
         schemaVersion: dailyScan.schemaVersion,

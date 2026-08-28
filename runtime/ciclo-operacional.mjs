@@ -36,14 +36,16 @@ const IMPROVEMENT_STATES = new Set([
   'ready',
   'implementation-required',
   'materialized-pending-release',
-  'installed-verified'
+  'installed-verified',
+  'superseded'
 ])
 const IMPROVEMENT_TRANSITIONS = {
   observing: ['ready'],
   ready: ['implementation-required', 'materialized-pending-release'],
   'implementation-required': ['materialized-pending-release'],
-  'materialized-pending-release': ['installed-verified'],
-  'installed-verified': []
+  'materialized-pending-release': ['installed-verified', 'superseded'],
+  'installed-verified': [],
+  superseded: []
 }
 const PORTABLE_ARTIFACTS = {
   'operational-rule': { path: 'contratos/operacao/regras-aprendidas.json', collection: 'rules' },
@@ -104,9 +106,11 @@ async function contrato() {
     JSON.stringify(value.improvement.transitions) !== JSON.stringify(IMPROVEMENT_TRANSITIONS) ||
     value.improvement.minimumOccurrencesReady !== 2 ||
     value.improvement.effectiveState !== 'installed-verified' ||
+    value.improvement.supersededState !== 'superseded' ||
     value.improvement.materializedState !== 'materialized-pending-release' ||
     value.improvement.reinforcementNeverRegressesState !== true ||
     value.improvement.installedVerificationRequiresReleaseIntegrity !== true ||
+    value.improvement.supersededRequiresExplicitInstalledReplacement !== true ||
     value.improvement.sourceImplementationRequiresAuditedMutationAndReadback !== true ||
     value.privacy?.storeRawConversation !== false ||
     value.privacy?.storeRawToolOutput !== false ||
@@ -404,6 +408,7 @@ function referenciaPortatil(item) {
 }
 
 function migrarMelhoriaLegada(item) {
+  if (item?.lifecycleVersion === 2 && Object.hasOwn(item, 'supersededBy')) return item
   const timestamp = dataValida(item?.updatedAt)
     ? item.updatedAt
     : dataValida(item?.createdAt) ? item.createdAt : agora()
@@ -417,7 +422,10 @@ function migrarMelhoriaLegada(item) {
   if (status === 'installed-verified' && item?.installedReadback?.verified !== true) {
     status = 'materialized-pending-release'
   }
-  let materialized = ['materialized-pending-release', 'installed-verified'].includes(status)
+  if (status === 'superseded' && !supersessaoMelhoriaValida(item?.supersededBy)) {
+    status = 'materialized-pending-release'
+  }
+  let materialized = ['materialized-pending-release', 'installed-verified', 'superseded'].includes(status)
   let artifactRef = materialized
     ? item.artifactRef ?? referenciaPortatil(item)
     : null
@@ -458,6 +466,7 @@ function migrarMelhoriaLegada(item) {
       ? dataValida(item?.materializedAt) ? item.materializedAt : timestamp
       : null,
     installedReadback: status === 'installed-verified' ? item.installedReadback : null,
+    supersededBy: status === 'superseded' ? item.supersededBy : null,
     transitionHistory
   }
 }
@@ -596,6 +605,22 @@ function readbackMelhoriaValido(value) {
   )
 }
 
+function supersessaoMelhoriaValida(value) {
+  return Boolean(
+    value &&
+    value.proof === 'explicit-merged-candidate' &&
+    typeof value.replacementCandidateId === 'string' && value.replacementCandidateId.startsWith('improvement-') &&
+    typeof value.canonicalEntryId === 'string' && value.canonicalEntryId.startsWith('improvement-') &&
+    caminhoPortatilValido(value.path) &&
+    typeof value.collection === 'string' && value.collection.length > 0 && value.collection.length <= 80 &&
+    HASH_SHA256.test(value.semanticFingerprint ?? '') &&
+    HASH_SHA256.test(value.artifactFingerprint ?? '') &&
+    typeof value.version === 'string' && value.version.length > 0 && value.version.length <= 80 &&
+    HASH_SHA256.test(value.payloadFingerprint ?? '') &&
+    dataValida(value.verifiedAt)
+  )
+}
+
 function melhoriaValida(item) {
   const base = Boolean(
     item &&
@@ -611,6 +636,7 @@ function melhoriaValida(item) {
     (item.artifactRef === null || referenciaMelhoriaValida(item.artifactRef)) &&
     (item.materializedAt === null || dataValida(item.materializedAt)) &&
     (item.installedReadback === null || readbackMelhoriaValido(item.installedReadback)) &&
+    (item.supersededBy === null || supersessaoMelhoriaValida(item.supersededBy)) &&
     Array.isArray(item.transitionHistory) && item.transitionHistory.length > 0 &&
     item.transitionHistory.every((transition) =>
       IMPROVEMENT_STATES.has(transition.to) &&
@@ -623,17 +649,32 @@ function melhoriaValida(item) {
   if (item.status === 'observing' && item.occurrences >= 2) return false
   if (item.status === 'ready' && item.occurrences < 2) return false
   if (['observing', 'ready'].includes(item.status)) {
-    return item.artifact === null && item.artifactRef === null && item.materializedAt === null && item.installedReadback === null
+    return item.artifact === null && item.artifactRef === null && item.materializedAt === null &&
+      item.installedReadback === null && item.supersededBy === null
   }
   if (item.status === 'implementation-required') {
     return typeof item.artifact === 'string' && item.artifact.length > 0 &&
-      item.artifactRef === null && item.materializedAt === null && item.installedReadback === null
+      item.artifactRef === null && item.materializedAt === null && item.installedReadback === null &&
+      item.supersededBy === null
   }
   if (!referenciaMelhoriaValida(item.artifactRef) || item.artifact !== item.artifactRef.path || !dataValida(item.materializedAt)) {
     return false
   }
-  if (item.status === 'materialized-pending-release') return item.installedReadback === null
-  return readbackMelhoriaValido(item.installedReadback)
+  if (item.status === 'materialized-pending-release') {
+    return item.installedReadback === null && item.supersededBy === null
+  }
+  if (item.status === 'installed-verified') {
+    return readbackMelhoriaValido(item.installedReadback) && item.supersededBy === null
+  }
+  return item.artifactRef.kind === 'portable-entry' &&
+    item.installedReadback === null &&
+    supersessaoMelhoriaValida(item.supersededBy) &&
+    item.artifactRef.semanticFingerprint === fingerprintSemanticoMelhoria(item) &&
+    item.supersededBy.replacementCandidateId !== item.id &&
+    item.supersededBy.canonicalEntryId === item.artifactRef.entryId &&
+    item.supersededBy.path === item.artifactRef.path &&
+    item.supersededBy.collection === item.artifactRef.collection &&
+    item.supersededBy.semanticFingerprint !== item.artifactRef.semanticFingerprint
 }
 
 function valido(store, path) {
@@ -1169,6 +1210,7 @@ export async function proporMelhoriaOperacional(casa, input, { at } = {}) {
       artifactRef: null,
       materializedAt: null,
       installedReadback: null,
+      supersededBy: null,
       transitionHistory: [{
         from: null,
         to: 'observing',
@@ -1200,6 +1242,7 @@ export async function marcarMelhoriaOperacional(casa, id, input = {}, { at } = {
       candidate.artifactRef = null
       candidate.materializedAt = null
       candidate.installedReadback = null
+      candidate.supersededBy = null
     }
     if (next === 'materialized-pending-release') {
       const reference = input.artifactRef ?? candidate.artifactRef
@@ -1210,6 +1253,7 @@ export async function marcarMelhoriaOperacional(casa, id, input = {}, { at } = {
       candidate.artifactRef = { ...reference }
       candidate.materializedAt = candidate.materializedAt ?? timestamp
       candidate.installedReadback = null
+      candidate.supersededBy = null
     }
     if (next === 'installed-verified') {
       const readback = input.installedReadback
@@ -1217,12 +1261,30 @@ export async function marcarMelhoriaOperacional(casa, id, input = {}, { at } = {
         throw new Error('Estado installed-verified exige readback integro da release instalada.')
       }
       candidate.installedReadback = { ...readback }
+      candidate.supersededBy = null
+    }
+    if (next === 'superseded') {
+      const supersededBy = input.supersededBy
+      if (
+        candidate.artifactRef?.kind !== 'portable-entry' ||
+        !supersessaoMelhoriaValida(supersededBy) ||
+        supersededBy.replacementCandidateId === candidate.id ||
+        supersededBy.canonicalEntryId !== candidate.artifactRef.entryId ||
+        supersededBy.path !== candidate.artifactRef.path ||
+        supersededBy.collection !== candidate.artifactRef.collection ||
+        candidate.artifactRef.semanticFingerprint !== fingerprintSemanticoMelhoria(candidate) ||
+        supersededBy.semanticFingerprint === candidate.artifactRef.semanticFingerprint
+      ) {
+        throw new Error('Estado superseded exige substituicao explicita por entrada instalada semanticamente distinta.')
+      }
+      candidate.installedReadback = null
+      candidate.supersededBy = { ...supersededBy }
     }
     if (next !== candidate.status) {
       candidate.transitionHistory = [...candidate.transitionHistory, {
         from: candidate.status,
         to: next,
-        kind: 'state-transition',
+        kind: next === 'superseded' ? 'installed-semantic-supersession' : 'state-transition',
         recordedAt: timestamp
       }].slice(-50)
       candidate.status = next

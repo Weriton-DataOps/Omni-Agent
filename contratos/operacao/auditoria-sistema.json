@@ -43,11 +43,13 @@
     "personalityTrustedPassRate",
     "personalityUnverifiedClaims",
     "learningEffectRate",
+    "selfImprovementRetracted",
     "activeQueueDuplicateRate",
     "operationalImprovementReady",
     "operationalImplementationRequired",
     "operationalMaterializedPendingRelease",
     "operationalInstalledVerified",
+    "operationalSuperseded",
     "operationalLearningEffectRate"
   ],
   "privacy": {

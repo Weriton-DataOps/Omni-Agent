@@ -12,7 +12,8 @@ export const SELF_IMPROVEMENT_SCHEMA_VERSION = 1
 export const SELF_IMPROVEMENT_PIPELINE_VERSION = 1
 
 const POLICY_PATH = new URL('../contratos/aprendizado/autoaperfeicoamento.json', import.meta.url)
-const STATUS = new Set(['draft', 'evaluated', 'approved', 'rejected', 'materialized-pending-version'])
+const STATUS = new Set(['draft', 'evaluated', 'approved', 'rejected', 'materialized-pending-version', 'retracted'])
+const RETRACTED_AUDIT_STATUS = 'retracted-replaced-by-runtime-fix'
 
 function agora(value) {
   return value ? new Date(value).toISOString() : new Date().toISOString()
@@ -37,6 +38,102 @@ async function resolverSkillInstalada(pluginRoot, portablePath) {
     throw new Error('O readback recusou artefato fora da raiz instalada.')
   }
   return target
+}
+
+function caminhoAuditoriaValido(portablePath) {
+  return typeof portablePath === 'string' &&
+    /^contratos\/aprendizado\/promocoes\/[a-z0-9][a-z0-9-]{1,80}\.json$/.test(portablePath) &&
+    !isAbsolute(portablePath) &&
+    !portablePath.split('/').includes('..')
+}
+
+async function resolverAuditoriaInstalada(pluginRoot, portablePath) {
+  if (!caminhoAuditoriaValido(portablePath)) {
+    throw new Error('O readback exige auditPath portatil e canonico dentro do payload instalado.')
+  }
+  const canonicalRoot = await realpath(resolve(pluginRoot))
+  const target = await realpath(join(canonicalRoot, ...portablePath.split('/')))
+  if (target !== canonicalRoot && !target.startsWith(`${canonicalRoot}${sep}`)) {
+    throw new Error('O readback recusou auditoria fora da raiz instalada.')
+  }
+  return target
+}
+
+function caminhoSubstitutoValido(value, prefix) {
+  return typeof value === 'string' &&
+    value.startsWith(`${prefix}/`) &&
+    !isAbsolute(value) &&
+    !value.includes('\\') &&
+    !value.split('/').some((part) => !part || part === '.' || part === '..')
+}
+
+async function resolverSubstitutoInstalado(pluginRoot, portablePath, prefix) {
+  if (!caminhoSubstitutoValido(portablePath, prefix)) {
+    throw new Error('A retracao instalada referencia substituto fora do payload canonico.')
+  }
+  const canonicalRoot = await realpath(resolve(pluginRoot))
+  const target = await realpath(join(canonicalRoot, ...portablePath.split('/')))
+  if (target !== canonicalRoot && !target.startsWith(`${canonicalRoot}${sep}`)) {
+    throw new Error('A retracao instalada referencia substituto fora da raiz instalada.')
+  }
+  return target
+}
+
+async function confirmarRetiradaInstalada(pluginRoot, proposal, audit) {
+  const originalSkill = proposal.promotion?.artifacts?.skill
+  try {
+    await resolverSkillInstalada(pluginRoot, originalSkill)
+    throw new Error('A retracao instalada ainda contem a skill declarada como retirada.')
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error
+  }
+
+  const canonicalRoot = await realpath(resolve(pluginRoot))
+  const catalogPath = await realpath(
+    join(canonicalRoot, 'contratos', 'capacidades', 'catalogo.json')
+  )
+  if (catalogPath !== canonicalRoot && !catalogPath.startsWith(`${canonicalRoot}${sep}`)) {
+    throw new Error('A retracao instalada referencia catalogo fora da raiz instalada.')
+  }
+  const catalog = JSON.parse(await readFile(catalogPath, 'utf8'))
+  if (!Array.isArray(catalog.capabilities)) {
+    throw new Error('O catalogo instalado de capacidades e invalido.')
+  }
+  const catalogEntry = audit.artifacts?.retractedCatalogEntry
+  if (catalog.capabilities.some((item) => item?.name === catalogEntry || item?.id === catalogEntry)) {
+    throw new Error('A retracao instalada ainda contem a capacidade declarada como retirada.')
+  }
+}
+
+function retracaoValida(proposal) {
+  if (proposal?.status !== 'retracted') return true
+  const retraction = proposal.promotion?.retraction
+  return Boolean(
+    proposal.promotion?.status === 'retracted' &&
+      retraction?.status === RETRACTED_AUDIT_STATUS &&
+      typeof retraction.reason === 'string' &&
+      retraction.reason.trim().length >= 10 &&
+      Number.isFinite(Date.parse(retraction.retractedAt)) &&
+      caminhoSubstitutoValido(retraction.replacedBy?.runtime, 'runtime') &&
+      Array.isArray(retraction.replacedBy?.tests) &&
+      retraction.replacedBy.tests.length > 0 &&
+      retraction.replacedBy.tests.every((item) => caminhoSubstitutoValido(item, 'testes')) &&
+      caminhoAuditoriaValido(retraction.evidence?.auditPath) &&
+      retraction.evidence.auditPath === proposal.promotion.auditPath &&
+      /^[a-f0-9]{64}$/.test(retraction.evidence?.auditSha256 ?? '') &&
+      retraction.evidence?.preserved === true &&
+      retraction.evidence?.source?.kind === proposal.source?.kind &&
+      retraction.evidence?.source?.id === proposal.source?.id &&
+      retraction.evidence?.evaluation?.protocol === proposal.evaluation?.protocol &&
+      retraction.evidence?.evaluation?.passed === true &&
+      retraction.evidence?.retractedArtifact?.skill === proposal.promotion?.artifacts?.skill &&
+      retraction.evidence?.retractedArtifact?.skillSha256 === proposal.promotion?.artifacts?.skillSha256 &&
+      retraction.evidence?.retractedArtifact?.catalogEntry === proposal.draft?.capability?.name &&
+      /^[a-f0-9]{64}$/.test(retraction.evidence?.retractedArtifact?.skillSha256 ?? '') &&
+      typeof retraction.observedInstalledRelease?.version === 'string' &&
+      /^[a-f0-9]{64}$/.test(retraction.observedInstalledRelease?.payloadFingerprint ?? '') &&
+      Number.isFinite(Date.parse(retraction.observedInstalledRelease?.verifiedAt))
+  )
 }
 
 function slug(value) {
@@ -78,6 +175,7 @@ function propostaValida(item, policy) {
       (item.evaluation === null || typeof item.evaluation === 'object') &&
       (item.approval === null || typeof item.approval === 'object') &&
       (item.promotion === null || typeof item.promotion === 'object') &&
+      retracaoValida(item) &&
       Number.isFinite(Date.parse(item.createdAt)) &&
       Number.isFinite(Date.parse(item.updatedAt))
   )
@@ -424,7 +522,7 @@ export async function avaliarMelhoria(casa, id, { now } = {}) {
     const loaded = await carregar(casa, policy)
     const proposal = loaded.store.proposals.find((item) => item.id === id)
     if (!proposal) return { result: 'not-found', proposal: null }
-    if (proposal.status === 'rejected' || proposal.status === 'materialized-pending-version') {
+    if (['rejected', 'materialized-pending-version', 'retracted'].includes(proposal.status)) {
       return { result: 'closed', proposal }
     }
     const source = proposal.source.kind === 'shortcut'
@@ -449,7 +547,7 @@ export async function decidirMelhoria(casa, id, decision, { portable = false, ro
     const loaded = await carregar(casa, policy)
     const proposal = loaded.store.proposals.find((item) => item.id === id)
     if (!proposal) return { result: 'not-found', proposal: null }
-    if (proposal.status === 'materialized-pending-version') return { result: 'closed', proposal }
+    if (['materialized-pending-version', 'retracted'].includes(proposal.status)) return { result: 'closed', proposal }
     if (decision === 'reject') {
       proposal.status = 'rejected'
       proposal.approval = { decision: 'rejected', portable: false, roleFit: false, decidedAt }
@@ -572,6 +670,7 @@ export async function promoverMelhoria(casa, id, repoRoot, { now } = {}) {
     const loaded = await carregar(casa, policy)
     const proposal = loaded.store.proposals.find((item) => item.id === id)
     if (!proposal) return { result: 'not-found', proposal: null }
+    if (proposal.status === 'retracted') return { result: 'closed', proposal }
     if (
       proposal.status !== 'approved' ||
       proposal.approval?.portable !== true ||
@@ -609,6 +708,92 @@ export async function promoverMelhoria(casa, id, repoRoot, { now } = {}) {
   }
 }
 
+async function lerRetracaoInstalada(pluginRoot, proposal, {
+  version,
+  payloadFingerprint,
+  verifiedAt
+}) {
+  const auditPath = proposal.promotion?.auditPath
+  if (typeof auditPath !== 'string') return null
+  let canonicalAuditPath
+  try {
+    canonicalAuditPath = await resolverAuditoriaInstalada(pluginRoot, auditPath)
+  } catch (error) {
+    if (error?.code === 'ENOENT') return null
+    throw error
+  }
+  const raw = await readFile(canonicalAuditPath, 'utf8')
+  let audit
+  try {
+    audit = JSON.parse(raw)
+  } catch {
+    throw new Error('O auditPath instalado nao contem JSON valido.')
+  }
+  if (audit?.status !== RETRACTED_AUDIT_STATUS) return null
+
+  const replacementRuntime = audit.artifacts?.replacementRuntime
+  const replacementTests = Array.isArray(audit.artifacts?.replacementTests)
+    ? audit.artifacts.replacementTests
+    : [audit.artifacts?.replacementTests].filter(Boolean)
+  const originalSkill = proposal.promotion?.artifacts?.skill
+  const originalSkillSha256 = proposal.promotion?.artifacts?.skillSha256
+  if (
+    audit.schemaVersion !== 1 ||
+    audit.id !== proposal.id ||
+    audit.source?.kind !== proposal.source?.kind ||
+    audit.source?.id !== proposal.source?.id ||
+    audit.evaluation?.protocol !== proposal.evaluation?.protocol ||
+    audit.evaluation?.passed !== true ||
+    typeof originalSkill !== 'string' ||
+    !/^skills\/[a-z0-9][a-z0-9-]{1,80}\/SKILL\.md$/.test(originalSkill) ||
+    !/^[a-f0-9]{64}$/.test(originalSkillSha256 ?? '') ||
+    audit.artifacts?.retractedSkill !== originalSkill ||
+    audit.artifacts?.retractedSkillSha256 !== originalSkillSha256 ||
+    audit.artifacts?.retractedCatalogEntry !== proposal.draft?.capability?.name ||
+    typeof audit.retraction?.reason !== 'string' ||
+    audit.retraction.reason.trim().length < 10 ||
+    audit.retraction?.preservesEvidence !== true ||
+    !Number.isFinite(Date.parse(audit.retraction?.retractedAt)) ||
+    !caminhoSubstitutoValido(replacementRuntime, 'runtime') ||
+    replacementTests.length === 0 ||
+    !replacementTests.every((item) => caminhoSubstitutoValido(item, 'testes'))
+  ) {
+    throw new Error('A retracao instalada nao corresponde integralmente a proposta materializada.')
+  }
+  await confirmarRetiradaInstalada(pluginRoot, proposal, audit)
+  await Promise.all([
+    resolverSubstitutoInstalado(pluginRoot, replacementRuntime, 'runtime'),
+    ...replacementTests.map((item) => resolverSubstitutoInstalado(pluginRoot, item, 'testes'))
+  ])
+
+  return {
+    status: RETRACTED_AUDIT_STATUS,
+    reason: audit.retraction.reason,
+    retractedAt: audit.retraction.retractedAt,
+    replacedBy: {
+      runtime: replacementRuntime,
+      tests: [...replacementTests]
+    },
+    evidence: {
+      auditPath,
+      auditSha256: hash(raw),
+      preserved: true,
+      source: audit.source,
+      evaluation: audit.evaluation,
+      retractedArtifact: {
+        skill: audit.artifacts.retractedSkill,
+        skillSha256: audit.artifacts.retractedSkillSha256,
+        catalogEntry: audit.artifacts.retractedCatalogEntry
+      }
+    },
+    observedInstalledRelease: {
+      version,
+      payloadFingerprint,
+      verifiedAt
+    }
+  }
+}
+
 export async function registrarReadbackInstalado(casa, {
   pluginRoot,
   version,
@@ -641,8 +826,25 @@ export async function registrarReadbackInstalado(casa, {
   try {
     const loaded = await carregar(casa, policy)
     let verified = 0
+    let retracted = 0
     for (const proposal of loaded.store.proposals) {
       if (proposal.status !== 'materialized-pending-version') continue
+      const retraction = await lerRetracaoInstalada(pluginRoot, proposal, {
+        version,
+        payloadFingerprint,
+        verifiedAt
+      })
+      if (retraction) {
+        proposal.status = 'retracted'
+        proposal.promotion = {
+          ...proposal.promotion,
+          status: 'retracted',
+          retraction
+        }
+        proposal.updatedAt = verifiedAt
+        retracted += 1
+        continue
+      }
       const skill = proposal.promotion?.artifacts?.skill
       const expected = proposal.promotion?.artifacts?.skillSha256
       if (typeof skill !== 'string' || !/^[a-f0-9]{64}$/.test(expected ?? '')) continue
@@ -664,8 +866,8 @@ export async function registrarReadbackInstalado(casa, {
       proposal.updatedAt = verifiedAt
       verified += 1
     }
-    if (verified > 0) await gravar(casa, loaded.store, policy)
-    return { result: 'checked', verified, version, payloadFingerprint }
+    if (verified > 0 || retracted > 0) await gravar(casa, loaded.store, policy)
+    return { result: 'checked', verified, retracted, version, payloadFingerprint }
   } finally {
     await release()
   }

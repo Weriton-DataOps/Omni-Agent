@@ -19,20 +19,24 @@
       "ready",
       "implementation-required",
       "materialized-pending-release",
-      "installed-verified"
+      "installed-verified",
+      "superseded"
     ],
     "transitions": {
       "observing": ["ready"],
       "ready": ["implementation-required", "materialized-pending-release"],
       "implementation-required": ["materialized-pending-release"],
-      "materialized-pending-release": ["installed-verified"],
-      "installed-verified": []
+      "materialized-pending-release": ["installed-verified", "superseded"],
+      "installed-verified": [],
+      "superseded": []
     },
     "minimumOccurrencesReady": 2,
     "materializedState": "materialized-pending-release",
     "effectiveState": "installed-verified",
+    "supersededState": "superseded",
     "reinforcementNeverRegressesState": true,
     "installedVerificationRequiresReleaseIntegrity": true,
+    "supersededRequiresExplicitInstalledReplacement": true,
     "sourceImplementationRequiresAuditedMutationAndReadback": true
   },
   "delegation": {

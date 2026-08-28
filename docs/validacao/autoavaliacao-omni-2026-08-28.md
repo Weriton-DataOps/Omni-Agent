@@ -3,6 +3,10 @@
 Data: 28/08/2026
 Estado: diagnóstico incorporado; correções técnicas implementadas; observação comportamental reservada.
 
+Adendo técnico: o readback posterior revelou dois falsos pendentes históricos. A `0.20.1` passou a
+encerrar a skill formalmente retirada como `retracted` e a preferência antiga incorporada pela regra
+canônica como `superseded`. Nenhum dos dois recebe aprovação ou `installed-verified` por atalho.
+
 ## O que o próprio Omni reconheceu
 
 O Omni afirmou que a personalidade canônica é reinjetada em cada turno, mas sua aderência cai sob

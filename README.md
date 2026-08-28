@@ -130,6 +130,11 @@ O caminho fica em `%APPDATA%\omni\config`, fora do Git. Depois disso, uma melhor
 repetida e pronta pode ser materializada no artefato correspondente, mas permanece como
 `materialized-pending-release`. Ela só conta como aprendizado efetivo depois que uma release íntegra
 for instalada, o artefato for relido nessa instalação e o estado chegar a `installed-verified`.
+Se uma skill materializada for formalmente retirada e substituída por correção de runtime, o
+readback encerra o registro como `retracted`, preservando a prova da troca sem fingir que a skill foi
+instalada. Se uma entrada declarativa antiga for explicitamente incorporada por uma candidata
+canônica instalada, ela termina como `superseded`; não conta como efeito e não fica presa para sempre
+na fila de release.
 Mudanças de runtime, hook, roteamento ou capacidade ficam em `implementation-required` até que um
 arquivo executável real seja vinculado ao candidato. Esse vínculo exige recibo hash-only da
 auditoria: mutação no próprio artefato e readback posterior do mesmo alvo, ambos posteriores ao

@@ -45,10 +45,12 @@ async function contract() {
     'operational-materialized-without-installed-readback'
   ]
   const operationalMetrics = [
+    'selfImprovementRetracted',
     'operationalImprovementReady',
     'operationalImplementationRequired',
     'operationalMaterializedPendingRelease',
     'operationalInstalledVerified',
+    'operationalSuperseded',
     'operationalLearningEffectRate'
   ]
   if (
@@ -289,23 +291,28 @@ export async function auditarSaudeSistema(casa, {
   const pendingLearnedCases = (learnedCases.cases ?? []).filter((item) =>
     !['covered-by-canonical-case', 'executable'].includes(item.readiness)
   ).length
-  const evaluatedProposals = improvements.proposals.filter((item) => ['evaluated', 'approved', 'materialized-pending-version'].includes(item.status))
+  const evaluatedProposals = improvements.proposals.filter((item) =>
+    ['evaluated', 'approved', 'materialized-pending-version', 'retracted'].includes(item.status)
+  )
   const effectiveProposals = improvements.proposals.filter((item) =>
     item.status === 'materialized-pending-version' && item.promotion?.installedReadback?.verified === true
   ).length
   const materializedWithoutReadback = improvements.proposals.filter((item) =>
     item.status === 'materialized-pending-version' && item.promotion?.installedReadback?.verified !== true
   ).length
+  const retractedProposals = improvements.proposals.filter((item) => item.status === 'retracted').length
   const operationalCandidates = (cycle.improvementCandidates ?? []).filter((item) => [
     'ready',
     'implementation-required',
     'materialized-pending-release',
-    'installed-verified'
+    'installed-verified',
+    'superseded'
   ].includes(item.status))
   const operationalReady = operationalCandidates.filter((item) => item.status === 'ready').length
   const operationalImplementationRequired = operationalCandidates.filter((item) => item.status === 'implementation-required').length
   const operationalPendingRelease = operationalCandidates.filter((item) => item.status === 'materialized-pending-release').length
   const operationalInstalledVerified = operationalCandidates.filter((item) => item.status === 'installed-verified').length
+  const operationalSuperseded = operationalCandidates.filter((item) => item.status === 'superseded').length
   const evaluatedFailures = failures.patterns.filter((item) => item.status === 'evaluated').length
   const routedFailureIds = new Set(improvements.proposals
     .filter((item) => item.source?.kind === 'failure-pattern')
@@ -350,10 +357,12 @@ export async function auditarSaudeSistema(casa, {
       effectiveProposals + operationalInstalledVerified,
       evaluatedProposals.length + operationalCandidates.length
     ),
+    selfImprovementRetracted: retractedProposals,
     operationalImprovementReady: operationalReady,
     operationalImplementationRequired,
     operationalMaterializedPendingRelease: operationalPendingRelease,
     operationalInstalledVerified,
+    operationalSuperseded,
     operationalLearningEffectRate: ratio(operationalInstalledVerified, operationalCandidates.length),
     activeQueueDuplicateRate: ratio(duplicatesAfter, automation.jobs.filter((item) => ['queued', 'running'].includes(item.state)).length),
     lastScanBytes: latestScan?.bytes ?? 0,

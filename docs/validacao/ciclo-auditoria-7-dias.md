@@ -20,7 +20,7 @@ mais dias se os resultados ainda variarem ou revelarem lacunas.
 |---:|---|---|---|---|---|---|---|---|
 | 1 | 26/08/2026 | 150/150 | smoke 0.19.1 aprovado | observada | pendente após recarga | 4 rodadas | 16 casos | baseline |
 | 2 | 27/08/2026 | — | — | — | — | — | — | — |
-| 3 | 28/08/2026 | 275/275 + pacote válido | circuitos corrigidos | autoavaliação confrontada | preparo/visibilidade/claim cobertos; uso real pendente | incremental + sistêmica | avaliador real, confiança pendente | correção técnica fechada |
+| 3 | 28/08/2026 | 279/279 + pacote válido | circuitos corrigidos | autoavaliação confrontada | preparo/visibilidade/claim cobertos; uso real pendente | incremental + sistêmica | avaliador real, confiança pendente | correção técnica fechada; retração e supersessão reconciliadas |
 | 4 | 29/08/2026 | — | — | — | — | — | — | — |
 | 5 | 30/08/2026 | — | — | — | — | — | — | — |
 | 6 | 31/08/2026 | — | — | — | — | — | — | — |

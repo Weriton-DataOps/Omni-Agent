@@ -260,7 +260,9 @@ test('operador observa, lista e valida atalho sem promove-lo', async () => {
     assert.equal(state.learning.effectiveAfterFirstSuccess, true)
     assert.equal(state.learning.automaticPortablePromotion, false)
     assert.equal(state.selfImprovement.approved, 1)
+    assert.equal(state.selfImprovement.retracted, 0)
     assert.equal(state.selfImprovement.automaticGitPush, false)
+    assert.equal(state.operationalCycle.improvements.superseded, 0)
   } finally {
     await rm(raiz, { recursive: true, force: true })
   }

@@ -7,7 +7,9 @@ import test from 'node:test'
 import {
   atualizarDelegacao,
   caminhoDoCiclo,
+  fingerprintSemanticoMelhoria,
   lerCicloOperacional,
+  marcarMelhoriaOperacional,
   observarDelegacao,
   prepararDelegacao,
   prepararDelegacaoVisivelIdempotente,
@@ -571,6 +573,57 @@ test('melhoria legada materialized migra sem alegar release instalada', async ()
     assert.equal(migrated.artifactRef.kind, 'portable-entry')
     assert.equal(migrated.installedReadback, null)
     assert.equal(migrated.transitionHistory.at(-1).kind, 'legacy-migration')
+  } finally {
+    await rm(casa, { recursive: true, force: true })
+  }
+})
+
+test('leitura recusa supersessao v2 corrompida sem rebaixar ou apagar evidencia', async () => {
+  const casa = await home()
+  try {
+    const input = {
+      category: 'owner-correction',
+      destination: 'operational-rule',
+      statement: 'Preservar a prova terminal sem migracao destrutiva.'
+    }
+    await proporMelhoriaOperacional(casa, input)
+    const ready = await proporMelhoriaOperacional(casa, input)
+    const artifactRef = {
+      kind: 'portable-entry',
+      path: 'contratos/operacao/regras-aprendidas.json',
+      collection: 'rules',
+      entryId: ready.candidate.id,
+      semanticFingerprint: fingerprintSemanticoMelhoria(ready.candidate),
+      contentFingerprint: null
+    }
+    await marcarMelhoriaOperacional(casa, ready.candidate.id, {
+      status: 'materialized-pending-release',
+      artifactRef
+    })
+    await marcarMelhoriaOperacional(casa, ready.candidate.id, {
+      status: 'superseded',
+      supersededBy: {
+        proof: 'explicit-merged-candidate',
+        replacementCandidateId: 'improvement-replacement-corruption-test',
+        canonicalEntryId: ready.candidate.id,
+        path: artifactRef.path,
+        collection: artifactRef.collection,
+        semanticFingerprint: 'c'.repeat(64),
+        artifactFingerprint: 'd'.repeat(64),
+        version: '1.2.3',
+        payloadFingerprint: 'e'.repeat(64),
+        verifiedAt: '2026-08-28T20:00:00.000Z'
+      }
+    })
+
+    const path = caminhoDoCiclo(casa)
+    const store = JSON.parse(await readFile(path, 'utf8'))
+    store.improvementCandidates[0].supersededBy.payloadFingerprint = 'corrompido'
+    const corrupted = `${JSON.stringify(store, null, 2)}\n`
+    await writeFile(path, corrupted, 'utf8')
+
+    await assert.rejects(lerCicloOperacional(casa), /fora do contrato v1/)
+    assert.equal(await readFile(path, 'utf8'), corrupted)
   } finally {
     await rm(casa, { recursive: true, force: true })
   }

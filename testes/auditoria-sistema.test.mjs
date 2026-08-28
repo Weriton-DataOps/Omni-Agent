@@ -119,6 +119,23 @@ async function operationalCandidate(casa, suffix, status) {
     artifactRef
   }, { at: `2026-08-28T08:2${suffix}:00.000Z` })
   if (status === 'materialized-pending-release') return pending.candidate
+  if (status === 'superseded') {
+    return (await marcarMelhoriaOperacional(casa, ready.candidate.id, {
+      status: 'superseded',
+      supersededBy: {
+        proof: 'explicit-merged-candidate',
+        replacementCandidateId: `improvement-replacement-${suffix}`,
+        canonicalEntryId: ready.candidate.id,
+        path: artifactRef.path,
+        collection: artifactRef.collection,
+        semanticFingerprint: 'c'.repeat(64),
+        artifactFingerprint: 'd'.repeat(64),
+        version: '1.2.3',
+        payloadFingerprint: 'a'.repeat(64),
+        verifiedAt: `2026-08-28T08:3${suffix}:00.000Z`
+      }
+    }, { at: `2026-08-28T08:3${suffix}:00.000Z` })).candidate
+  }
   return (await marcarMelhoriaOperacional(casa, ready.candidate.id, {
     status: 'installed-verified',
     installedReadback: {
@@ -331,6 +348,7 @@ test('audita cada fronteira operacional e conta efeito somente após installed-v
     await operationalCandidate(casa, 2, 'implementation-required')
     await operationalCandidate(casa, 3, 'materialized-pending-release')
     await operationalCandidate(casa, 4, 'installed-verified')
+    await operationalCandidate(casa, 5, 'superseded')
 
     const result = await auditarSaudeSistema(casa, {
       pluginRoot,
@@ -345,8 +363,13 @@ test('audita cada fronteira operacional e conta efeito somente após installed-v
     assert.equal(result.run.metrics.operationalImplementationRequired, 1)
     assert.equal(result.run.metrics.operationalMaterializedPendingRelease, 1)
     assert.equal(result.run.metrics.operationalInstalledVerified, 1)
-    assert.equal(result.run.metrics.operationalLearningEffectRate, 0.25)
-    assert.equal(result.run.metrics.learningEffectRate, 0.25)
+    assert.equal(result.run.metrics.operationalSuperseded, 1)
+    assert.equal(result.run.metrics.operationalLearningEffectRate, 0.2)
+    assert.equal(result.run.metrics.learningEffectRate, 0.2)
+    assert.equal(
+      result.run.findings.find((item) => item.code === 'operational-materialized-without-installed-readback').amount,
+      1
+    )
 
     const context = await consumirContextoAuditoriaSistema(casa)
     assert.match(context, /sem configuração ela continua pronta/i)

@@ -118,11 +118,15 @@ uso.
 | AUD-155 | marcador correto em teste irrelevante valida falha ou atalho | corrigido; marcador é só correlação e precisa coincidir também com a família de verificação esperada |
 | AUD-156 | gate de release pode validar uma casa artificial e esconder o estado real | recusado; o gate foi executado contra `%APPDATA%\omni`, sem erros e sem conversa bruta |
 | AUD-157 | suíte verde basta sem conferir o pacote do plugin | falso; `npm pack --dry-run` e `claude plugin validate .` foram executados com sucesso |
+| AUD-158 | skill retraída deve continuar eternamente como materializada sem readback | corrigido na `0.20.1`; a release instalada reconcilia o registro como `retracted`, preserva a prova e não fabrica instalação da skill |
+| AUD-159 | entrada antiga incorporada por uma regra canônica deve continuar pendente | corrigido na `0.20.1`; substituição explícita e relida na release encerra a antiga como `superseded`, sem contá-la como efeito |
+| AUD-160 | registro de retração e arquivos substitutos bastam mesmo se a skill continuar ativa | recusado; a reconciliação exige ausência real da skill e da entrada no catálogo instalado |
+| AUD-161 | prova `superseded` inválida pode ser rebaixada e apagada numa leitura | corrigido; somente formato legado migra, enquanto estado v2 inválido falha fechado sem sobrescrever o arquivo |
 
 ## Estado de fechamento
 
-- gates determinísticos: `check`, 275/275 testes, `npm pack --dry-run` e `claude plugin validate .` verdes com o fingerprint final;
-- publicação e instalação: próxima etapa externa; só serão consideradas concluídas após confirmação do `origin/main` e readback da instalação;
+- gates determinísticos: `check`, 279/279 testes, `npm pack --dry-run` e `claude plugin validate .` verdes com o fingerprint final;
+- publicação e instalação: a `0.20.0` foi confirmada no `origin/main` e relida da instalação; a correção `0.20.1` só será considerada concluída pela mesma confirmação externa e pelo novo readback;
 - guardião v2: fonte canônica e testes prontos; troca do hook global não executada sem aprovação
   explícita da mudança de autorização;
 - comportamento real: deliberadamente pendente de conversa do proprietário;
@@ -130,7 +134,8 @@ uso.
 
 O gate real ficou em `observing`, sem erros. Permaneceram como avisos — e não foram apagados para
 embelezar a release — o DoD comportamental ausente, a confiança externa da personalidade pendente,
-seis delegações históricas sem verificação e melhorias ainda sem readback da instalação. Esses itens
+seis delegações históricas sem verificação e melhorias prontas ainda não materializadas. Os dois
+avisos falsos de readback histórico foram separados e corrigidos na `0.20.1`. Os demais itens
 seguem para a observação de uso; não invalidam os circuitos determinísticos desta versão.
 
 O protocolo comparável continua em
