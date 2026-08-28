@@ -4,12 +4,14 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import test from 'node:test'
 
+import { abrirTurnoAuditoria, registrarAcaoAuditoria } from '../runtime/auditoria-autocorrecao.mjs'
 import {
   caminhoDosAtalhos,
   executarManutencaoAtalhos,
   lerAtalhos,
-  registrarObservacaoAtalho,
-  validarAtalho
+  registrarObservacaoAtalho as registrarObservacaoAtalhoReal,
+  validarAtalho as validarAtalhoReal,
+  vinculoVerificacaoAtalho
 } from '../runtime/atalhos.mjs'
 import { lerMemoria } from '../runtime/memoria.mjs'
 
@@ -24,6 +26,46 @@ const base = {
 
 async function casaTemporaria(prefix) {
   return mkdtemp(join(tmpdir(), prefix))
+}
+
+let executionSequence = 0
+
+async function evidenciaReal(casa, input, { now } = {}) {
+  executionSequence += 1
+  const sessionId = `shortcut-session-${executionSequence}`
+  const executionId = `shortcut-tool-${executionSequence}`
+  const at = now ?? new Date(Date.UTC(2030, 0, 1, 10, 0, executionSequence)).toISOString()
+  const stable = input.success !== false && input.outcome === base.outcome
+  const binding = vinculoVerificacaoAtalho(input)
+  const verificationCommand = stable
+    ? 'node --test testes/atalhos.test.mjs'
+    : `node --test testes/atalhos.test.mjs --test-name-pattern variante-${executionSequence}`
+  const command = `${verificationCommand} # omni-shortcut-binding:${binding}`
+  await abrirTurnoAuditoria(casa, {
+    session_id: sessionId,
+    prompt: 'Verifique o resultado real do procedimento.'
+  }, { at: new Date(Date.parse(at) - 1_000).toISOString() })
+  await registrarAcaoAuditoria(casa, {
+    hook_event_name: 'PostToolUse',
+    session_id: sessionId,
+    tool_use_id: executionId,
+    tool_name: 'Bash',
+    tool_input: { command },
+    cwd: 'C:\\projetos\\teste'
+  }, { at })
+  return { sessionId, executionId }
+}
+
+async function registrarObservacaoAtalho(casa, input, options = {}) {
+  const evidence = await evidenciaReal(casa, input, options)
+  const { outcome: _outcome, success: _success, ...safe } = input
+  return registrarObservacaoAtalhoReal(casa, { ...safe, ...evidence })
+}
+
+async function validarAtalho(casa, id, input, options = {}) {
+  const evidence = await evidenciaReal(casa, { ...base, ...input }, options)
+  const { outcome: _outcome, success: _success, ...safe } = input
+  return validarAtalhoReal(casa, id, { ...safe, ...evidence })
 }
 
 test('primeiro sucesso ativa o atalho e tres o validam sem promover para o Git', async () => {
@@ -52,6 +94,34 @@ test('primeiro sucesso ativa o atalho e tres o validam sem promover para o Git',
     const memory = await lerMemoria(casa)
     assert.equal(memory.confirmed.length, 0)
     assert.equal(memory.candidates.length, 0)
+  } finally {
+    await rm(casa, { recursive: true, force: true })
+  }
+})
+
+test('git status com o vinculo correto nao valida um atalho de diagnostico', async () => {
+  const casa = await casaTemporaria('omni-shortcut-wrong-family-')
+  try {
+    const sessionId = 'shortcut-wrong-family-session'
+    const executionId = 'shortcut-wrong-family-tool'
+    const binding = vinculoVerificacaoAtalho(base)
+    await abrirTurnoAuditoria(casa, {
+      session_id: sessionId,
+      prompt: 'Verifique o diagnostico antes de aprender o atalho.'
+    }, { at: '2030-01-01T10:00:00.000Z' })
+    await registrarAcaoAuditoria(casa, {
+      hook_event_name: 'PostToolUse',
+      session_id: sessionId,
+      tool_use_id: executionId,
+      tool_name: 'Bash',
+      tool_input: { command: `git status # omni-shortcut-binding:${binding}` },
+      cwd: 'C:\\projetos\\teste'
+    }, { at: '2030-01-01T10:00:01.000Z' })
+    const { outcome: _outcome, success: _success, ...safe } = base
+    const result = await registrarObservacaoAtalhoReal(casa, { ...safe, sessionId, executionId })
+    assert.equal(result.result, 'unverified-action')
+    assert.equal(result.shortcut, null)
+    assert.equal((await lerAtalhos(casa)).shortcuts.length, 0)
   } finally {
     await rm(casa, { recursive: true, force: true })
   }
@@ -98,10 +168,9 @@ test('store nao grava resultado bruto, recusa segredo e consolida concorrencia',
     const raw = await readFile(caminhoDosAtalhos(casa), 'utf8')
     assert.equal(raw.includes(base.outcome), false)
 
-    const segredoSintetico = ['sk', 'proj', 'abcdefghijklmnopqrstuvwxyz123456'].join('-')
     await assert.rejects(
-      registrarObservacaoAtalho(casa, { ...base, outcome: segredoSintetico }),
-      /segredo/i
+      registrarObservacaoAtalhoReal(casa, { ...base, sessionId: 'sessao', executionId: 'execucao' }),
+      /autodeclarados/i
     )
   } finally {
     await rm(casa, { recursive: true, force: true })
@@ -118,7 +187,7 @@ test('atalho precisa ser menor e runtime antigo recusa store futuro sem sobrescr
 
     const path = caminhoDosAtalhos(casa)
     await mkdir(dirname(path), { recursive: true })
-    const future = '{"schemaVersion":3,"store":{"id":"future"},"shortcuts":[],"archive":[]}\n'
+    const future = '{"schemaVersion":5,"store":{"id":"future"},"shortcuts":[],"archive":[]}\n'
     await writeFile(path, future, 'utf8')
     await assert.rejects(lerAtalhos(casa), /mais novo que este plugin/i)
     assert.equal(await readFile(path, 'utf8'), future)
@@ -212,15 +281,16 @@ test('migracao v1 cria backup, generaliza familias operacionais e consolida dupl
     await writeFile(path, source, 'utf8')
 
     const store = await lerAtalhos(casa)
-    assert.equal(store.schemaVersion, 2)
+    assert.equal(store.schemaVersion, 4)
     assert.equal(store.shortcuts.length, 1)
     assert.equal(store.shortcuts[0].scope.type, 'user')
-    assert.equal(store.shortcuts[0].status, 'validated')
-    assert.equal(store.shortcuts[0].successCount, 3)
+    assert.equal(store.shortcuts[0].status, 'observing')
+    assert.equal(store.shortcuts[0].successCount, 0)
+    assert.equal(store.shortcuts[0].legacyUnverifiedObservations.length, 3)
     assert.deepEqual(store.shortcuts[0].shortcutSteps.slice(-2), ['verificar o resultado', 'reportar'])
     assert.equal(store.archive.length, 2)
     const files = await readdir(dirname(path))
-    const backup = files.find((name) => name.includes('.before-v1-to-v2.') && name.endsWith('.backup'))
+    const backup = files.find((name) => name.includes('.before-v1-to-v4.') && name.endsWith('.backup'))
     assert.ok(backup)
     assert.equal(await readFile(join(dirname(path), backup), 'utf8'), source)
   } finally {

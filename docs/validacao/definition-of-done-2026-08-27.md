@@ -4,6 +4,10 @@
 **Estado:** reservado; nenhum item comportamental foi aprovado antecipadamente.
 **Horário planejado:** fim do dia.
 
+> Adendo de 28/08/2026: a autoavaliação do Omni revelou que injeção da personalidade não prova
+> aderência. O fechamento agora também exige o gate `omni-real-behavior-v1`, integridade da release
+> instalada e evidência de autocorreção observada em uso.
+
 ## Caso inicial real
 
 Depois da preparação e da recarga do plugin, iniciar a avaliação enviando exatamente:
@@ -65,6 +69,9 @@ Para cada bloco, anotar pedido, comportamento esperado, comportamento observado 
 Falha comportamental não deve ser corrigida durante a conversa de medição: primeiro registrar a
 evidência; depois abrir a rodada de correção e repetir exatamente o mesmo caso.
 
+O eval sintético de personalidade continua sendo regressão de forma. Ele não pode, sozinho, promover
+a identidade nem substituir a conversa real.
+
 ## Preparação
 
 - [ ] árvore-fonte limpa ou alterações da rodada identificadas;
@@ -73,6 +80,8 @@ evidência; depois abrir a rodada de correção e repetir exatamente o mesmo cas
 - [ ] `npm.cmd run check` verde;
 - [ ] `npm.cmd test` verde;
 - [ ] `claude plugin validate .` verde.
+- [ ] versão e fingerprint declarados em `contratos/atualizacao/integridade.json` coincidem com o
+  manifesto público e o payload instalado;
 
 ## Conversa e personalidade
 
@@ -85,6 +94,8 @@ evidência; depois abrir a rodada de correção e repetir exatamente o mesmo cas
 - [ ] Omni compara pedido, ação e resultado antes de concluir;
 - [ ] pedido claro produz ação em vez de oferta genérica;
 - [ ] correção do proprietário muda o turno seguinte.
+- [ ] resultado registrado pelo gate usa duas sessões reais, revisão explícita do proprietário,
+  recibos criptográficos verificados internamente e identidade externa autenticada;
 
 ## Contexto e memória
 
@@ -106,6 +117,8 @@ evidência; depois abrir a rodada de correção e repetir exatamente o mesmo cas
 - [ ] conclusão retorna resultado e evidência concisos;
 - [ ] sessão ou janela criada para a tarefa é encerrada;
 - [ ] tarefa pertencente a outra sessão volta ao executor adequado.
+- [ ] `SubagentStop` aparece como `reported`, e não como sucesso;
+- [ ] verificação independente leva a `verified` antes de `closed`;
 
 ## Aprendizado e evolução
 
@@ -122,6 +135,9 @@ evidência; depois abrir a rodada de correção e repetir exatamente o mesmo cas
 - [ ] versão publicada contém apenas aprendizado portátil;
 - [ ] atualização do plugin traz somente as mudanças da versão;
 - [ ] memória pessoal permanece local após a atualização.
+- [ ] auditoria do turno detecta ação omitida, falha repetida e conclusão sem evidência;
+- [ ] auditoria sistêmica não duplica a mesma fotografia de estado;
+- [ ] relatório sistêmico mantém conversa, ferramentas, caminhos e segredos fora do store;
 
 ## Evidência da rodada
 

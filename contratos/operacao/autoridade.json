@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "contract": "omni-responsible-freedom-v1",
+  "principle": "O pedido do proprietario autoriza o resultado e os passos subordinados necessarios, proporcionais e verificaveis nos alvos e dados colocados em escopo.",
+  "authority": {
+    "basis": "owner-intent",
+    "inheritance": "necessary-proportional-substeps",
+    "sources": [
+      "owner-intent",
+      "owner-expansion",
+      "standing-authority",
+      "inherited-authority",
+      "delegation-briefing",
+      "legacy-unscoped",
+      "untracked-delegation"
+    ],
+    "delegationCarriesAuthority": true,
+    "publicDelegationRequiresActiveAuditedTurn": true,
+    "parentFingerprintMustResolveExistingAuthority": true,
+    "blockedExecutorReturnsTo": "omni",
+    "ownerDecisionUpdatesRemainingCycle": true
+  },
+  "risk": {
+    "principle": "Risco muda o metodo de execucao por meio de checkpoint, isolamento, rollback, compensacao e verificacao.",
+    "dimensions": {
+      "reversibility": ["unclassified", "reversible", "compensable", "irreversible"],
+      "reach": ["unclassified", "local-isolated", "single-scoped-target", "multi-target", "production-or-external"],
+      "data": ["unclassified", "public", "project", "personal", "secret"]
+    },
+    "executionModes": ["proceed", "prepare-and-proceed", "owner-decision"],
+    "unclassifiedRiskAction": "classify-before-first-material-effect"
+  },
+  "ownerDecisionWhen": [
+    "material-change-of-objective-target-environment-or-effect",
+    "material-consequence-without-credible-rollback-or-compensation",
+    "new-secret-identity-privilege-or-financial-commitment"
+  ],
+  "verification": {
+    "checkpointBeforeMaterialReversibleEffect": true,
+    "rollbackOrCompensationBeforeMaterialReversibleEffect": true,
+    "compareIntentActionAndResult": true,
+    "evidenceBeforeCompletion": true,
+    "delegationVerifiedByAuditActionAndEvidence": true,
+    "verificationAfterReport": true,
+    "verificationMatchesAuditedObject": true
+  },
+  "privacy": {
+    "storeRawIntent": false,
+    "storeRawScope": false,
+    "storeRawEvidence": false,
+    "storeSecrets": false
+  }
+}

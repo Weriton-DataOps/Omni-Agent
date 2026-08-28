@@ -1,6 +1,6 @@
 {
-  "schemaVersion": 1,
-  "policy": "failure-learning-v1",
+  "schemaVersion": 3,
+  "policy": "failure-learning-v3",
   "failureClasses": [
     "tool-error",
     "validation-error",
@@ -16,6 +16,24 @@
   "maximumObservationsPerPattern": 50,
   "maximumFixTestsPerPattern": 20,
   "requireDistinctEvidence": true,
+  "verifiedFixTests": {
+    "source": "audit-self-correction",
+    "requiredActionEffect": "verification",
+    "requiredActionState": "succeeded",
+    "requireEvidence": true,
+    "requireAfterAnalysis": true,
+    "requireDistinctActions": true,
+    "requireDistinctExecutions": true,
+    "requireConsistentStrategy": true,
+    "requireConsistentCriterion": true,
+    "requireAutomationJob": true,
+    "requirePatternBinding": true,
+    "requireHypothesisBinding": true,
+    "requireDispatchBeforeVerification": true,
+    "requireExplicitCommandBinding": true,
+    "requireActionFamilyBinding": true,
+    "storeRawOutcome": false
+  },
   "diagnosticSignature": {
     "version": "failure-signature-v2",
     "components": [
@@ -34,6 +52,8 @@
     "enabled": true,
     "executor": "background-subagent",
     "requiresOwnerPrompt": false,
+    "dispatchGuarantee": "request-only",
+    "hostExecutionRequired": true,
     "leaseMinutes": 60,
     "maximumConcurrentJobs": 1,
     "excludedActions": ["executar Agent", "executar TaskStop"],

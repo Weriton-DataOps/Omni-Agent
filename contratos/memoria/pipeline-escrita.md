@@ -44,9 +44,10 @@ memória do que poluir o store.
 - score combina confiança, importância e especificidade;
 - score abaixo de `0.60` não entra no store.
 
-Uma experiência aceita sempre nasce `candidate`. Apenas pedido explícito em `lembrar` ou decisão
-humana em `confirmar` produz memória confirmada. Repetições aumentam `occurrences`, acrescentam
-evidência e reforçam o registro existente.
+Uma inferência aceita nasce `candidate`. Declarações explícitas e estáveis do proprietário podem ser
+confirmadas automaticamente quando o sinal e o score atingem o limiar do runtime; `lembrar` produz
+confirmação direta e `confirmar` decide uma candidata existente. Repetições aumentam `occurrences`,
+acrescentam evidência e reforçam o registro existente.
 
 ## Fronteira com o Git
 

@@ -100,7 +100,11 @@ export function validarPromocao(manifesto) {
   return manifesto
 }
 
-export async function validarEvidenciaPromocao(manifesto, pluginRoot = raiz) {
+export async function validarEvidenciaPromocao(
+  manifesto,
+  pluginRoot = raiz,
+  { verificarEvidenciaConfiavel } = {}
+) {
   validarPromocao(manifesto)
   if (manifesto.status !== STATUS_PROMOVIDA) return null
 
@@ -152,7 +156,6 @@ export async function validarEvidenciaPromocao(manifesto, pluginRoot = raiz) {
     evidence.decidedBy !== manifesto.promotion.decidedBy ||
     evidence.suiteSha256 !== sha256(suiteRaw) ||
     evidence.baseline !== suite.baseline ||
-    evidence.baseline !== manifesto.supersedes?.id ||
     evidence.candidate !== suite.candidate ||
     evidence.candidate !== manifesto.id
   ) {
@@ -209,16 +212,18 @@ export async function validarEvidenciaPromocao(manifesto, pluginRoot = raiz) {
   if (candidateScore < baselineScore) {
     throw new Error('Candidata não pode ser promovida abaixo da linha de base.')
   }
-  return {
-    roundId: evidence.roundId,
-    baselineScore,
-    candidateScore,
-    reviewedCases: suite.cases.length,
-    evidenceSha256: manifesto.promotion.evidence.sha256
+  if (typeof verificarEvidenciaConfiavel === 'function') {
+    throw new Error(
+      'Callback fornecido pelo chamador nao e raiz de confianca e nao pode autenticar uma promocao.'
+    )
   }
+  throw new Error([
+    'Promocao indisponivel: o runtime ainda nao possui verificacao criptografica interna',
+    'vinculada a uma identidade externa do proprietario.'
+  ].join(' '))
 }
 
-async function carregar(pluginRoot) {
+async function carregar(pluginRoot, verificarEvidenciaConfiavel) {
   const diretorio = join(pluginRoot, 'contratos', 'personalidade')
   const manifesto = JSON.parse(await readFile(join(diretorio, 'manifest.json'), 'utf8'))
   if (
@@ -234,16 +239,26 @@ async function carregar(pluginRoot) {
   if (!nucleus.includes(`PERSONALIDADE ${manifesto.id}.`)) {
     throw new Error('Identidade do núcleo não corresponde ao manifesto.')
   }
-  const promotionEvidence = await validarEvidenciaPromocao(manifesto, pluginRoot)
+  const promotionEvidence = await validarEvidenciaPromocao(
+    manifesto,
+    pluginRoot,
+    { verificarEvidenciaConfiavel }
+  )
   return { manifest: manifesto, markdown, nucleus, promotionEvidence }
 }
 
-export async function lerPersonalidadeAtiva({ pluginRoot = raiz, useCache = true } = {}) {
-  if (!useCache) return carregar(pluginRoot)
+export async function lerPersonalidadeAtiva({
+  pluginRoot = raiz,
+  useCache = true,
+  verificarEvidenciaConfiavel
+} = {}) {
+  if (!useCache || verificarEvidenciaConfiavel) {
+    return carregar(pluginRoot, verificarEvidenciaConfiavel)
+  }
   if (!cache.has(pluginRoot)) {
     cache.set(
       pluginRoot,
-      carregar(pluginRoot).catch((error) => {
+      carregar(pluginRoot, undefined).catch((error) => {
         cache.delete(pluginRoot)
         throw error
       })

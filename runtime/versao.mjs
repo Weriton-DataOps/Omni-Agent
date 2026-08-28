@@ -2,13 +2,28 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import {
+  lerIdentidadeRelease,
+  verificarIntegridadeRelease
+} from './integridade-release.mjs'
+
 const raiz = dirname(dirname(fileURLToPath(import.meta.url)))
-const DEFAULT_MANIFEST_URL =
-  'https://api.github.com/repos/Weriton-DataOps/Omni-Agent/contents/.claude-plugin/plugin.json?ref=main'
+const DEFAULT_RELEASE_URL =
+  'https://api.github.com/repos/Weriton-DataOps/Omni-Agent/contents/contratos/atualizacao/integridade.json?ref=main'
 
 function semver(value) {
-  const match = /^(\d+)\.(\d+)\.(\d+)(?:-[0-9A-Za-z.-]+)?$/.exec(value ?? '')
-  return match ? match.slice(1, 4).map(Number) : null
+  const match = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/.exec(value ?? '')
+  if (!match) return null
+  const prerelease = match[4] ? match[4].split('.') : []
+  if (prerelease.some((item) => /^\d+$/.test(item) && item.length > 1 && item.startsWith('0'))) return null
+  return {
+    core: match.slice(1, 4).map((item) => BigInt(item)),
+    prerelease
+  }
+}
+
+function fingerprint(value) {
+  return typeof value === 'string' && /^[a-f0-9]{64}$/.test(value) ? value : null
 }
 
 export function compararVersoes(installed, latest) {
@@ -16,8 +31,24 @@ export function compararVersoes(installed, latest) {
   const right = semver(latest)
   if (!left || !right) throw new Error('Versão semântica inválida.')
   for (let index = 0; index < 3; index += 1) {
-    if (left[index] < right[index]) return -1
-    if (left[index] > right[index]) return 1
+    if (left.core[index] < right.core[index]) return -1
+    if (left.core[index] > right.core[index]) return 1
+  }
+  if (left.prerelease.length === 0 && right.prerelease.length === 0) return 0
+  if (left.prerelease.length === 0) return 1
+  if (right.prerelease.length === 0) return -1
+  const length = Math.max(left.prerelease.length, right.prerelease.length)
+  for (let index = 0; index < length; index += 1) {
+    const leftId = left.prerelease[index]
+    const rightId = right.prerelease[index]
+    if (leftId === undefined) return -1
+    if (rightId === undefined) return 1
+    if (leftId === rightId) continue
+    const leftNumeric = /^\d+$/.test(leftId)
+    const rightNumeric = /^\d+$/.test(rightId)
+    if (leftNumeric && rightNumeric) return BigInt(leftId) < BigInt(rightId) ? -1 : 1
+    if (leftNumeric !== rightNumeric) return leftNumeric ? -1 : 1
+    return leftId < rightId ? -1 : 1
   }
   return 0
 }
@@ -34,12 +65,16 @@ async function lerJson(caminho) {
 async function lerCache(casa) {
   try {
     const cache = await lerJson(caminhoDoCacheVersao(casa))
-    if (
-      cache?.schemaVersion === 1 &&
-      semver(cache.latestVersion) &&
-      typeof cache.checkedAt === 'string'
-    ) {
-      return cache
+    if (!semver(cache?.latestVersion) || typeof cache.checkedAt !== 'string') return null
+    if (cache.schemaVersion === 2) return cache
+    if (cache.schemaVersion === 1) return {
+      schemaVersion: 2,
+      latestVersion: cache.latestVersion,
+      latestFingerprint: null,
+      checkedAt: cache.checkedAt,
+      etag: cache.etag ?? null,
+      manifestBlobSha: cache.remoteSha ?? null,
+      migratedFrom: 1
     }
   } catch (erro) {
     if (erro?.code !== 'ENOENT') return null
@@ -55,22 +90,68 @@ async function gravarCache(casa, cache) {
   await rename(temporario, arquivo)
 }
 
-function resultado(installedVersion, latestVersion, source, checkedAt) {
+function resultado({ installedVersion, latestVersion, latestFingerprint, integrity, source, checkedAt, manifestBlobSha = null }) {
   const comparison = compararVersoes(installedVersion, latestVersion)
+  let status = 'current-verified'
+  let updateAvailable = false
+  if (integrity.status === 'drifted') {
+    status = 'drifted'
+    updateAvailable = true
+  } else if (comparison < 0) {
+    status = 'outdated'
+    updateAvailable = true
+  } else if (comparison > 0) {
+    status = 'ahead'
+  } else if (latestFingerprint && integrity.fingerprint !== latestFingerprint) {
+    status = 'diverged'
+    updateAvailable = true
+  } else if (!latestFingerprint || integrity.status === 'legacy-unverifiable') {
+    status = 'legacy-unverifiable'
+    updateAvailable = Boolean(latestFingerprint)
+  }
   return {
     installedVersion,
+    installedFingerprint: integrity.fingerprint,
+    installedDeclaredFingerprint: integrity.declaredFingerprint,
+    installedIntegrity: integrity.status,
     latestVersion,
-    status: comparison < 0 ? 'outdated' : comparison > 0 ? 'ahead' : 'current',
-    updateAvailable: comparison < 0,
+    latestFingerprint: latestFingerprint ?? null,
+    manifestBlobSha,
+    status,
+    updateAvailable,
     source,
     checkedAt
   }
 }
 
-function extrairManifestoRemoto(raw) {
+function identidadeDoDocumento(document) {
+  if (
+    document?.contract === 'omni-release-integrity-v1' &&
+    semver(document.identity?.version)
+  ) {
+    const hasDeclaredFingerprint = Object.hasOwn(document.identity, 'releaseFingerprint')
+    if (hasDeclaredFingerprint && !fingerprint(document.identity.releaseFingerprint)) return null
+    return {
+      version: document.identity.version,
+      releaseFingerprint: hasDeclaredFingerprint ? document.identity.releaseFingerprint : null,
+      source: 'release-integrity-contract'
+    }
+  }
+  if (document?.name === 'omni' && semver(document.version)) {
+    return {
+      version: document.version,
+      releaseFingerprint: null,
+      source: 'legacy-plugin-manifest'
+    }
+  }
+  return null
+}
+
+function extrairIdentidadeRemota(raw) {
   const payload = JSON.parse(raw)
-  if (payload?.name === 'omni' && semver(payload.version)) {
-    return { manifest: payload, remoteSha: null }
+  const direct = identidadeDoDocumento(payload)
+  if (direct) {
+    return { release: direct, manifestBlobSha: null }
   }
   if (
     payload?.encoding === 'base64' &&
@@ -78,12 +159,12 @@ function extrairManifestoRemoto(raw) {
     typeof payload.sha === 'string'
   ) {
     const decoded = Buffer.from(payload.content.replace(/\s+/g, ''), 'base64').toString('utf8')
-    const manifest = JSON.parse(decoded)
-    if (manifest?.name === 'omni' && semver(manifest.version)) {
-      return { manifest, remoteSha: payload.sha }
+    const release = identidadeDoDocumento(JSON.parse(decoded))
+    if (release) {
+      return { release, manifestBlobSha: payload.sha }
     }
   }
-  throw new Error('Manifest remoto do Omni é inválido.')
+  throw new Error('Contrato remoto de identidade do Omni é inválido.')
 }
 
 function timeoutSignal(timeoutMs) {
@@ -95,23 +176,34 @@ function timeoutSignal(timeoutMs) {
 export async function verificarVersao({
   casa,
   pluginRoot = raiz,
-  manifestUrl = DEFAULT_MANIFEST_URL,
+  releaseUrl = DEFAULT_RELEASE_URL,
+  manifestUrl,
   fetchImpl = globalThis.fetch,
+  readReleaseIdentity = lerIdentidadeRelease,
+  verifyReleaseIntegrity = verificarIntegridadeRelease,
   now = Date.now(),
   timeoutMs = 2_500
 } = {}) {
-  const installedManifest = await lerJson(join(pluginRoot, '.claude-plugin', 'plugin.json'))
-  if (installedManifest.name !== 'omni' || !semver(installedManifest.version)) {
-    throw new Error('Manifest instalado do Omni é inválido.')
-  }
-  const installedVersion = installedManifest.version
+  const remoteUrl = manifestUrl ?? releaseUrl
+  const installedIdentity = await readReleaseIdentity(pluginRoot)
+  const installedVersion = installedIdentity.version
+  const integrity = await verifyReleaseIntegrity(pluginRoot)
   const cache = await lerCache(casa)
   const checkedAt = new Date(now).toISOString()
+  const buildResult = (latestVersion, latestFingerprint, source, at, manifestBlobSha = null) => resultado({
+    installedVersion,
+    latestVersion,
+    latestFingerprint,
+    integrity,
+    source,
+    checkedAt: at,
+    manifestBlobSha
+  })
 
   try {
     if (typeof fetchImpl !== 'function') throw new Error('Consulta remota indisponível.')
     const headers = cache?.etag ? { 'If-None-Match': cache.etag } : {}
-    let response = await fetchImpl(manifestUrl, {
+    let response = await fetchImpl(remoteUrl, {
       method: 'GET',
       headers,
       signal: timeoutSignal(timeoutMs)
@@ -119,8 +211,8 @@ export async function verificarVersao({
 
     if (response.status === 304 && cache) {
       if (compararVersoes(installedVersion, cache.latestVersion) > 0) {
-        const separator = manifestUrl.includes('?') ? '&' : '?'
-        response = await fetchImpl(`${manifestUrl}${separator}omni_check=${encodeURIComponent(checkedAt)}`, {
+        const separator = remoteUrl.includes('?') ? '&' : '?'
+        response = await fetchImpl(`${remoteUrl}${separator}omni_check=${encodeURIComponent(checkedAt)}`, {
           method: 'GET',
           headers: { 'Cache-Control': 'no-cache' },
           signal: timeoutSignal(timeoutMs)
@@ -128,36 +220,59 @@ export async function verificarVersao({
       } else {
         const refreshed = { ...cache, checkedAt }
         await gravarCache(casa, refreshed)
-        return resultado(installedVersion, cache.latestVersion, 'remote-not-modified', checkedAt)
+        return buildResult(
+          cache.latestVersion,
+          fingerprint(cache.latestFingerprint),
+          'remote-not-modified',
+          checkedAt,
+          cache.manifestBlobSha ?? null
+        )
       }
     }
     if (!response.ok) throw new Error(`Consulta de versão retornou HTTP ${response.status}.`)
 
     const raw = await response.text()
-    if (raw.length > 20_000) throw new Error('Manifest remoto excedeu o limite esperado.')
-    const { manifest: remote, remoteSha } = extrairManifestoRemoto(raw)
+    if (raw.length > 20_000) throw new Error('Contrato remoto excedeu o limite esperado.')
+    const { release: remote, manifestBlobSha } = extrairIdentidadeRemota(raw)
+    const latestFingerprint = fingerprint(remote.releaseFingerprint)
 
     const nextCache = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       latestVersion: remote.version,
+      latestFingerprint,
       checkedAt,
       etag: response.headers?.get?.('etag') ?? null,
-      remoteSha
+      manifestBlobSha
     }
     await gravarCache(casa, nextCache)
-    return resultado(installedVersion, remote.version, 'remote', checkedAt)
+    return buildResult(remote.version, latestFingerprint, 'remote', checkedAt, manifestBlobSha)
   } catch (error) {
     if (cache) {
       return {
-        ...resultado(installedVersion, cache.latestVersion, 'stale-cache', cache.checkedAt),
+        ...buildResult(
+          cache.latestVersion,
+          fingerprint(cache.latestFingerprint),
+          'stale-cache',
+          cache.checkedAt,
+          cache.manifestBlobSha ?? null
+        ),
         checkError: error instanceof Error ? error.message : String(error)
       }
     }
     return {
       installedVersion,
+      installedFingerprint: integrity.fingerprint,
+      installedDeclaredFingerprint: integrity.declaredFingerprint,
+      installedIntegrity: integrity.status,
       latestVersion: null,
-      status: 'unknown',
-      updateAvailable: false,
+      latestFingerprint: null,
+      manifestBlobSha: null,
+      status: integrity.status === 'drifted'
+        ? 'drifted'
+        : integrity.status === 'legacy-unverifiable'
+          ? 'legacy-unverifiable'
+          : 'unknown',
+      updateAvailable: integrity.status === 'drifted',
       source: 'unavailable',
       checkedAt,
       checkError: error instanceof Error ? error.message : String(error)

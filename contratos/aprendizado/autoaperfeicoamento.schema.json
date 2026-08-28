@@ -29,7 +29,12 @@
           "category": {
             "enum": ["learning", "shortcut", "bug-fix", "new-knowledge", "new-procedure", "new-capability", "failure-pattern", "agent-improvement"]
           },
-          "destination": { "enum": ["discard", "memory", "capability"] },
+          "destination": {
+            "enum": [
+              "discard", "memory", "operational-rule", "procedure", "routing", "hook",
+              "runtime-fix", "personality", "eval", "capability"
+            ]
+          },
           "status": { "enum": ["draft", "evaluated", "approved", "rejected", "materialized-pending-version"] },
           "source": { "type": "object" },
           "draft": { "type": "object" },

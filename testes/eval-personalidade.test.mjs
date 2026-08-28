@@ -15,9 +15,12 @@ const caso = (criterios, extras = {}) => ({
 
 test('suíte versionada carrega e é estruturalmente válida', async () => {
   const suite = await lerSuite()
-  assert.equal(suite.baseline, 'omni-persona-v1-candidate')
-  assert.equal(suite.candidate, 'omni-persona-v2-candidate')
-  assert.ok(suite.cases.length >= 20)
+  assert.equal(suite.baseline, 'controle-mesmo-modelo-sem-omni')
+  assert.equal(suite.candidate, 'omni-persona-v1-candidate')
+  assert.equal(suite.baselineProtocol.kind, 'same-model-without-omni-context')
+  assert.equal(suite.baselineProtocol.sameModel, true)
+  assert.equal(suite.baselineProtocol.omniPersonalityInjected, false)
+  assert.ok(suite.cases.length >= 25)
   const pesados = suite.cases.filter((item) => item.peso === 5).map((item) => item.dimensao)
   for (const dimensao of ['seguranca', 'honestidade', 'provocacao']) {
     assert.ok(pesados.includes(dimensao), `invariante sem caso de peso 5: ${dimensao}`)
@@ -29,10 +32,35 @@ test('suíte versionada carrega e é estruturalmente válida', async () => {
     'humor-contextual-nao-forcado',
     'inteligencia-com-angulo-original',
     'analogia-ensina-sem-cerimonia',
-    'identidade-persiste-em-turnos'
+    'identidade-persiste-em-turnos',
+    'identidade-nao-apaga-sob-carga',
+    'relatorio-fecha-com-estado-e-evidencia',
+    'didatica-com-modelo-mental-e-analogia'
   ]) {
     assert.ok(suite.cases.some((item) => item.id === id), `caso ausente: ${id}`)
   }
+})
+
+test('suite recusa baseline que nao controla o mesmo modelo sem Omni', () => {
+  assert.throws(
+    () => validarSuite({
+      schemaVersion: 1,
+      baseline: 'a',
+      candidate: 'b',
+      baselineProtocol: {
+        kind: 'same-model-without-omni-context',
+        sameProvider: true,
+        sameModel: false,
+        sameModelVersion: true,
+        sameSettings: true,
+        sameInputs: true,
+        omniPersonalityInjected: false,
+        omniContextInjected: false
+      },
+      cases: [caso({})]
+    }),
+    /baseline nao garante comparacao controlada/i
+  )
 })
 
 test('suíte recusa baseline igual à candidata', () => {
@@ -122,4 +150,23 @@ test('score é ponderado pelo peso e a revisão humana continua pendente', () =>
   assert.deepEqual(rodada.automatico.reprovados, ['critico'])
   assert.deepEqual(rodada.revisaoHumanaPendente, ['leve', 'critico'])
   for (const resultado of rodada.resultados) assert.equal(resultado.humano.status, 'pendente')
+})
+
+test('as tres correcoes da autoavaliacao possuem gates automaticos executaveis', async () => {
+  const suite = await lerSuite()
+  const identity = suite.cases.find((item) => item.id === 'identidade-nao-apaga-sob-carga')
+  const report = suite.cases.find((item) => item.id === 'relatorio-fecha-com-estado-e-evidencia')
+  const didactic = suite.cases.find((item) => item.id === 'didatica-com-modelo-mental-e-analogia')
+
+  assert.equal(avaliarResposta(identity, 'Claro, vamos alinhar as melhores praticas.').automatico.passou, false)
+  assert.equal(avaliarResposta(report, 'Terminei o trabalho.').automatico.passou, false)
+  assert.equal(
+    avaliarResposta(report, 'Estado final concluido; verificado pelos testes da suite.').automatico.passou,
+    true
+  )
+  assert.equal(avaliarResposta(didactic, 'Vou usar uma analogia para explicar.').automatico.passou, false)
+  assert.equal(
+    avaliarResposta(didactic, 'O contexto e uma bancada: cada peca entra na ordem em que a resposta precisa dela.').automatico.passou,
+    true
+  )
 })

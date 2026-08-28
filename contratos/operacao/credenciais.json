@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 2,
+  "contract": "omni-authority-credential-v2",
+  "signature": {
+    "algorithm": "hmac-sha256",
+    "minimumKeyBytes": 32,
+    "storeRawKeyInPassStore": false
+  },
+  "pass": {
+    "maximumMinutes": 480,
+    "requireAgentBinding": true,
+    "requireAuthorityId": true,
+    "requireObjectiveFingerprint": true,
+    "requireTargetFingerprints": true,
+    "requireEnvironmentFingerprint": true,
+    "effectClasses": [
+      "read",
+      "execute",
+      "write",
+      "network",
+      "remote-write",
+      "destructive",
+      "financial",
+      "privilege"
+    ],
+    "materialEffectClasses": [
+      "write",
+      "network",
+      "remote-write",
+      "destructive",
+      "financial",
+      "privilege"
+    ],
+    "requireCheckpointAndRollbackForMaterialEffect": true
+  },
+  "automaticAllow": {
+    "version": 1,
+    "effectClass": "read",
+    "singleCommandOnly": true,
+    "rejectRedirection": true,
+    "requireCanonicalBareExecutable": true,
+    "rejectShellAliases": true,
+    "requireEnvironmentMatch": true,
+    "requireTargetContainment": true,
+    "requirePatternFileContainment": true,
+    "requireActiveAuditedTurn": true,
+    "requireObjectiveMatch": true,
+    "legacyObjectiveBindingDecision": "abstain",
+    "insufficientEvidenceDecision": "abstain",
+    "historicallyBadFormDecision": "abstain-with-guidance"
+  },
+  "privacy": {
+    "storeRawObjective": false,
+    "storeRawTargets": false,
+    "storeRawEnvironment": false,
+    "storeRawCheckpoint": false,
+    "storeRawRollback": false
+  }
+}

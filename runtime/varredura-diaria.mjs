@@ -3,7 +3,6 @@ import { createReadStream } from 'node:fs'
 import { mkdir, open, readFile, readdir, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { isAbsolute, join, resolve } from 'node:path'
-import { createInterface } from 'node:readline'
 
 import { lerAtalhos, registrarObservacaoAtalho } from './atalhos.mjs'
 import { lerCicloOperacional, proporMelhoriaOperacional } from './ciclo-operacional.mjs'
@@ -11,8 +10,10 @@ import { lerFalhas } from './falhas.mjs'
 import { lerMemoria, pareceConterSegredo, registrarMemoriaAnalisada } from './memoria.mjs'
 import { assinaturaDiagnosticaFalha, observarFerramenta, observarPrompt } from './observador.mjs'
 import { analisarExperiencias } from './pipeline-memoria.mjs'
+import { materializarMelhoriaConfigurada } from './evolucao.mjs'
+import { fingerprintObjetivo } from './passe.mjs'
 
-export const DAILY_SCAN_SCHEMA_VERSION = 1
+export const DAILY_SCAN_SCHEMA_VERSION = 2
 const CONTRACT_PATH = new URL('../contratos/aprendizado/varredura-diaria.json', import.meta.url)
 
 function agora(value) {
@@ -54,6 +55,11 @@ async function contrato() {
     value.requestedWorkflow?.publishOnlyPortableArtifacts !== true ||
     value.requestedWorkflow?.requireGreenGatesBeforeCommit !== true ||
     value.requestedWorkflow?.requireOriginMainConfirmation !== true ||
+    value.localMaterialization?.attemptReadyCandidates !== true ||
+    value.localMaterialization?.effectiveOnlyAfter !== 'installed-verified' ||
+    value.localMaterialization?.countsAsRelease !== false ||
+    value.localMaterialization?.countsAsPublication !== false ||
+    !Array.isArray(value.localMaterialization?.reportedResults) ||
     !Array.isArray(value.report?.requiredSections) ||
     !value.report.requiredSections.includes('eligible-for-publication') ||
     !value.report.requiredSections.includes('actually-published') ||
@@ -68,24 +74,58 @@ export function caminhoDaVarredura(casa) {
   return join(casa, 'learning', 'daily-scan.json')
 }
 
+export function caminhoDaCoberturaAoVivo(casa) {
+  if (!isAbsolute(casa ?? '')) throw new Error('A casa da cobertura ao vivo precisa ser absoluta.')
+  return join(casa, 'learning', 'live-coverage.json')
+}
+
 function vazio(at = agora()) {
   return {
     schemaVersion: DAILY_SCAN_SCHEMA_VERSION,
     store: { id: 'omni-local-daily-scan', createdAt: at, updatedAt: at },
     lastAutomaticCheckAt: null,
+    activatedSessionFingerprints: [],
+    fileCursors: [],
     capturedLiveEvidence: [],
     processedEvidence: [],
     scans: []
   }
 }
 
+function migrarV1(store) {
+  return {
+    ...structuredClone(store),
+    schemaVersion: DAILY_SCAN_SCHEMA_VERSION,
+    activatedSessionFingerprints: [],
+    fileCursors: []
+  }
+}
+
+async function backupAntesDaMigracao(path, raw, version) {
+  const backup = `${path}.v${version}.backup`
+  try {
+    await writeFile(backup, raw, { encoding: 'utf8', flag: 'wx' })
+  } catch (error) {
+    if (error?.code !== 'EEXIST') throw error
+  }
+}
+
 function validarStore(store, path) {
   if (
-    store?.schemaVersion !== 1 ||
+    store?.schemaVersion !== DAILY_SCAN_SCHEMA_VERSION ||
     store.store?.id !== 'omni-local-daily-scan' ||
     !Number.isFinite(Date.parse(store.store?.createdAt)) ||
     !Number.isFinite(Date.parse(store.store?.updatedAt)) ||
     !(store.lastAutomaticCheckAt === null || Number.isFinite(Date.parse(store.lastAutomaticCheckAt))) ||
+    !Array.isArray(store.activatedSessionFingerprints) ||
+    !store.activatedSessionFingerprints.every((item) => /^[a-f0-9]{64}$/.test(item)) ||
+    !Array.isArray(store.fileCursors) ||
+    !store.fileCursors.every((item) =>
+      /^[a-f0-9]{64}$/.test(item?.pathFingerprint ?? '') &&
+      Number.isInteger(item?.offset) && item.offset >= 0 &&
+      Number.isInteger(item?.size) && item.size >= 0 &&
+      typeof item?.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(item.date)
+    ) ||
     !Array.isArray(store.capturedLiveEvidence) ||
     !store.capturedLiveEvidence.every((item) => /^[a-f0-9]{64}$/.test(item)) ||
     !Array.isArray(store.processedEvidence) ||
@@ -118,9 +158,14 @@ async function travar(casa) {
 async function carregar(casa) {
   const path = caminhoDaVarredura(casa)
   try {
-    const store = JSON.parse(await readFile(path, 'utf8'))
+    const raw = await readFile(path, 'utf8')
+    let store = JSON.parse(raw)
     if (store.schemaVersion > DAILY_SCAN_SCHEMA_VERSION) {
       throw new Error(`Varredura diaria v${store.schemaVersion} e mais nova que este plugin.`)
+    }
+    if (store.schemaVersion === 1) {
+      await backupAntesDaMigracao(path, raw, 1)
+      store = migrarV1(store)
     }
     validarStore(store, path)
     return store
@@ -138,6 +183,130 @@ async function salvar(casa, store) {
   await mkdir(join(casa, 'learning'), { recursive: true })
   await writeFile(temporary, `${JSON.stringify(store, null, 2)}\n`, 'utf8')
   await rename(temporary, path)
+}
+
+function coberturaVazia(at = agora()) {
+  return {
+    schemaVersion: 1,
+    store: { id: 'omni-local-live-coverage', createdAt: at, updatedAt: at },
+    fingerprints: []
+  }
+}
+
+function validarCobertura(store, path) {
+  if (
+    store?.schemaVersion !== 1 ||
+    store.store?.id !== 'omni-local-live-coverage' ||
+    !Number.isFinite(Date.parse(store.store?.createdAt)) ||
+    !Number.isFinite(Date.parse(store.store?.updatedAt)) ||
+    !Array.isArray(store.fingerprints) ||
+    !store.fingerprints.every((item) => /^[a-f0-9]{64}$/.test(item))
+  ) throw new Error(`Estado da cobertura ao vivo fora do contrato v1: ${path}`)
+}
+
+async function carregarCobertura(casa) {
+  const path = caminhoDaCoberturaAoVivo(casa)
+  try {
+    const store = JSON.parse(await readFile(path, 'utf8'))
+    validarCobertura(store, path)
+    return store
+  } catch (error) {
+    if (error?.code === 'ENOENT') return coberturaVazia()
+    throw error
+  }
+}
+
+async function salvarCobertura(casa, store) {
+  const path = caminhoDaCoberturaAoVivo(casa)
+  const temporary = `${path}.${process.pid}.${randomUUID()}.novo`
+  store.store.updatedAt = agora()
+  validarCobertura(store, path)
+  await mkdir(join(casa, 'learning'), { recursive: true })
+  await writeFile(temporary, `${JSON.stringify(store, null, 2)}\n`, 'utf8')
+  await rename(temporary, path)
+}
+
+function diretorioDaFilaDeCobertura(casa) {
+  return join(casa, 'learning', 'live-coverage-pending')
+}
+
+async function enfileirarCobertura(casa, fingerprints) {
+  const directory = diretorioDaFilaDeCobertura(casa)
+  await mkdir(directory, { recursive: true })
+  const results = await Promise.all(fingerprints.map(async (fingerprint) => {
+    try {
+      // O nome contem apenas o SHA-256. Nenhum prompt, resultado ou identificador bruto e persistido.
+      await writeFile(join(directory, `${fingerprint}.pending`), '', { flag: 'wx' })
+      return true
+    } catch (error) {
+      if (error?.code !== 'EEXIST') throw error
+      return false
+    }
+  }))
+  return results.filter(Boolean).length
+}
+
+async function listarCoberturaPendente(casa) {
+  try {
+    const entries = await readdir(diretorioDaFilaDeCobertura(casa), { withFileTypes: true })
+    return entries
+      .filter((entry) => entry.isFile() && /^[a-f0-9]{64}\.pending$/.test(entry.name))
+      .map((entry) => entry.name.slice(0, 64))
+  } catch (error) {
+    if (error?.code === 'ENOENT') return []
+    throw error
+  }
+}
+
+async function tentarTravarCobertura(casa) {
+  const directory = join(casa, 'learning')
+  await mkdir(directory, { recursive: true })
+  const path = join(directory, 'live-coverage.lock')
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const handle = await open(path, 'wx')
+      return async () => {
+        await handle.close()
+        await unlink(path).catch(() => undefined)
+      }
+    } catch (error) {
+      if (error?.code !== 'EEXIST') throw error
+      const age = Date.now() - (await stat(path).catch(() => ({ mtimeMs: Date.now() }))).mtimeMs
+      if (age <= 15_000) return null
+      await unlink(path).catch(() => undefined)
+    }
+  }
+  return null
+}
+
+async function compactarCoberturaPendente(casa) {
+  const release = await tentarTravarCobertura(casa)
+  if (!release) return { result: 'queued', added: 0 }
+  try {
+    const [store, pending] = await Promise.all([
+      carregarCobertura(casa),
+      listarCoberturaPendente(casa)
+    ])
+    const known = new Set(store.fingerprints)
+    const before = known.size
+    for (const fingerprint of pending) known.add(fingerprint)
+    store.fingerprints = [...known]
+    await salvarCobertura(casa, store)
+    await Promise.all(pending.map((fingerprint) =>
+      unlink(join(diretorioDaFilaDeCobertura(casa), `${fingerprint}.pending`)).catch(() => undefined)
+    ))
+    return { result: known.size > before ? 'recorded' : 'duplicate', added: known.size - before }
+  } finally {
+    await release()
+  }
+}
+
+async function lerCoberturaAoVivo(casa) {
+  const [store, pending] = await Promise.all([
+    carregarCobertura(casa),
+    listarCoberturaPendente(casa)
+  ])
+  return [...new Set([...store.fingerprints, ...pending])]
 }
 
 export async function lerEstadoVarredura(casa) {
@@ -158,22 +327,30 @@ export async function registrarCoberturaAoVivo(casa, { sessionId, prompt, toolUs
   }
   if (typeof toolUseId === 'string' && toolUseId) fingerprints.push(hash(toolUseId))
   if (!fingerprints.length) return { result: 'ignored', added: 0 }
-  const policy = await contrato()
-  const release = await travar(casa)
   try {
-    const store = await carregar(casa)
-    const known = new Set(store.capturedLiveEvidence)
-    const before = known.size
-    for (const fingerprint of fingerprints) known.add(fingerprint)
-    store.capturedLiveEvidence = [...known].slice(-policy.maximumProcessedEvidence)
-    await salvar(casa, store)
-    return { result: known.size > before ? 'recorded' : 'duplicate', added: known.size - before }
-  } finally {
-    await release()
+    const queued = await enfileirarCobertura(casa, fingerprints)
+    const compacted = await compactarCoberturaPendente(casa)
+    return {
+      result: compacted.result,
+      added: compacted.result === 'queued' ? queued : compacted.added
+    }
+  } catch {
+    // Cobertura e telemetria auxiliar: uma falha local nunca pode derrubar UserPromptSubmit.
+    return { result: 'unavailable', added: 0 }
   }
 }
 
-async function listarJsonl(root, policy) {
+function cursorInicial(file, cursors, targetDate) {
+  const pathFingerprint = hash(file.path.toLowerCase())
+  const previous = cursors.find((item) => item.pathFingerprint === pathFingerprint)
+  const reusable = previous && previous.date <= targetDate && file.size >= previous.offset
+  return {
+    pathFingerprint,
+    start: reusable ? previous.offset : 0
+  }
+}
+
+async function listarJsonl(root, policy, cursors, targetDate) {
   const candidates = []
   async function visit(directory) {
     let entries
@@ -200,11 +377,44 @@ async function listarJsonl(root, policy) {
   let totalBytes = 0
   for (const file of candidates) {
     if (files.length >= policy.maximumFilesPerScan) break
-    if (totalBytes + file.size > policy.maximumBytesPerScan) continue
-    files.push(file)
-    totalBytes += file.size
+    const cursor = cursorInicial(file, cursors, targetDate)
+    const unreadBytes = file.size - cursor.start
+    if (unreadBytes === 0) continue
+    if (totalBytes + unreadBytes > policy.maximumBytesPerScan) continue
+    files.push({ ...file, ...cursor, unreadBytes })
+    totalBytes += unreadBytes
   }
   return { files, totalBytes }
+}
+
+async function* linhasJsonl(path, start = 0) {
+  const stream = createReadStream(path, { start })
+  let pending = Buffer.alloc(0)
+  let pendingStart = start
+  let nextOffset = start
+  for await (const chunkValue of stream) {
+    const chunk = Buffer.isBuffer(chunkValue) ? chunkValue : Buffer.from(chunkValue)
+    if (pending.length === 0) pendingStart = nextOffset
+    nextOffset += chunk.length
+    const buffer = pending.length ? Buffer.concat([pending, chunk]) : chunk
+    let lineStart = 0
+    for (let index = 0; index < buffer.length; index += 1) {
+      if (buffer[index] !== 0x0a) continue
+      let line = buffer.subarray(lineStart, index)
+      if (line.at(-1) === 0x0d) line = line.subarray(0, -1)
+      yield {
+        text: line.toString('utf8'),
+        startOffset: pendingStart + lineStart,
+        endOffset: pendingStart + index + 1
+      }
+      lineStart = index + 1
+    }
+    pending = buffer.subarray(lineStart)
+    pendingStart += lineStart
+  }
+  if (pending.length) {
+    yield { text: pending.toString('utf8'), startOffset: pendingStart, endOffset: nextOffset }
+  }
 }
 
 function conteudos(message) {
@@ -221,13 +431,53 @@ function ativaOmni(text) {
   return /<command-name>\/(?:omni:)?omni<\/command-name>|<command-message>(?:omni:)?omni<\/command-message>/i.test(text ?? '')
 }
 
-function novaAtividade(record, content, file, lineNumber) {
+function registroEhSubagente(record, file) {
+  if (/(?:^|[\\/])subagents(?:[\\/]|$)/i.test(String(file ?? ''))) return true
+  const scopes = [record, record?.message, record?.metadata, record?.message?.metadata, record?.context]
+    .filter((item) => item && typeof item === 'object')
+  const verdadeiro = (value) => value === true || String(value ?? '').toLowerCase() === 'true'
+  const preenchido = (value) => value !== undefined && value !== null && String(value).trim() !== ''
+  for (const scope of scopes) {
+    if (
+      verdadeiro(scope.isSidechain) ||
+      verdadeiro(scope.is_sidechain) ||
+      verdadeiro(scope.sidechain) ||
+      preenchido(scope.agentId) ||
+      preenchido(scope.agent_id) ||
+      preenchido(scope.sourceAgentId) ||
+      preenchido(scope.source_agent_id) ||
+      preenchido(scope.parentAgentId) ||
+      preenchido(scope.parent_agent_id) ||
+      preenchido(scope.teammateId) ||
+      preenchido(scope.teammate_id) ||
+      /^(?:subagent|sidechain|teammate)$/i.test(String(scope.source ?? scope.origin ?? '').trim())
+    ) return true
+  }
+  return /^(?:subagent|sidechain|teammate-message|agent-message)$/i.test(String(record?.type ?? ''))
+}
+
+function origemDoPrompt(record, content, file) {
+  const value = String(content?.text ?? '').trim()
+  if (
+    registroEhSubagente(record, file) ||
+    record?.isMeta === true ||
+    record?.message?.isMeta === true ||
+    /^(?:<\/?(?:system-reminder|teammate-message|task-notification|tool-result|command-message|command-name)\b|\[tool result\])/i.test(value)
+  ) return 'non-owner'
+  return 'owner-transcript'
+}
+
+function novaAtividade(record, content, file, lineNumber, startOffset = 0) {
   const prompt = textoSeguro(content.text, 4000)
   if (!prompt || prompt.startsWith('<')) return null
+  const origin = origemDoPrompt(record, content, file)
+  if (origin !== 'owner-transcript') return null
   const sessionId = record.sessionId ?? record.session_id
   const evidence = hash(`${sessionId ?? file}:${record.uuid ?? lineNumber}:user`)
   return {
     evidence,
+    origin,
+    startOffset,
     sessionId: String(sessionId ?? hash(file)),
     cwd: textoSeguro(record.cwd, 500),
     prompt,
@@ -280,29 +530,30 @@ function aplicarLinha(activity, record) {
   }
 }
 
-async function extrairAtividades(files, targetDate, settleMinutes, now) {
+async function extrairAtividades(files, targetDate, settleMinutes, now, initialActivated = []) {
   const activities = []
-  const current = new Map()
-  const activatedSessions = new Set()
+  const activatedSessions = new Set(initialActivated)
+  const cursorUpdates = []
   let parsedLines = 0
   let invalidLines = 0
+  const settledBefore = now.getTime() - settleMinutes * 60_000
   for (const file of files) {
-    const stream = createReadStream(file.path, { encoding: 'utf8' })
-    const reader = createInterface({ input: stream, crlfDelay: Infinity })
+    const current = new Map()
     let lineNumber = 0
-    for await (const line of reader) {
+    let invalidOffset = null
+    for await (const line of linhasJsonl(file.path, file.start)) {
       lineNumber += 1
-      if (!line.trim()) continue
+      if (!line.text.trim()) continue
       let record
       try {
-        record = JSON.parse(line)
+        record = JSON.parse(line.text)
         parsedLines += 1
       } catch {
         invalidLines += 1
+        invalidOffset = invalidOffset === null ? line.startOffset : Math.min(invalidOffset, line.startOffset)
         continue
       }
       const timestamp = timestampDaLinha(record, file.modifiedAt)
-      if (dataLocal(timestamp) !== targetDate) continue
       const sessionId = String(record.sessionId ?? record.session_id ?? hash(file.path))
       const activityKey = `${file.path}:${sessionId}`
       const userTexts = conteudos(record.message).filter(
@@ -310,39 +561,56 @@ async function extrairAtividades(files, targetDate, settleMinutes, now) {
       )
       for (const content of userTexts) {
         if (ativaOmni(content.text)) {
-          activatedSessions.add(sessionId)
+          if (!registroEhSubagente(record, file.path)) activatedSessions.add(hash(sessionId))
           continue
         }
+        if (dataLocal(timestamp) !== targetDate) continue
+        const activity = novaAtividade(record, content, file.path, lineNumber, line.startOffset)
+        if (!activity) continue
         const previous = current.get(activityKey)
         if (previous) {
           previous.complete = previous.finalAnswerLength > 0
           if (previous.complete) activities.push(previous)
         }
-        const activity = novaAtividade(record, content, file.path, lineNumber)
-        if (activity) current.set(activityKey, activity)
+        current.set(activityKey, activity)
       }
+      if (dataLocal(timestamp) !== targetDate) continue
       aplicarLinha(current.get(activityKey), record)
     }
-  }
-  const settledBefore = now.getTime() - settleMinutes * 60_000
-  for (const activity of current.values()) {
-    activity.complete = activity.finalAnswerLength > 0 && Date.parse(activity.updatedAt) <= settledBefore
-    if (activity.complete) activities.push(activity)
+    let safeOffset = file.size
+    for (const activity of current.values()) {
+      activity.complete = activity.finalAnswerLength > 0 && Date.parse(activity.updatedAt) <= settledBefore
+      if (activity.complete) activities.push(activity)
+      else safeOffset = Math.min(safeOffset, activity.startOffset)
+    }
+    if (invalidOffset !== null) safeOffset = Math.min(safeOffset, invalidOffset)
+    cursorUpdates.push({
+      pathFingerprint: file.pathFingerprint,
+      offset: safeOffset,
+      size: file.size,
+      date: targetDate
+    })
   }
   return {
-    activities: activities.filter((activity) => activatedSessions.has(activity.sessionId)),
+    activities: activities.filter((activity) => activatedSessions.has(hash(activity.sessionId))),
     parsedLines,
     invalidLines,
-    activatedSessions: activatedSessions.size
+    activatedSessions: activatedSessions.size,
+    activatedSessionFingerprints: [...activatedSessions],
+    cursorUpdates
   }
 }
 
 function entradaAtalho(activity) {
   const tools = activity.tools
-    .map(({ name }) => name.replace(/[^a-zA-Z0-9_.-]/g, '').slice(0, 80))
-    .filter(Boolean)
+    .map(({ name, id }) => ({
+      name: name.replace(/[^a-zA-Z0-9_.-]/g, '').slice(0, 80),
+      id: typeof id === 'string' && id ? id : null
+    }))
+    .filter(({ name }) => Boolean(name))
   if (!tools.length || activity.failures.length || activity.finalAnswerLength === 0) return null
-  const unique = tools.filter((name, index) => tools.indexOf(name) === index).slice(0, 12)
+  const names = tools.map(({ name }) => name)
+  const unique = names.filter((name, index) => names.indexOf(name) === index).slice(0, 12)
   const toolSet = new Set(unique.map((name) => name.toLowerCase()))
   const hasAny = (...names) => names.some((name) => toolSet.has(name.toLowerCase()))
   const delegatedAndObserved = hasAny('Agent') ||
@@ -359,8 +627,8 @@ function entradaAtalho(activity) {
     goal: family,
     baselineSteps: ['interpretar o objetivo', ...unique, 'verificar o resultado', 'reportar'],
     shortcutSteps: [...unique, 'verificar o resultado', 'reportar'],
-    outcome: 'atividade concluida com evidencia local',
-    success: true,
+    sessionId: activity.sessionId,
+    verificationExecutionIds: tools.map(({ id }) => id).filter(Boolean).reverse(),
     scope: { type: 'user' }
   }
 }
@@ -417,7 +685,23 @@ async function contadores(casa) {
 }
 
 async function processarAtividade(casa, activity, cobertura) {
-  const results = { memories: 0, failures: 0, shortcuts: 0, improvements: 0, gapsRecovered: 0 }
+  const results = {
+    memories: 0,
+    failures: 0,
+    shortcuts: 0,
+    improvements: 0,
+    gapsRecovered: 0,
+    materializations: []
+  }
+  const recordMaterialization = (metadata, materialization) => {
+    if (!materialization) return
+    results.materializations.push({
+      candidateId: metadata?.candidateId ?? materialization.candidateId ?? materialization.candidate?.id ?? null,
+      destination: metadata?.destination ?? materialization.destination ?? materialization.candidate?.destination ?? null,
+      candidateStatus: metadata?.candidateStatus ?? materialization.candidate?.status ?? null,
+      result: materialization.result
+    })
+  }
   const promptCaptured = promptFoiCapturado(cobertura, activity)
   if (!promptCaptured) {
     const analyses = analisarExperiencias(activity.prompt)
@@ -438,10 +722,14 @@ async function processarAtividade(casa, activity, cobertura) {
     const promptObservation = await observarPrompt(casa, {
       session_id: activity.sessionId,
       cwd: activity.cwd,
-      prompt: activity.prompt
+      prompt: activity.prompt,
+      origin: activity.origin
     })
     results.failures += promptObservation.corrections.length
     results.improvements += promptObservation.corrections.length
+    for (const correction of promptObservation.corrections) {
+      recordMaterialization(correction, correction.materialization)
+    }
     results.gapsRecovered += 1
   }
 
@@ -457,12 +745,32 @@ async function processarAtividade(casa, activity, cobertura) {
       error: failure.error
     })
     if (observed.failure?.pattern) results.failures += 1
+    recordMaterialization(observed, observed.materialization)
     results.gapsRecovered += 1
   }
 
   const shortcutInput = entradaAtalho(activity)
   if (shortcutInput) {
-    const learned = await registrarObservacaoAtalho(casa, shortcutInput)
+    let learned = null
+    for (const executionId of shortcutInput.verificationExecutionIds) {
+      const candidate = await registrarObservacaoAtalho(casa, {
+        goal: shortcutInput.goal,
+        baselineSteps: shortcutInput.baselineSteps,
+        shortcutSteps: shortcutInput.shortcutSteps,
+        sessionId: shortcutInput.sessionId,
+        executionId,
+        scope: shortcutInput.scope
+      }, {
+        // A varredura deriva o atalho do mesmo pedido que originou a ação. O
+        // hash do pedido liga essa prova histórica ao turno real sem guardar a
+        // conversa nem aceitar uma ação genérica de outra solicitação.
+        sourceRequestFingerprint: fingerprintObjetivo(activity.prompt)
+      })
+      if (candidate.result === 'unverified-action') continue
+      learned = candidate
+      break
+    }
+    if (!learned) return results
     if (learned.shortcut) results.shortcuts += 1
     if (learned.result === 'validated') {
       const improvement = await proporMelhoriaOperacional(casa, {
@@ -471,6 +779,14 @@ async function processarAtividade(casa, activity, cobertura) {
         statement: `Consolidar o procedimento verificado para: ${shortcutInput.goal}`
       })
       if (improvement.candidate) results.improvements += 1
+      if (improvement.candidate?.status === 'ready') {
+        const materialization = await materializarMelhoriaConfigurada(casa, improvement.candidate.id)
+        recordMaterialization({
+          candidateId: improvement.candidate.id,
+          destination: improvement.candidate.destination,
+          candidateStatus: materialization.candidate?.status ?? improvement.candidate.status
+        }, materialization)
+      }
     }
   }
   return results
@@ -497,8 +813,19 @@ export async function varrerAtividadesDoDia(casa, {
     }
     if (automatic) store.lastAutomaticCheckAt = now.toISOString()
     const before = await contadores(casa)
-    const listed = await listarJsonl(root, policy)
-    const extracted = await extrairAtividades(listed.files, targetDate, policy.settleMinutes, now)
+    const cycle = await lerCicloOperacional(casa)
+    const activated = new Set([
+      ...store.activatedSessionFingerprints,
+      ...cycle.sessions.map((session) => session.sessionFingerprint)
+    ])
+    const listed = await listarJsonl(root, policy, store.fileCursors, targetDate)
+    const extracted = await extrairAtividades(
+      listed.files,
+      targetDate,
+      policy.settleMinutes,
+      now,
+      activated
+    )
     const processed = new Set(store.processedEvidence)
     const pendingByEvidence = new Map()
     for (const activity of extracted.activities) {
@@ -507,15 +834,46 @@ export async function varrerAtividadesDoDia(casa, {
       }
     }
     const pending = [...pendingByEvidence.values()]
-    const coverage = coberturaDoCiclo(await lerCicloOperacional(casa), store.capturedLiveEvidence)
-    const observations = { memories: 0, failures: 0, shortcuts: 0, improvements: 0, gapsRecovered: 0 }
+    const liveCoverage = await lerCoberturaAoVivo(casa)
+    const coverage = coberturaDoCiclo(cycle, [...store.capturedLiveEvidence, ...liveCoverage])
+    const observationTotals = {
+      memories: 0,
+      failures: 0,
+      shortcuts: 0,
+      improvements: 0,
+      gapsRecovered: 0,
+      materializations: []
+    }
     for (const activity of pending) {
       const result = await processarAtividade(casa, activity, coverage)
-      for (const key of Object.keys(observations)) observations[key] += result[key]
+      for (const key of ['memories', 'failures', 'shortcuts', 'improvements', 'gapsRecovered']) {
+        observationTotals[key] += result[key]
+      }
+      observationTotals.materializations.push(...result.materializations)
       processed.add(activity.evidence)
     }
     store.processedEvidence = [...processed].slice(-policy.maximumProcessedEvidence)
+    store.activatedSessionFingerprints = extracted.activatedSessionFingerprints.slice(-policy.maximumProcessedEvidence)
+    const cursors = new Map(store.fileCursors.map((item) => [item.pathFingerprint, item]))
+    for (const cursor of extracted.cursorUpdates) cursors.set(cursor.pathFingerprint, cursor)
+    store.fileCursors = [...cursors.values()].slice(-policy.maximumProcessedEvidence)
     const after = await contadores(casa)
+    const materializationByResult = {}
+    for (const item of observationTotals.materializations) {
+      materializationByResult[item.result] = (materializationByResult[item.result] ?? 0) + 1
+    }
+    const observations = {
+      memories: observationTotals.memories,
+      failures: observationTotals.failures,
+      shortcuts: observationTotals.shortcuts,
+      improvements: observationTotals.improvements,
+      gapsRecovered: observationTotals.gapsRecovered,
+      materializations: {
+        attempted: observationTotals.materializations.length,
+        byResult: materializationByResult,
+        candidates: observationTotals.materializations
+      }
+    }
     const scan = {
       id: `daily-scan-${randomUUID()}`,
       date: targetDate,

@@ -5,6 +5,9 @@ import { dirname, isAbsolute, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { compararVersoes, verificarVersao } from './versao.mjs'
+import { registrarReadbackInstalado } from './autoaperfeicoamento.mjs'
+import { registrarReadbackOperacionalInstalado } from './evolucao.mjs'
+import { verificarIntegridadeRelease } from './integridade-release.mjs'
 
 const raiz = dirname(dirname(fileURLToPath(import.meta.url)))
 const PLUGIN_ID = 'omni@omni-hub'
@@ -148,7 +151,10 @@ export async function atualizarPlugin({
   run = executarProcesso,
   resolveCli = localizarClaudeCli,
   checkVersion = verificarVersao,
-  readChanges = lerMudancasAtualizacao
+  readChanges = lerMudancasAtualizacao,
+  recordInstalledReadback = registrarReadbackInstalado,
+  recordOperationalReadback = registrarReadbackOperacionalInstalado,
+  verifyInstalledIntegrity = verificarIntegridadeRelease
 } = {}) {
   const executable = await resolveCli({ run })
   const loadedVersion = await versaoCarregada(pluginRoot)
@@ -187,7 +193,23 @@ export async function atualizarPlugin({
     throw new Error(`Claude não confirmou a instalação de ${PLUGIN_ID}.`)
   }
 
-  const remote = await checkVersion({ casa, pluginRoot })
+  const updatedRoot = after.installPath ?? (
+    compararVersoes(after.version, loadedVersion) === 0 ? pluginRoot : null
+  )
+  if (!isAbsolute(updatedRoot ?? '')) {
+    throw new Error('Claude informou uma versão instalada, mas não expôs uma raiz verificável para ela.')
+  }
+  const installedIntegrity = await verifyInstalledIntegrity(updatedRoot)
+  if (
+    installedIntegrity.status !== 'verified' ||
+    installedIntegrity.versionMatchesManifest !== true ||
+    installedIntegrity.releaseVersion !== after.version ||
+    !/^[a-f0-9]{64}$/.test(installedIntegrity.fingerprint ?? '') ||
+    installedIntegrity.declaredFingerprint !== installedIntegrity.fingerprint
+  ) {
+    throw new Error(`A raiz realmente instalada não comprovou a versão ${after.version} com integridade.`)
+  }
+  const remote = await checkVersion({ casa, pluginRoot: updatedRoot })
   if (
     remote.latestVersion &&
     compararVersoes(after.version, remote.latestVersion) < 0
@@ -196,10 +218,32 @@ export async function atualizarPlugin({
       `Atualização incompleta: instalada ${after.version}, publicada ${remote.latestVersion}.`
     )
   }
+  if (['drifted', 'diverged'].includes(remote.status)) {
+    throw new Error(
+      `Atualização sem paridade de payload: versão ${after.version}, estado ${remote.status}.`
+    )
+  }
+  if (remote.latestVersion && remote.status === 'legacy-unverifiable') {
+    throw new Error('Atualização instalada sem fingerprint verificável da release.')
+  }
+  if (remote.installedVersion && remote.installedVersion !== after.version) {
+    throw new Error('A consulta remota leu uma raiz diferente da versão realmente instalada.')
+  }
+  if (remote.installedFingerprint && remote.installedFingerprint !== installedIntegrity.fingerprint) {
+    throw new Error('A consulta remota divergiu do fingerprint da raiz realmente instalada.')
+  }
+  const readbackInput = {
+    pluginRoot: updatedRoot,
+    version: after.version,
+    payloadFingerprint: installedIntegrity.fingerprint
+  }
+  const [learningReadback, operationalReadback] = await Promise.all([
+    recordInstalledReadback(casa, readbackInput),
+    recordOperationalReadback(casa, readbackInput)
+  ])
 
   const changed = compararVersoes(before.version, after.version) !== 0
   const reloadRequired = compararVersoes(loadedVersion, after.version) !== 0
-  const updatedRoot = after.installPath ?? pluginRoot
   const changes = changed ? await readChanges(updatedRoot, before.version, after.version) : []
   if (changed && changes.length === 0) {
     throw new Error(`A versão ${after.version} foi instalada sem registrar o que mudou.`)
@@ -213,7 +257,14 @@ export async function atualizarPlugin({
     installedVersion: after.version,
     latestVersion: remote.latestVersion,
     changes,
-    verifiedBy: remote.latestVersion ? ['claude-plugin-list', 'github-manifest'] : ['claude-plugin-list'],
+    verifiedBy: remote.latestVersion
+      ? ['claude-plugin-list', 'installed-root-integrity', 'github-release-contract', 'payload-fingerprint']
+      : ['claude-plugin-list', 'installed-root-integrity'],
+    learningReadback: {
+      verifiedArtifacts: (learningReadback.verified ?? 0) + (operationalReadback.verified ?? 0),
+      capabilityArtifacts: learningReadback.verified ?? 0,
+      operationalArtifacts: operationalReadback.verified ?? 0
+    },
     reloadRequired,
     applyInstructions: reloadRequired
       ? {

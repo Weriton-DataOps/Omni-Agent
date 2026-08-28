@@ -4,8 +4,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 
+import { abrirTurnoAuditoria, registrarAcaoAuditoria } from '../runtime/auditoria-autocorrecao.mjs'
 import { montarContexto } from '../runtime/contexto.mjs'
-import { lerAtalhos, registrarObservacaoAtalho } from '../runtime/atalhos.mjs'
+import { lerAtalhos, registrarObservacaoAtalho, vinculoVerificacaoAtalho } from '../runtime/atalhos.mjs'
 import { lembrarExplicitamente, proporLicao } from '../runtime/memoria.mjs'
 import { registrarCheckpoint, registrarDescoberta } from '../runtime/persistencia-contexto.mjs'
 
@@ -144,13 +145,31 @@ test('conteúdo recuperado é citado como dado', async () => {
 test('atalho ativo entra somente no contexto relevante e contabiliza uso', async () => {
   const casa = await mkdtemp(join(tmpdir(), 'omni-plugin-shortcut-context-'))
   try {
-    const learned = await registrarObservacaoAtalho(casa, {
+    const sessionId = 'context-shortcut-session'
+    const executionId = 'context-shortcut-verification'
+    const shortcut = {
       goal: 'delegar e acompanhar uma execucao',
       baselineSteps: ['interpretar', 'escolher executor', 'delegar', 'acompanhar', 'verificar', 'reportar'],
       shortcutSteps: ['delegar', 'acompanhar', 'verificar', 'reportar'],
-      outcome: 'execucao concluida com evidencia',
-      success: true,
       scope: { type: 'user' }
+    }
+    const binding = vinculoVerificacaoAtalho(shortcut)
+    await abrirTurnoAuditoria(casa, {
+      session_id: sessionId,
+      prompt: 'Verifique a execução delegada antes de aprender o procedimento.'
+    }, { at: '2032-01-01T10:00:00.000Z' })
+    await registrarAcaoAuditoria(casa, {
+      hook_event_name: 'PostToolUse',
+      session_id: sessionId,
+      tool_use_id: executionId,
+      tool_name: 'Bash',
+      tool_input: { command: `node --test testes/contexto.test.mjs # omni-shortcut-binding:${binding}` },
+      cwd: 'C:\\projetos\\teste'
+    }, { at: '2032-01-01T10:00:01.000Z' })
+    const learned = await registrarObservacaoAtalho(casa, {
+      ...shortcut,
+      sessionId,
+      executionId
     })
     assert.equal(learned.result, 'active')
 

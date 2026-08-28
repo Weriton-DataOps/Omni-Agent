@@ -7,7 +7,7 @@
     "operationalRole": "personal-cognitive-assistant-and-work-continuity",
     "habitatDoesNotDefineRole": true,
     "coordinatesButDoesNotCentralizeExternalInitiatives": true,
-    "externalCoordinationStatus": "active-through-delegation-contract"
+    "externalCoordinationStatus": "contract-and-fsm-active-host-execution-pending-validation"
   },
   "operationalRole": {
     "purpose": "Acompanhar o proprietário entre projetos, tarefas, sessões, decisões, objetivos, pendências, descobertas e mudanças de contexto.",
@@ -29,7 +29,7 @@
     "deepAnalysis": "according-to-request-and-task-risk",
     "specialistExecution": "delegate-and-monitor",
     "infrastructureInvestigation": "execute-when-needed-for-the-current-task",
-    "agentOrchestration": "active-with-visible-prompt-and-evidence",
+    "agentOrchestration": "host-dependent-dispatch-with-visible-prompt-and-evidence-required",
     "externalInitiatives": "kept-independent-until-their-own-contracts-are-activated"
   },
   "context": {

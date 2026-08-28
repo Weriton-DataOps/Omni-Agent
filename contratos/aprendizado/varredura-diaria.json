@@ -10,12 +10,30 @@
   "sources": ["claude-code-jsonl"],
   "targets": ["memory", "failures", "shortcuts", "operational-improvements"],
   "requestedWorkflow": {
+    "actor": "host-orchestrated-after-runtime-scan",
     "actions": ["scan", "deduplicate", "evaluate", "materialize-portable", "run-gates", "commit", "push", "report"],
+    "runtimeStopsAfter": "scan-deduplicate-local-learning-and-source-materialization",
+    "runtimeGitPublication": false,
+    "dispatchOrInstructionIsExecutionEvidence": false,
     "publishOnlyPortableArtifacts": true,
     "requireGreenGatesBeforeCommit": true,
     "requireOriginMainConfirmation": true
   },
+  "localMaterialization": {
+    "attemptReadyCandidates": true,
+    "reportedResults": [
+      "unconfigured",
+      "implementation-required",
+      "materialized-pending-release",
+      "local-only",
+      "not-ready"
+    ],
+    "countsAsRelease": false,
+    "countsAsPublication": false,
+    "effectiveOnlyAfter": "installed-verified"
+  },
   "report": {
+    "producedBy": "host-orchestration",
     "requiredSections": [
       "before-and-after",
       "findings",

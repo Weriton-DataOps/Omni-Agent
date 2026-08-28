@@ -1,11 +1,12 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 import { access, mkdir, open, readFile, realpath, rename, rm, stat, unlink, writeFile } from 'node:fs/promises'
-import { isAbsolute, join, sep } from 'node:path'
+import { isAbsolute, join, resolve, sep } from 'node:path'
 
 import { lerAtalhos } from './atalhos.mjs'
 import { lerFalhas } from './falhas.mjs'
 import { pareceConterSegredo } from './memoria.mjs'
+import { verificarIntegridadeRelease } from './integridade-release.mjs'
 
 export const SELF_IMPROVEMENT_SCHEMA_VERSION = 1
 export const SELF_IMPROVEMENT_PIPELINE_VERSION = 1
@@ -19,6 +20,23 @@ function agora(value) {
 
 function hash(value) {
   return createHash('sha256').update(value).digest('hex')
+}
+
+async function resolverSkillInstalada(pluginRoot, portablePath) {
+  if (
+    typeof portablePath !== 'string' ||
+    !/^skills\/[a-z0-9][a-z0-9-]{1,80}\/SKILL\.md$/.test(portablePath) ||
+    isAbsolute(portablePath) ||
+    portablePath.split('/').includes('..')
+  ) {
+    throw new Error('O readback exige caminho portatil de skill dentro do payload instalado.')
+  }
+  const canonicalRoot = await realpath(resolve(pluginRoot))
+  const target = await realpath(join(canonicalRoot, ...portablePath.split('/')))
+  if (target !== canonicalRoot && !target.startsWith(`${canonicalRoot}${sep}`)) {
+    throw new Error('O readback recusou artefato fora da raiz instalada.')
+  }
+  return target
 }
 
 function slug(value) {
@@ -152,10 +170,29 @@ async function gravar(casa, store, policy) {
   await rename(temporary, path)
 }
 
-export function classificarAprendizado({ useful, reusable }) {
+export function classificarAprendizado({ useful, reusable, nature = null }) {
   if (useful !== true) return 'discard'
   if (reusable !== true) return 'memory'
+  if (['operational-rule', 'procedure', 'routing', 'hook', 'runtime-fix', 'personality', 'eval', 'capability'].includes(nature)) {
+    return nature
+  }
   return 'capability'
+}
+
+export function classificarDestinoFalha(pattern) {
+  const text = [
+    pattern?.action,
+    pattern?.failureClass,
+    pattern?.analysis?.rootCause,
+    pattern?.analysis?.hypothesis
+  ].filter(Boolean).join(' ').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+  if (/personalidade|humor|sarcasmo|analogia|voz generica/.test(text)) return 'personality'
+  if (/\beval\b|avaliador|caso de teste comportamental/.test(text)) return 'eval'
+  if (/\bhook\b|userprompt|posttool|subagentstop|sessionend/.test(text)) return 'hook'
+  if (/roteamento|router|escolha de modelo|selecao de agente/.test(text)) return 'routing'
+  if (/runtime|codigo|cli|detector|regex|sensor|observador|schema|fila|cursor|versao/.test(text)) return 'runtime-fix'
+  if (/procedimento|sequencia|passo a passo|comando recorrente/.test(text)) return 'procedure'
+  return 'operational-rule'
 }
 
 export async function lerAutoaperfeicoamento(casa) {
@@ -201,7 +238,7 @@ function criarRascunho(shortcut) {
   }
 }
 
-function criarRascunhoFalha(pattern) {
+function criarRascunhoFalha(pattern, destination) {
   const name = slug(`recuperar ${pattern.action}`)
   const description = `Aplicar a recuperação validada para falha de ${pattern.action}.`
   const instructions = [
@@ -215,7 +252,7 @@ function criarRascunhoFalha(pattern) {
   ]
   const allText = [name, description, ...instructions].join('\n')
   if (pareceConterSegredo(allText)) throw new Error('O rascunho parece conter segredo e não pode ser promovido.')
-  return {
+  const portable = {
     capability: {
       name,
       description,
@@ -231,6 +268,18 @@ function criarRascunhoFalha(pattern) {
       recommended_agent: 'omni'
     },
     skill: { name, description, instructions }
+  }
+  if (destination === 'capability') return portable
+  return {
+    implementation: {
+      kind: destination,
+      targetHint: destination === 'hook' ? 'runtime/hook-contexto.mjs' :
+        destination === 'personality' ? 'contratos/personalidade' :
+          destination === 'eval' ? 'contratos/eval' : 'runtime',
+      rootCause: pattern.analysis.rootCause,
+      proposedChange: pattern.analysis.hypothesis,
+      requiredGates: ['patch', 'regression-test', 'full-suite', 'release-fingerprint', 'installed-readback', 'real-observation']
+    }
   }
 }
 
@@ -299,10 +348,11 @@ export async function proporMelhoriaDeFalha(casa, patternId, { now } = {}) {
     )
     if (existing) return { result: 'existing', proposal: existing }
     const successfulFixTests = pattern.fixTests.filter((item) => item.success && item.consistent).length
+    const destination = classificarDestinoFalha(pattern)
     const proposal = {
       id: `improvement-${randomUUID()}`,
       category: 'failure-pattern',
-      destination: classificarAprendizado({ useful: true, reusable: true }),
+      destination,
       status: 'draft',
       source: {
         kind: 'failure-pattern',
@@ -317,7 +367,7 @@ export async function proporMelhoriaDeFalha(casa, patternId, { now } = {}) {
         successfulFixTests,
         evaluationStatus: pattern.evaluation.passed ? 'passed' : 'failed'
       },
-      draft: criarRascunhoFalha(pattern),
+      draft: criarRascunhoFalha(pattern, destination),
       evaluation: null,
       approval: null,
       promotion: null,
@@ -349,7 +399,12 @@ function avaliar(source, proposal, policy, evaluatedAt) {
         { id: 'source-snapshot-current', passed: source?.updatedAt === proposal.source.updatedAt }
       ]
   gates.push(
-    { id: 'capability-draft-complete', passed: Boolean(proposal.draft?.capability?.name && proposal.draft?.skill?.instructions?.length >= 4) },
+    {
+      id: 'implementation-route-complete',
+      passed: proposal.destination === 'capability'
+        ? Boolean(proposal.draft?.capability?.name && proposal.draft?.skill?.instructions?.length >= 4)
+        : Boolean(proposal.draft?.implementation?.kind === proposal.destination && proposal.draft?.implementation?.requiredGates?.length >= 4)
+    },
     { id: 'no-automatic-promotion', passed: policy.automaticPromotion === false }
   )
   return {
@@ -524,6 +579,13 @@ export async function promoverMelhoria(casa, id, repoRoot, { now } = {}) {
     ) {
       return { result: 'not-approved', proposal }
     }
+    if (proposal.destination !== 'capability') {
+      return {
+        result: 'implementation-route-required',
+        route: proposal.draft?.implementation ?? null,
+        proposal
+      }
+    }
     const source = proposal.source.kind === 'shortcut'
       ? shortcuts.shortcuts.find((item) => item.id === proposal.source.id)
       : failures.patterns.find((item) => item.id === proposal.source.id)
@@ -542,6 +604,68 @@ export async function promoverMelhoria(casa, id, repoRoot, { now } = {}) {
     proposal.updatedAt = proposal.promotion.materializedAt
     await gravar(casa, loaded.store, policy)
     return { result: proposal.status, proposal }
+  } finally {
+    await release()
+  }
+}
+
+export async function registrarReadbackInstalado(casa, {
+  pluginRoot,
+  version,
+  payloadFingerprint,
+  now
+} = {}) {
+  if (!isAbsolute(pluginRoot ?? '')) throw new Error('O plugin instalado precisa usar caminho absoluto.')
+  if (typeof version !== 'string' || !version.trim()) throw new Error('A versao instalada e obrigatoria.')
+  if (!/^[a-f0-9]{64}$/.test(payloadFingerprint ?? '')) {
+    throw new Error('O readback exige fingerprint verificado do payload instalado.')
+  }
+  let integrity
+  try {
+    integrity = await verificarIntegridadeRelease(pluginRoot)
+  } catch {
+    throw new Error('O readback exige release instalada integra, identificada e da mesma versao.')
+  }
+  if (
+    integrity.status !== 'verified' ||
+    integrity.versionMatchesManifest !== true ||
+    integrity.releaseVersion !== version ||
+    integrity.fingerprint !== payloadFingerprint ||
+    integrity.declaredFingerprint !== payloadFingerprint
+  ) {
+    throw new Error('O readback exige release instalada integra, identificada e da mesma versao.')
+  }
+  const policy = await lerPolitica()
+  const verifiedAt = agora(now)
+  const release = await adquirirTrava(casa)
+  try {
+    const loaded = await carregar(casa, policy)
+    let verified = 0
+    for (const proposal of loaded.store.proposals) {
+      if (proposal.status !== 'materialized-pending-version') continue
+      const skill = proposal.promotion?.artifacts?.skill
+      const expected = proposal.promotion?.artifacts?.skillSha256
+      if (typeof skill !== 'string' || !/^[a-f0-9]{64}$/.test(expected ?? '')) continue
+      let raw
+      try {
+        raw = await readFile(await resolverSkillInstalada(pluginRoot, skill), 'utf8')
+      } catch (error) {
+        if (error?.code === 'ENOENT') continue
+        throw error
+      }
+      if (hash(raw) !== expected) continue
+      proposal.promotion.installedReadback = {
+        verified: true,
+        version,
+        payloadFingerprint,
+        artifactFingerprint: expected,
+        verifiedAt
+      }
+      proposal.updatedAt = verifiedAt
+      verified += 1
+    }
+    if (verified > 0) await gravar(casa, loaded.store, policy)
+    return { result: 'checked', verified, version, payloadFingerprint }
   } finally {
     await release()
   }

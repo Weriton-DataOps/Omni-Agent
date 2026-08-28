@@ -18,7 +18,7 @@ import { processarExperiencia } from './pipeline-memoria.mjs'
 import { verificarVersao } from './versao.mjs'
 import { atualizarPlugin, resumirAtualizacaoPublica } from './atualizacao.mjs'
 import { lerPersonalidadeAtiva } from './personalidade.mjs'
-import { lerAtalhos, registrarObservacaoAtalho, validarAtalho } from './atalhos.mjs'
+import { lerAtalhos, registrarObservacaoAtalho, validarAtalho, vinculoVerificacaoAtalho } from './atalhos.mjs'
 import {
   avaliarMelhoria,
   decidirMelhoria,
@@ -31,6 +31,7 @@ import {
   analisarPadraoFalha,
   avaliarPadraoFalha,
   lerFalhas,
+  listarEvidenciasVerificadasFalha,
   registrarFalha,
   testarCorrecaoFalha
 } from './falhas.mjs'
@@ -47,6 +48,15 @@ import {
   registrarRodadaEval
 } from './historico-evals.mjs'
 import {
+  lerHistoricoComportamental,
+  registrarRodadaComportamental
+} from './eval-comportamental.mjs'
+import {
+  criarPlanoRodadaPersonalidade,
+  lerHistoricoPersonalidade,
+  registrarRodadaPersonalidade
+} from './rodada-personalidade.mjs'
+import {
   lerPersistenciaContexto,
   registrarCheckpoint,
   registrarDescoberta,
@@ -60,9 +70,12 @@ import {
 import {
   configurarRepositorioCanonico,
   lerRepositorioCanonico,
-  materializarMelhoriaOperacional
+  materializarMelhoriaOperacional,
+  registrarImplementacaoOperacional
 } from './evolucao.mjs'
 import { lerEstadoVarredura, varrerAtividadesDoDia } from './varredura-diaria.mjs'
+import { auditarSaudeSistema, lerAuditoriaSistema } from './auditoria-sistema.mjs'
+import { resolverTurnoAtivoAuditoria } from './auditoria-autocorrecao.mjs'
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
 const [action = 'estado', ...parts] = process.argv.slice(2)
@@ -112,6 +125,37 @@ function lerPassos(value, label) {
   return value.split(/\s*(?:>|→)\s*/u).map((step) => step.trim()).filter(Boolean)
 }
 
+function lerEfeitosDelegacao(value) {
+  if (!value) return []
+  const effects = value.split(/\s*(?:\||;)\s*/u).map((effect) => effect.trim()).filter(Boolean)
+  if (effects.length === 0) throw new Error('Informe --efeitos com itens separados por |.')
+  return effects
+}
+
+function autoridadeDaDelegacao(options) {
+  const source = options.fonte ?? 'owner-intent'
+  const inheritedSources = new Set([
+    'owner-intent',
+    'owner-expansion',
+    'standing-authority',
+    'inherited-authority'
+  ])
+  const risk = {
+    reversibility: options.reversibilidade ?? options.risco,
+    reach: options.alcance,
+    data: options.dados,
+    mode: options.modo
+  }
+  const authority = {
+    source,
+    inherited: inheritedSources.has(source),
+    effects: lerEfeitosDelegacao(options.efeitos)
+  }
+  if (options.pai) authority.parentFingerprint = options.pai
+  if (Object.values(risk).some((value) => value !== undefined)) authority.risk = risk
+  return authority
+}
+
 function resumirAtalho(item) {
   return {
     id: item.id,
@@ -138,7 +182,8 @@ function resumirMelhoria(item) {
     category: item.category,
     destination: item.destination,
     status: item.status,
-    capability: item.draft.capability.name,
+    capability: item.draft.capability?.name ?? null,
+    implementationRoute: item.draft.implementation?.kind ?? null,
     evaluationPassed: item.evaluation?.passed ?? null,
     ownerDecision: item.approval?.decision ?? null,
     portable: item.approval?.portable ?? false,
@@ -157,14 +202,14 @@ function resumirFalha(item) {
     occurrences: item.occurrences,
     analyzed: item.analysis !== null,
     fixTests: item.fixTests.length,
-    successfulFixTests: item.fixTests.filter((test) => test.success && test.consistent).length,
+    successfulFixTests: item.fixTests.filter((test) => test.verified && test.success && test.consistent).length,
     evaluationPassed: item.evaluation?.passed ?? null
   }
 }
 
 async function main() {
   if (action === 'estado') {
-    const [memory, persona, version, shortcutStore, improvementStore, failureStore, failureAutomation, evalStore, contextStore, operationalCycle, sourceRepository, dailyScan] = await Promise.all([
+    const [memory, persona, version, shortcutStore, improvementStore, failureStore, failureAutomation, evalStore, behaviorStore, personalityStore, contextStore, operationalCycle, sourceRepository, dailyScan, systemAudit] = await Promise.all([
       lerMemoria(home),
       lerPersonalidadeAtiva({ pluginRoot: root }),
       verificarVersao({ casa: home, pluginRoot: root }),
@@ -173,10 +218,13 @@ async function main() {
       lerFalhas(home),
       sincronizarAutomacaoFalhas(home),
       lerHistoricoEval(home),
+      lerHistoricoComportamental(home),
+      lerHistoricoPersonalidade(home),
       lerPersistenciaContexto(home),
       lerCicloOperacional(home),
       lerRepositorioCanonico(home),
-      lerEstadoVarredura(home)
+      lerEstadoVarredura(home),
+      lerAuditoriaSistema(home)
     ])
     return {
       ok: true,
@@ -235,7 +283,20 @@ async function main() {
       evaluation: {
         suite: 'omni-core-v1',
         recordedRuns: evalStore.runs.length,
-        automaticExecution: false
+        automaticExecution: false,
+        realBehavior: {
+          suite: 'omni-real-behavior-v1',
+          recordedRuns: behaviorStore.runs.length,
+          passedRuns: behaviorStore.runs.filter((item) => item.status === 'passed').length,
+          lastRun: behaviorStore.runs.at(-1) ?? null
+        },
+        personality: {
+          suite: 'omni-personality-v1',
+          recordedRuns: personalityStore.runs.length,
+          trustedPassedRuns: personalityStore.runs.filter((item) => item.status === 'passed').length,
+          unverifiedClaims: personalityStore.runs.filter((item) => item.status.startsWith('unverified')).length,
+          lastRun: personalityStore.runs.at(-1) ?? null
+        }
       },
       structuredContext: {
         checkpoints: contextStore.checkpoints.length,
@@ -255,6 +316,11 @@ async function main() {
         lastScan: dailyScan.scans.at(-1) ?? null,
         capturedLiveEvidence: dailyScan.capturedLiveEvidence.length,
         processedEvidence: dailyScan.processedEvidence.length,
+        rawConversationStored: false
+      },
+      systemAudit: {
+        recordedRuns: systemAudit.runs.length,
+        lastRun: systemAudit.runs.at(-1) ?? null,
         rawConversationStored: false
       },
       sourceRepository,
@@ -311,6 +377,40 @@ async function main() {
     if (positionals.length !== 2) throw new Error('Use: eval-comparar <rodada-anterior> <rodada-nova>.')
     return { ok: true, evaluation: await compararRodadasEval(home, positionals[0], positionals[1]) }
   }
+  if (action === 'auditoria-sistema') {
+    return { ok: true, audit: await auditarSaudeSistema(home, { pluginRoot: root, repair: true }) }
+  }
+  if (action === 'eval-comportamental') {
+    const { options } = lerOpcoes(parts)
+    if (!options.arquivo) {
+      throw new Error('Use: eval-comportamental --arquivo <entrada JSON com transcritos e revisão>.')
+    }
+    const input = await lerEntradaJson(options.arquivo)
+    return {
+      ok: true,
+      evaluation: await registrarRodadaComportamental(home, { ...input, pluginRoot: root })
+    }
+  }
+  if (action === 'eval-personalidade-plano') {
+    return { ok: true, evaluation: await criarPlanoRodadaPersonalidade({ pluginRoot: root }) }
+  }
+  if (action === 'eval-personalidade-historico') {
+    const store = await lerHistoricoPersonalidade(home)
+    return { ok: true, runs: store.runs, rawResponsesStored: false }
+  }
+  if (action === 'eval-personalidade-registrar') {
+    const { options } = lerOpcoes(parts)
+    if (!options.arquivo) {
+      throw new Error('Use: eval-personalidade-registrar --arquivo <entrada JSON da rodada>.')
+    }
+    return {
+      ok: true,
+      evaluation: await registrarRodadaPersonalidade(home, {
+        ...(await lerEntradaJson(options.arquivo)),
+        pluginRoot: root
+      })
+    }
+  }
   if (action === 'checkpoints') {
     const store = await lerPersistenciaContexto(home)
     return { ok: true, checkpoints: store.checkpoints, rawConversationStored: false }
@@ -333,26 +433,60 @@ async function main() {
   }
   if (action === 'delegacao-preparar') {
     const { options } = lerOpcoes(parts)
+    if (!options.destino || !options.prompt || !options.sessao) {
+      throw new Error([
+        'Use: delegacao-preparar --destino <executor> --prompt <texto> --sessao <id>',
+        '[--efeitos <item|item>] [--risco <reversibilidade>] [--alcance <classe>]',
+        '[--dados <classe>] [--modo <modo>] [--fonte <fonte>] [--pai <sha256>].'
+      ].join(' '))
+    }
+    const activeTurn = await resolverTurnoAtivoAuditoria(home, options.sessao)
+    if (activeTurn.result !== 'active') {
+      throw new Error('A delegacao publica exige uma sessao Omni com turno auditado ativo.')
+    }
+    const authority = autoridadeDaDelegacao(options)
+    authority.turnFingerprint = activeTurn.binding.turnFingerprint
+    const prepared = await prepararDelegacao(home, {
+      target: options.destino,
+      prompt: options.prompt,
+      sessionId: options.sessao,
+      authority
+    })
+    const visible = await atualizarDelegacao(home, prepared.delegation.id, 'visible', {
+      evidence: `cli-visible:${prepared.delegation.id}:${prepared.delegation.promptFingerprint}`
+    })
     return {
       ok: true,
-      delegation: await prepararDelegacao(home, {
+      delegation: visible.delegation,
+      dispatch: {
         target: options.destino,
         prompt: options.prompt,
-        sessionId: options.sessao
-      })
+        authorityFingerprint: visible.delegation.authorityFingerprint
+      },
+      promptVisible: true,
+      rawPromptPersistedInOmniState: false
     }
   }
   if (action === 'delegacao-estado') {
     const { options, positionals } = lerOpcoes(parts)
     const [id, state] = positionals
-    if (!id || !state) throw new Error('Use: delegacao-estado <id> <estado> [--resumo <texto>] [--evidencia <id>].')
-    return {
-      ok: true,
-      delegation: await atualizarDelegacao(home, id, state, {
-        summary: options.resumo,
-        evidence: options.evidencia
-      })
+    if (!id || !state) {
+      throw new Error([
+        'Use: delegacao-estado <id> <estado> [--resumo <texto>] [--evidencia <id>]',
+        '[--acao-auditoria <id>] [--evidencia-auditoria <id>]',
+        '[--motivo <texto>] [--checkpoint <id>] [--rollback <id>].'
+      ].join(' '))
     }
+    const transition = await atualizarDelegacao(home, id, state, {
+      summary: options.resumo,
+      evidence: options.evidencia,
+      auditActionId: options['acao-auditoria'],
+      auditEvidenceId: options['evidencia-auditoria'],
+      reason: options.motivo,
+      checkpoint: options.checkpoint,
+      rollback: options.rollback
+    })
+    return { ok: true, result: transition.result, delegation: transition.delegation }
   }
   if (action === 'melhoria-operacional-promover') {
     const { options, positionals } = lerOpcoes(parts)
@@ -421,12 +555,15 @@ async function main() {
   }
   if (action === 'atalho-observar') {
     const { options } = lerOpcoes(parts)
+    if (!options.sessao || !options.execucao) {
+      throw new Error('Use: atalho-observar --objetivo <texto> --base <passos> --atalho <passos> --sessao <id> --execucao <tool-use-id>.')
+    }
     const observation = await registrarObservacaoAtalho(home, {
       goal: options.objetivo,
       baselineSteps: lerPassos(options.base, 'base'),
       shortcutSteps: lerPassos(options.atalho, 'atalho'),
-      outcome: options.resultado,
-      success: options.falhou !== true,
+      sessionId: options.sessao,
+      executionId: options.execucao,
       durationMs: options.duracao === undefined ? undefined : Number(options.duracao),
       scope: { type: 'user' }
     })
@@ -435,10 +572,12 @@ async function main() {
   if (action === 'atalho-validar') {
     const { options, positionals } = lerOpcoes(parts)
     const id = positionals[0]
-    if (!id) throw new Error('Use: atalho-validar <id> --resultado <resultado verificado>.')
+    if (!id || !options.sessao || !options.execucao) {
+      throw new Error('Use: atalho-validar <id> --sessao <id> --execucao <tool-use-id>.')
+    }
     const validation = await validarAtalho(home, id, {
-      outcome: options.resultado,
-      success: options.falhou !== true,
+      sessionId: options.sessao,
+      executionId: options.execucao,
       durationMs: options.duracao === undefined ? undefined : Number(options.duracao)
     })
     let improvement = null
@@ -539,15 +678,81 @@ async function main() {
       failure: analysis.pattern ? resumirFalha(analysis.pattern) : analysis
     }
   }
+  if (action === 'atalho-vinculo') {
+    const { options } = lerOpcoes(parts)
+    if (!options.objetivo || !options.base || !options.atalho) {
+      throw new Error('Use: atalho-vinculo --objetivo <texto> --base <passos> --atalho <passos>.')
+    }
+    const binding = vinculoVerificacaoAtalho({
+      goal: options.objetivo,
+      baselineSteps: lerPassos(options.base, 'base'),
+      shortcutSteps: lerPassos(options.atalho, 'atalho'),
+      scope: { type: 'user' }
+    })
+    return {
+      ok: true,
+      bindingMarker: `omni-shortcut-binding:${binding}`,
+      instruction: 'Inclua este marcador no comando de verificaÃ§Ã£o; ele correlaciona a prova, mas nÃ£o substitui o teste.'
+    }
+  }
+  if (action === 'melhoria-operacional-registrar-implementacao') {
+    const { options, positionals } = lerOpcoes(parts)
+    const required = [
+      'repo',
+      'artefato',
+      'acao-mutacao',
+      'evidencia-mutacao',
+      'acao-readback',
+      'evidencia-readback'
+    ]
+    if (!positionals[0] || required.some((key) => !options[key])) {
+      throw new Error([
+        'Use: melhoria-operacional-registrar-implementacao <id> --repo <caminho absoluto>',
+        '--artefato <caminho portatil> --acao-mutacao <id> --evidencia-mutacao <id>',
+        '--acao-readback <id> --evidencia-readback <id>.'
+      ].join(' '))
+    }
+    return {
+      ok: true,
+      improvement: await registrarImplementacaoOperacional(
+        home,
+        positionals[0],
+        options.repo,
+        options.artefato,
+        {
+          mutationActionId: options['acao-mutacao'],
+          mutationEvidenceId: options['evidencia-mutacao'],
+          verificationActionId: options['acao-readback'],
+          verificationEvidenceId: options['evidencia-readback']
+        }
+      )
+    }
+  }
+  if (action === 'falha-evidencias') {
+    const { options, positionals } = lerOpcoes(parts)
+    if (!positionals[0] || !options.job) throw new Error('Use: falha-evidencias <id> --job <id-do-trabalho>.')
+    const found = await listarEvidenciasVerificadasFalha(home, positionals[0], {
+      automationJobId: options.job
+    })
+    return {
+      ok: found.result === 'listed',
+      result: found.result,
+      failure: found.pattern ? resumirFalha(found.pattern) : null,
+      bindingMarker: found.bindingMarker ?? null,
+      evidence: found.evidence
+    }
+  }
   if (action === 'falha-testar') {
     const { options, positionals } = lerOpcoes(parts)
-    if (!positionals[0]) throw new Error('Use: falha-testar <id> --execucao <id> --resultado <texto> [--falhou].')
+    if (!positionals[0] || !options.job || !options['acao-auditoria'] || !options.criterio) {
+      throw new Error('Use: falha-testar <id> --job <id-do-trabalho> --acao-auditoria <id> --criterio <texto> [--evidencia-auditoria <id>].')
+    }
     const testResult = await testarCorrecaoFalha(home, positionals[0], {
-      evidenceId: options.execucao,
-      outcome: options.resultado,
+      auditActionId: options['acao-auditoria'],
+      auditEvidenceId: options['evidencia-auditoria'],
+      automationJobId: options.job,
       criterion: options.criterio,
       generation: options.geracao,
-      success: options.falhou !== true
     })
     return {
       ok: Boolean(testResult.fixTest),
@@ -557,10 +762,10 @@ async function main() {
   }
   if (action === 'falha-automacao-reivindicar') {
     const { options } = lerOpcoes(parts)
-    if (!options.executor) throw new Error('Use: falha-automacao-reivindicar --executor <id-unico>.')
-    const claimed = await reivindicarAutomacaoFalha(home, { executorId: options.executor })
+    if (!options.executor) throw new Error('Use: falha-automacao-reivindicar --executor <id-unico> [--job <id-do-trabalho>].')
+    const claimed = await reivindicarAutomacaoFalha(home, { executorId: options.executor, jobId: options.job })
     return {
-      ok: true,
+      ok: claimed.result === 'claimed' || claimed.result === 'empty',
       automation: claimed.job
         ? { result: claimed.result, jobId: claimed.job.id, patternId: claimed.job.patternId, prompt: claimed.prompt }
         : { result: claimed.result }
@@ -572,7 +777,10 @@ async function main() {
       throw new Error('Use: falha-automacao-concluir <job-id> --execucao <id-da-evidencia>.')
     }
     const completed = await concluirAutomacaoFalha(home, positionals[0], options.execucao)
-    return { ok: true, automation: { result: completed.result, jobId: completed.job?.id ?? null } }
+    return {
+      ok: completed.result === 'completed',
+      automation: { result: completed.result, jobId: completed.job?.id ?? null }
+    }
   }
   if (action === 'falha-automacao-bloquear') {
     const { options, positionals } = lerOpcoes(parts)
@@ -580,7 +788,10 @@ async function main() {
       throw new Error('Use: falha-automacao-bloquear <job-id> --motivo <texto-seguro>.')
     }
     const blocked = await bloquearAutomacaoFalha(home, positionals[0], options.motivo)
-    return { ok: true, automation: { result: blocked.result, jobId: blocked.job?.id ?? null } }
+    return {
+      ok: blocked.result === 'blocked',
+      automation: { result: blocked.result, jobId: blocked.job?.id ?? null }
+    }
   }
   if (action === 'falha-avaliar') {
     const { options, positionals } = lerOpcoes(parts)

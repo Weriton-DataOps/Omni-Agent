@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "contract": "omni-system-self-audit-v1",
+  "triggers": ["daily-scan", "before-release", "owner-request"],
+  "history": {
+    "maximumRuns": 120,
+    "idempotentByStateFingerprint": true,
+    "reuseLatestUnchangedRun": true
+  },
+  "repairPolicy": {
+    "automatic": [
+      "coalesce-duplicate-failure-jobs",
+      "supersede-stale-jobs",
+      "migrate-local-stores-with-backup"
+    ],
+    "requiresIndependentReadback": true,
+    "sourceChangesUseImplementationRoute": true,
+    "doesNotExpandCurrentAuthority": true
+  },
+  "findings": [
+    "release-integrity-drift",
+    "real-behavior-eval-missing",
+    "trusted-personality-eval-missing",
+    "personality-self-claims-unverified",
+    "learned-personality-cases-pending",
+    "duplicate-active-failure-jobs",
+    "unverified-delegations",
+    "unresolved-turn-findings",
+    "duplicate-portable-rules",
+    "evaluated-learning-without-route",
+    "materialized-learning-without-installed-readback",
+    "operational-improvement-ready-without-materialization",
+    "operational-implementation-required",
+    "operational-materialized-without-installed-readback"
+  ],
+  "metrics": [
+    "findingCorrectionRate",
+    "findingRecurrenceRate",
+    "evidenceCoverage",
+    "sameTurnCorrectionRate",
+    "verifiedDelegationRate",
+    "personalityRealPassRate",
+    "personalityTrustedPassRate",
+    "personalityUnverifiedClaims",
+    "learningEffectRate",
+    "activeQueueDuplicateRate",
+    "operationalImprovementReady",
+    "operationalImplementationRequired",
+    "operationalMaterializedPendingRelease",
+    "operationalInstalledVerified",
+    "operationalLearningEffectRate"
+  ],
+  "privacy": {
+    "storeRawConversation": false,
+    "storeRawToolData": false,
+    "storeRawPaths": false,
+    "storeSecrets": false,
+    "pluginVersionAllowlist": "semver"
+  }
+}

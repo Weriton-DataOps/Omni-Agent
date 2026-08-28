@@ -16,6 +16,12 @@ const suiteUrl = new URL('../contratos/eval/personalidade.json', import.meta.url
 const HASH_A = 'a'.repeat(64)
 const HASH_B = 'b'.repeat(64)
 
+const callerSuppliedVerifier = async () => ({
+  verified: true,
+  method: 'test-trusted-host',
+  receiptFingerprint: HASH_B
+})
+
 function sha256(content) {
   return createHash('sha256').update(content).digest('hex')
 }
@@ -35,10 +41,10 @@ function promotion(evidenceSha256 = HASH_A) {
 function promotedManifest(extras = {}) {
   return {
     schemaVersion: 1,
-    id: 'omni-persona-v2-candidate',
+    id: 'omni-persona-v1-candidate',
     status: 'approved',
     contract: './contrato.md',
-    supersedes: { id: 'omni-persona-v1-candidate', contract: './baseline.md' },
+    supersedes: null,
     promotion: promotion(),
     ...extras
   }
@@ -99,12 +105,12 @@ test('a personalidade ativa declara promoção nula enquanto for candidata', asy
 test('promoção preserva o identificador versionado da personalidade', () => {
   const manifest = promotedManifest()
   assert.equal(validarPromocao(manifest), manifest)
-  assert.equal(manifest.id, 'omni-persona-v2-candidate')
+  assert.equal(manifest.id, 'omni-persona-v1-candidate')
 })
 
 test('status approved exige rodada e referência criptográfica', () => {
   assert.throws(
-    () => validarPromocao({ schemaVersion: 1, id: 'omni-persona-v2-candidate', status: 'approved' }),
+    () => validarPromocao({ schemaVersion: 1, id: 'omni-persona-v1-candidate', status: 'approved' }),
     /exige registro da rodada/
   )
   assert.throws(
@@ -118,7 +124,7 @@ test('candidata não pode carregar registro de promoção', () => {
     () =>
       validarPromocao({
         schemaVersion: 1,
-        id: 'omni-persona-v2-candidate',
+        id: 'omni-persona-v1-candidate',
         status: 'active-candidate-pending-evals',
         promotion: promotion()
       }),
@@ -128,7 +134,7 @@ test('candidata não pode carregar registro de promoção', () => {
 
 test('status e identificador desconhecidos não passam', () => {
   assert.throws(
-    () => validarPromocao({ schemaVersion: 1, id: 'omni-persona-v2-candidate', status: 'quase-la' }),
+    () => validarPromocao({ schemaVersion: 1, id: 'omni-persona-v1-candidate', status: 'quase-la' }),
     /não é reconhecido/
   )
   assert.throws(
@@ -137,14 +143,29 @@ test('status e identificador desconhecidos não passam', () => {
   )
 })
 
-test('o carregador aceita promoção com evidência íntegra e recalcula os scores', async () => {
-  const { pluginRoot, manifest } = await pluginWithEvidence()
+test('callback externo fornecido pelo chamador nao autentica uma promocao', async () => {
+  const { pluginRoot } = await pluginWithEvidence()
   try {
-    const active = await lerPersonalidadeAtiva({ pluginRoot, useCache: false })
-    assert.equal(active.manifest.id, manifest.id)
-    assert.equal(active.promotionEvidence.baselineScore, 1)
-    assert.equal(active.promotionEvidence.candidateScore, 1)
-    assert.equal(active.promotionEvidence.reviewedCases, 22)
+    await assert.rejects(
+      lerPersonalidadeAtiva({
+        pluginRoot,
+        useCache: false,
+        verificarEvidenciaConfiavel: callerSuppliedVerifier
+      }),
+      /Callback fornecido pelo chamador nao e raiz de confianca/
+    )
+  } finally {
+    await rm(pluginRoot, { recursive: true, force: true })
+  }
+})
+
+test('hash recalculado e autoafirmação não autenticam uma promoção', async () => {
+  const { pluginRoot } = await pluginWithEvidence()
+  try {
+    await assert.rejects(
+      lerPersonalidadeAtiva({ pluginRoot, useCache: false }),
+      /verificacao criptografica interna/
+    )
   } finally {
     await rm(pluginRoot, { recursive: true, force: true })
   }

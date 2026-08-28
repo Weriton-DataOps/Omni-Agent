@@ -38,14 +38,14 @@
       "changes": [
         "Adicionou uma varredura diária das sessões do Omni para recuperar aprendizados que os hooks não capturaram.",
         "Passou a agrupar execuções bem-sucedidas repetidas em atalhos e candidatas de melhoria operacional.",
-        "Adicionou deduplicação por evidência, execução automática em segundo plano e relatório sem conversa bruta."
+        "Adicionou deduplicação por evidência, conferência periódica assíncrona e relatório local sem conversa bruta."
       ]
     },
     {
       "version": "0.16.1",
       "changes": [
-        "Tornou permanente o ciclo completo da varredura solicitada: avaliar, materializar, testar, commitar e publicar.",
-        "Padronizou o relatório final separando o que valeu subir do que foi realmente confirmado no origin/main.",
+        "Instruiu o host a continuar a varredura solicitada com avaliação, materialização, testes, commit e publicação após o scan local.",
+        "Padronizou o relatório do host separando o que valeu subir do que foi realmente confirmado no origin/main.",
         "Manteve a varredura automática de manutenção silenciosa e sem publicação remota."
       ]
     },
@@ -60,9 +60,9 @@
     {
       "version": "0.18.0",
       "changes": [
-        "Passou a enfileirar automaticamente padrões de falha candidatos para um subagente em segundo plano, sem nova pergunta ao proprietário.",
+        "Passou a enfileirar padrões de falha e emitir ao host um pedido idempotente de despacho para subagente, sem nova pergunta ao proprietário.",
         "Adicionou reserva idempotente, lease e proteção contra duplicação ou ciclo infinito do executor.",
-        "Automatizou causa raiz, dois testes locais independentes e eval, comparando consistência pelo mesmo critério de aceitação.",
+        "Definiu o briefing para causa raiz, dois testes locais independentes e eval; o host ainda precisa iniciar o executor.",
         "Manteve ações destrutivas, escrita remota, custo, nova permissão e escalada de privilégio dependentes de autorização."
       ]
     },
@@ -70,7 +70,7 @@
       "version": "0.18.1",
       "changes": [
         "Corrigiu a corrida entre o eval da falha e o fechamento do trabalho em segundo plano.",
-        "Garantiu que o subagente anexe a evidência final antes do job ser encerrado e permite reparar recibos antigos sem fingerprint."
+        "Impediu o fechamento do job sem evidência final vinculada e permitiu reparar recibos antigos sem fingerprint."
       ]
     },
     {
@@ -105,6 +105,25 @@
         "Liberou a reanalise de um padrao de falha enquanto ele nao foi avaliado, para que um diagnostico errado possa ser substituido por outro medido.",
         "Fez falha-analisar, falha-testar, falha-avaliar e melhoria-aprovar propagarem o resultado real, encerrando o ok verdadeiro sobre operacao que nao aconteceu.",
         "Acrescentou dois testes de regressao cobrindo a reanalise aceita antes da avaliacao e recusada depois dela."
+      ]
+    },
+    {
+      "version": "0.20.0",
+      "changes": [
+        "Adicionou auditoria obrigatoria por turno e autocorrecao antes de encerrar pedidos executaveis.",
+        "Tornou delegacao e autoridade verificaveis: relato nao e sucesso, e fechamento exige evidencia independente.",
+        "Fechou lacunas do aprendizado com autoria comprovada, fila idempotente, dois testes reais e destino coerente para cada melhoria.",
+        "Adicionou auditoria sistemica incremental e metricas de recorrencia, evidencia, delegacao, personalidade e efeito do aprendizado.",
+        "Criou o avaliador de comportamento real com duas sessoes, revisao do proprietario e proveniencia da release instalada; sem raiz confiavel, o resultado permanece unverified.",
+        "Passou a identificar cada release por versao e fingerprint no contrato canonico de integridade, sem campo nao suportado no manifesto do plugin.",
+        "Versionou o guardiao e as credenciais v2 no repositorio; a troca do hook global permanece separada ate aprovacao explicita.",
+        "Ligou a varredura e o observador ao ciclo monotônico de melhoria; somente a release instalada e relida conta como efeito.",
+        "Vinculou testes de falha a job, padrao, geracao e hipotese e recusou evidencias legadas ou autodeclaradas como prova.",
+        "Separou conversa de operacao para preservar respostas naturais sem dispensar evidencia em build, codigo e inspecao.",
+        "Endureceu o guardiao inativo contra executaveis por caminho, arquivos externos de padrao do rg e reutilizacao de passe entre objetivos.",
+        "Vinculou pedido, acao e readback por familia e alvo para impedir que trabalho irrelevante feche o turno.",
+        "Preparou e tornou visivel a delegacao automatica antes do despacho e restringiu o sensor de personalidade a feedback negativo inequivoco.",
+        "Exigiu familia de verificacao compativel alem do marcador para validar testes de falhas e atalhos."
       ]
     }
   ]

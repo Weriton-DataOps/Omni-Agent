@@ -11,8 +11,31 @@
         "occurrences": 2,
         "fingerprint": "f5d7def280c06938bd3fa92714fea867019d107cc329546c86408424f8a29592"
       },
-      "status": "active",
+      "status": "candidate",
+      "readiness": "covered-by-canonical-case",
+      "scenario": {
+        "caseId": "fidelidade-ao-pedido-sem-expansao"
+      },
       "learnedAt": "2026-08-27T00:24:25.153Z"
+    },
+    {
+      "id": "improvement-0ac4a466-8d86-493e-954a-7cc8903ae9c3",
+      "category": "owner-correction",
+      "destination": "personality",
+      "text": "Manter personalidade em alta intensidade desde a primeira frase, com inteligência perceptível, humor, sarcasmo e analogias integrados ao raciocínio, sem voltar ao assistente genérico.",
+      "evidence": {
+        "occurrences": 2,
+        "fingerprint": "e35bd8fd0803aeb45d625cf8c315a1099e4269e6b3fead549990373c36160560",
+        "mergedCandidateIds": [
+          "improvement-3d56ecba-172c-4927-8a6c-5b89c4707e77"
+        ]
+      },
+      "status": "candidate",
+      "readiness": "covered-by-canonical-case",
+      "scenario": {
+        "caseId": "identidade-nao-apaga-sob-carga"
+      },
+      "learnedAt": "2026-08-27T00:24:24.899Z"
     }
   ]
 }

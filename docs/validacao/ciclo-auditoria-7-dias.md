@@ -20,7 +20,7 @@ mais dias se os resultados ainda variarem ou revelarem lacunas.
 |---:|---|---|---|---|---|---|---|---|
 | 1 | 26/08/2026 | 150/150 | smoke 0.19.1 aprovado | observada | pendente após recarga | 4 rodadas | 16 casos | baseline |
 | 2 | 27/08/2026 | — | — | — | — | — | — | — |
-| 3 | 28/08/2026 | — | — | — | — | — | — | — |
+| 3 | 28/08/2026 | 275/275 + pacote válido | circuitos corrigidos | autoavaliação confrontada | preparo/visibilidade/claim cobertos; uso real pendente | incremental + sistêmica | avaliador real, confiança pendente | correção técnica fechada |
 | 4 | 29/08/2026 | — | — | — | — | — | — | — |
 | 5 | 30/08/2026 | — | — | — | — | — | — | — |
 | 6 | 31/08/2026 | — | — | — | — | — | — | — |
@@ -35,3 +35,5 @@ comparabilidade.
 
 O inventário completo do primeiro dia está em
 [`auditorias-2026-08-26.md`](auditorias-2026-08-26.md).
+O inventário técnico da correção de 28/08 está em
+[`auditoria-2026-08-28.md`](auditoria-2026-08-28.md).

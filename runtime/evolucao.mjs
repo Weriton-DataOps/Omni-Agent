@@ -1,19 +1,75 @@
-import { access, mkdir, readFile, rename, writeFile } from 'node:fs/promises'
-import { isAbsolute, join, resolve } from 'node:path'
+import { createHash } from 'node:crypto'
+import { access, mkdir, open, readFile, realpath, rename, stat, unlink, writeFile } from 'node:fs/promises'
+import { isAbsolute, join, resolve, sep } from 'node:path'
 
-import { lerCicloOperacional, marcarMelhoriaOperacional } from './ciclo-operacional.mjs'
+import {
+  fingerprintSemanticoMelhoria,
+  lerCicloOperacional,
+  marcarMelhoriaOperacional
+} from './ciclo-operacional.mjs'
+import { verificarIntegridadeRelease } from './integridade-release.mjs'
 import { pareceConterSegredo } from './memoria.mjs'
+import { resolverImplementacaoOperacionalAuditoria } from './auditoria-autocorrecao.mjs'
 
 const CONFIG_SCHEMA_VERSION = 1
 
 const DESTINATIONS = {
   'operational-rule': ['contratos', 'operacao', 'regras-aprendidas.json', 'rules'],
-  routing: ['contratos', 'operacao', 'regras-aprendidas.json', 'rules'],
-  hook: ['contratos', 'operacao', 'regras-aprendidas.json', 'rules'],
-  personality: ['contratos', 'operacao', 'regras-aprendidas.json', 'rules'],
+  personality: ['contratos', 'eval', 'casos-aprendidos.json', 'cases'],
   procedure: ['contratos', 'operacao', 'procedimentos-aprendidos.json', 'procedures'],
-  capability: ['contratos', 'operacao', 'procedimentos-aprendidos.json', 'procedures'],
   eval: ['contratos', 'eval', 'casos-aprendidos.json', 'cases']
+}
+
+const SOURCE_CHANGE_DESTINATIONS = {
+  routing: 'runtime/roteamento',
+  hook: 'runtime/hook-contexto.mjs',
+  'runtime-fix': 'runtime',
+  capability: 'skills e contratos/capacidades/catalogo.json'
+}
+const PAYLOAD_ROOTS = new Set(['contratos', 'hooks', 'runtime', 'scripts', 'skills'])
+
+function hash(value) {
+  return createHash('sha256').update(String(value ?? ''), 'utf8').digest('hex')
+}
+
+function agora(value) {
+  return value ? new Date(value).toISOString() : new Date().toISOString()
+}
+
+function caminhoPortatil(value) {
+  const path = String(value ?? '').replace(/\\/g, '/').replace(/^\.\//, '')
+  if (!path || isAbsolute(path) || path.split('/').includes('..') || !PAYLOAD_ROOTS.has(path.split('/')[0])) {
+    throw new Error('O artefato precisa usar caminho portatil dentro do payload do Omni.')
+  }
+  return path
+}
+
+async function resolverArtefato(root, portablePath) {
+  const canonicalRoot = await realpath(root)
+  const target = await realpath(join(root, ...portablePath.split('/')))
+  if (target !== canonicalRoot && !target.startsWith(`${canonicalRoot}${sep}`)) {
+    throw new Error('O artefato instalado escapa da raiz integra do plugin.')
+  }
+  return target
+}
+
+async function adquirirTravaRepositorio(root) {
+  const path = join(root, '.git', 'omni-evolution.lock')
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    try {
+      const handle = await open(path, 'wx')
+      return async () => {
+        await handle.close()
+        await unlink(path).catch(() => undefined)
+      }
+    } catch (error) {
+      if (error?.code !== 'EEXIST') throw error
+      const info = await stat(path).catch(() => null)
+      if (info && Date.now() - info.mtimeMs > 120_000) await unlink(path).catch(() => undefined)
+      await new Promise((resolveWait) => setTimeout(resolveWait, 25))
+    }
+  }
+  throw new Error('Outra materializacao do Omni esta alterando o repositorio canonico.')
 }
 
 async function validarRepositorio(repoRoot) {
@@ -61,6 +117,7 @@ export async function lerRepositorioCanonico(casa) {
 }
 
 function artefato(candidate) {
+  const precisaDeCenario = candidate.destination === 'personality' || candidate.destination === 'eval'
   return {
     id: candidate.id,
     category: candidate.category,
@@ -70,8 +127,45 @@ function artefato(candidate) {
       occurrences: candidate.occurrences,
       fingerprint: candidate.fingerprint
     },
-    status: 'active',
+    status: precisaDeCenario ? 'candidate' : 'active',
+    ...(precisaDeCenario ? { readiness: 'pending-scenario', scenario: null } : {}),
     learnedAt: candidate.updatedAt
+  }
+}
+
+function textoNormalizado(value) {
+  return String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function alvoNormalizado(value) {
+  return String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function mesmoArtefato(item, candidate) {
+  return item?.destination === candidate.destination && (
+    item?.evidence?.fingerprint === candidate.fingerprint ||
+    textoNormalizado(item?.text) === textoNormalizado(candidate.statement)
+  )
+}
+
+function referenciaDaEntrada(path, collection, item, candidate) {
+  return {
+    kind: 'portable-entry',
+    path,
+    collection,
+    entryId: item.id,
+    semanticFingerprint: fingerprintSemanticoMelhoria(candidate),
+    contentFingerprint: null
   }
 }
 
@@ -82,25 +176,74 @@ export async function materializarMelhoriaOperacional(casa, id, repoRoot) {
   if (!candidate) throw new Error(`Melhoria operacional inexistente: ${id}`)
   if (candidate.status !== 'ready') return { result: 'not-ready', candidate }
   if (pareceConterSegredo(candidate.statement)) throw new Error('Melhoria contem material sensivel.')
+  const sourceTarget = SOURCE_CHANGE_DESTINATIONS[candidate.destination]
+  if (sourceTarget) {
+    const marked = await marcarMelhoriaOperacional(casa, id, {
+      status: 'implementation-required',
+      artifact: sourceTarget
+    })
+    return {
+      result: 'implementation-required',
+      candidateId: id,
+      destination: candidate.destination,
+      route: {
+        kind: 'source-change',
+        targetHint: sourceTarget,
+        requiredGates: ['patch', 'regression-test', 'full-suite', 'release-fingerprint', 'installed-readback']
+      },
+      candidate: marked.candidate
+    }
+  }
   const destination = DESTINATIONS[candidate.destination]
   if (!destination) return { result: 'local-only', candidate }
-  const [directory, area, file, collection] = destination
-  const path = join(root, directory, area, file)
-  const document = JSON.parse(await readFile(path, 'utf8'))
-  if (!Array.isArray(document[collection])) throw new Error(`Artefato de destino invalido: ${path}`)
-  if (!document[collection].some((item) => item.id === candidate.id)) {
-    document[collection].push(artefato(candidate))
-    const temporary = `${path}.${process.pid}.novo`
-    await writeFile(temporary, `${JSON.stringify(document, null, 2)}\n`, 'utf8')
-    await rename(temporary, path)
-  }
-  await marcarMelhoriaOperacional(casa, id, { status: 'materialized', artifact: path })
-  return {
-    result: 'materialized',
-    candidateId: id,
-    destination: candidate.destination,
-    artifact: path,
-    next: ['npm.cmd run check', 'npm.cmd test', 'review', 'version', 'commit', 'publish']
+  const release = await adquirirTravaRepositorio(root)
+  try {
+    const [directory, area, file, collection] = destination
+    const portablePath = [directory, area, file].join('/')
+    const path = join(root, directory, area, file)
+    const document = JSON.parse(await readFile(path, 'utf8'))
+    if (!Array.isArray(document[collection])) throw new Error(`Artefato de destino invalido: ${path}`)
+    const existing = document[collection].find((item) =>
+      item.id === candidate.id || mesmoArtefato(item, candidate)
+    )
+    let materialized = existing
+    if (!existing) {
+      materialized = artefato(candidate)
+      document[collection].push(materialized)
+      const temporary = `${path}.${process.pid}.${id}.novo`
+      await writeFile(temporary, `${JSON.stringify(document, null, 2)}\n`, 'utf8')
+      await rename(temporary, path)
+    } else if (existing.id !== candidate.id) {
+      existing.evidence = {
+        ...existing.evidence,
+        occurrences: Math.max(existing.evidence?.occurrences ?? 0, candidate.occurrences),
+        fingerprint: existing.evidence?.fingerprint ?? candidate.fingerprint,
+        mergedCandidateIds: [...new Set([
+          ...(existing.evidence?.mergedCandidateIds ?? []),
+          candidate.id
+        ])]
+      }
+      const temporary = `${path}.${process.pid}.${id}.novo`
+      await writeFile(temporary, `${JSON.stringify(document, null, 2)}\n`, 'utf8')
+      await rename(temporary, path)
+    }
+    const reference = referenciaDaEntrada(portablePath, collection, materialized, candidate)
+    const marked = await marcarMelhoriaOperacional(casa, id, {
+      status: 'materialized-pending-release',
+      artifactRef: reference
+    })
+    return {
+      result: 'materialized-pending-release',
+      candidateId: id,
+      destination: candidate.destination,
+      artifact: portablePath,
+      artifactRef: reference,
+      deduplicated: Boolean(existing && existing.id !== candidate.id),
+      candidate: marked.candidate,
+      next: ['npm.cmd run check', 'npm.cmd test', 'review', 'version', 'commit', 'publish', 'installed-readback']
+    }
+  } finally {
+    await release()
   }
 }
 
@@ -108,4 +251,120 @@ export async function materializarMelhoriaConfigurada(casa, id) {
   const configuration = await lerRepositorioCanonico(casa)
   if (configuration.status !== 'configured') return { result: 'unconfigured', candidateId: id }
   return materializarMelhoriaOperacional(casa, id, configuration.sourceRepository)
+}
+
+export async function registrarImplementacaoOperacional(casa, id, repoRoot, artifactPath, {
+  now,
+  mutationActionId,
+  mutationEvidenceId,
+  verificationActionId,
+  verificationEvidenceId
+} = {}) {
+  const root = await validarRepositorio(repoRoot)
+  const portablePath = caminhoPortatil(artifactPath)
+  const cycle = await lerCicloOperacional(casa)
+  const candidate = cycle.improvementCandidates.find((item) => item.id === id)
+  if (!candidate) throw new Error(`Melhoria operacional inexistente: ${id}`)
+  if (candidate.status !== 'implementation-required') return { result: 'not-ready', candidate }
+  const target = await resolverArtefato(root, portablePath)
+  const requiredAt = [...candidate.transitionHistory]
+    .reverse()
+    .find((item) => item.to === 'implementation-required')?.recordedAt
+  const audit = await resolverImplementacaoOperacionalAuditoria(casa, {
+    mutationActionId,
+    mutationEvidenceId,
+    verificationActionId,
+    verificationEvidenceId,
+    targetFingerprints: [...new Set([
+      hash(alvoNormalizado(portablePath)),
+      hash(alvoNormalizado(join(root, ...portablePath.split('/')))),
+      hash(alvoNormalizado(target))
+    ])],
+    notBefore: requiredAt
+  })
+  if (audit.result !== 'verified') {
+    throw new Error('A implementacao exige mutacao auditada no proprio artefato e readback posterior, ambos depois de implementation-required.')
+  }
+  const raw = await readFile(target)
+  const reference = {
+    kind: 'source-file',
+    path: portablePath,
+    collection: null,
+    entryId: null,
+    semanticFingerprint: fingerprintSemanticoMelhoria(candidate),
+    contentFingerprint: hash(raw),
+    implementationReceipt: audit.receipt
+  }
+  const marked = await marcarMelhoriaOperacional(casa, id, {
+    status: 'materialized-pending-release',
+    artifactRef: reference
+  }, { at: now })
+  return { result: marked.result, candidate: marked.candidate, artifactRef: reference }
+}
+
+async function localizarEntradaInstalada(pluginRoot, candidate) {
+  const reference = candidate.artifactRef
+  const target = await resolverArtefato(pluginRoot, caminhoPortatil(reference.path))
+  if (reference.kind === 'source-file') {
+    if (!reference.implementationReceipt) return null
+    const raw = await readFile(target)
+    if (hash(raw) !== reference.contentFingerprint) return null
+    return { fingerprint: hash(raw) }
+  }
+  const document = JSON.parse(await readFile(target, 'utf8'))
+  if (!Array.isArray(document[reference.collection])) return null
+  const matches = document[reference.collection].filter((item) =>
+    item?.id === reference.entryId ||
+    item?.id === candidate.id ||
+    item?.evidence?.mergedCandidateIds?.includes(candidate.id) ||
+    mesmoArtefato(item, candidate)
+  )
+  const entry = matches.find((item) =>
+    fingerprintSemanticoMelhoria({ destination: item.destination, statement: item.text }) ===
+      reference.semanticFingerprint
+  )
+  return entry ? { fingerprint: hash(JSON.stringify(entry)) } : null
+}
+
+export async function registrarReadbackOperacionalInstalado(casa, {
+  pluginRoot,
+  version,
+  payloadFingerprint,
+  now
+} = {}) {
+  if (!isAbsolute(pluginRoot ?? '')) throw new Error('O plugin instalado precisa usar caminho absoluto.')
+  if (typeof version !== 'string' || !version.trim()) throw new Error('A versao instalada e obrigatoria.')
+  if (!/^[a-f0-9]{64}$/.test(payloadFingerprint ?? '')) {
+    throw new Error('O readback operacional exige fingerprint do payload instalado.')
+  }
+  const integrity = await verificarIntegridadeRelease(resolve(pluginRoot))
+  if (
+    integrity.status !== 'verified' ||
+    integrity.versionMatchesManifest !== true ||
+    integrity.releaseVersion !== version ||
+    integrity.fingerprint !== payloadFingerprint ||
+    integrity.declaredFingerprint !== payloadFingerprint
+  ) {
+    throw new Error('O readback operacional exige release instalada integra, identificada e da mesma versao.')
+  }
+  const cycle = await lerCicloOperacional(casa)
+  let verified = 0
+  const verifiedAt = agora(now)
+  for (const candidate of cycle.improvementCandidates) {
+    if (candidate.status !== 'materialized-pending-release' || !candidate.artifactRef) continue
+    const installed = await localizarEntradaInstalada(pluginRoot, candidate)
+    if (!installed) continue
+    await marcarMelhoriaOperacional(casa, candidate.id, {
+      status: 'installed-verified',
+      installedReadback: {
+        verified: true,
+        version,
+        payloadFingerprint,
+        artifactFingerprint: installed.fingerprint,
+        verifiedAt
+      }
+    }, { at: now })
+    verified += 1
+  }
+  return { result: 'checked', verified, version, payloadFingerprint }
 }

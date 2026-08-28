@@ -1,6 +1,6 @@
 {
-  "schemaVersion": 2,
-  "policy": "shortcut-learning-v2",
+  "schemaVersion": 4,
+  "policy": "shortcut-learning-v4",
   "activationSuccessfulRuns": 1,
   "validationSuccessfulRuns": 3,
   "maximumObservationsPerShortcut": 20,
@@ -10,5 +10,15 @@
   "validatedInactivityDays": 90,
   "maximumFailuresBeforeArchive": 2,
   "automaticPortablePromotion": false,
+  "verifiedObservations": {
+    "source": "audit-self-correction",
+    "requireSessionBinding": true,
+    "requireExecutionBinding": true,
+    "requirePatternBinding": true,
+    "requireSemanticBinding": true,
+    "requireActionFamily": true,
+    "requiredActionEffect": "verification",
+    "requiredActionState": "succeeded"
+  },
   "storeRawOutcome": false
 }

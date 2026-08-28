@@ -35,5 +35,7 @@ falha de rede, o último resultado válido pode ser usado como cache antigo, ide
 - se o pacote carregado ficou antigo, a interface nativa do VS Code usa `/plugin` → **Restart** e o
   terminal usa `/reload-plugins`; ambos preservam a sessão;
 - o atualizador não reinicia o Claude, não abre sessão e não lê nem transmite memória pessoal;
-- atualização continua passando por testes, commit, push e atualização do plugin;
+- testes, versionamento, commit e push pertencem à produção da release, antes de ela ser publicada;
+- o comando `atualizar` apenas instala a release já publicada, valida versão e fingerprint e executa
+  o readback dos artefatos instalados;
 - falha de consulta nunca impede o Omni de conversar.

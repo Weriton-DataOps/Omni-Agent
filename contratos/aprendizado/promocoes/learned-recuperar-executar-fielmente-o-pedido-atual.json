@@ -50,9 +50,16 @@
     "decidedAt": "2026-08-27T18:26:07.926Z"
   },
   "artifacts": {
-    "skill": "skills/learned-recuperar-executar-fielmente-o-pedido-atual/SKILL.md",
-    "skillSha256": "fcdb5ba1326e290119610f54c68f12a6ff56b0522d7180dd7ad42382d272b0d0",
-    "capabilityCatalog": "contratos/capacidades/catalogo.json"
+    "retractedSkill": "skills/learned-recuperar-executar-fielmente-o-pedido-atual/SKILL.md",
+    "retractedSkillSha256": "fcdb5ba1326e290119610f54c68f12a6ff56b0522d7180dd7ad42382d272b0d0",
+    "retractedCatalogEntry": "learned-recuperar-executar-fielmente-o-pedido-atual",
+    "replacementRuntime": "runtime/observador.mjs",
+    "replacementTests": "testes/observador.test.mjs"
   },
-  "status": "materialized-pending-version"
+  "retraction": {
+    "reason": "A causa estava no sensor de fidelidade do runtime; uma skill não corrigia o detector e transformava diagnóstico em implementação de papel.",
+    "preservesEvidence": true,
+    "retractedAt": "2026-08-28T00:00:00.000Z"
+  },
+  "status": "retracted-replaced-by-runtime-fix"
 }

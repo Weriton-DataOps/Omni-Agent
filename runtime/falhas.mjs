@@ -2,10 +2,11 @@ import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, open, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
 
+import { lerAuditoriaAutocorrecao } from './auditoria-autocorrecao.mjs'
 import { pareceConterSegredo } from './memoria.mjs'
 
-export const FAILURE_STORE_SCHEMA_VERSION = 1
-export const FAILURE_LEARNING_POLICY_VERSION = 1
+export const FAILURE_STORE_SCHEMA_VERSION = 6
+export const FAILURE_LEARNING_POLICY_VERSION = 3
 
 const POLICY_PATH = new URL('../contratos/aprendizado/falhas.json', import.meta.url)
 const STATUS = new Set(['observing', 'candidate', 'analyzed', 'testing', 'ready-for-eval', 'evaluated'])
@@ -27,11 +28,15 @@ function fingerprint(value) {
   return createHash('sha256').update(normalize(value)).digest('hex')
 }
 
-export function geracaoPadraoFalha(pattern) {
-  const lastEvidence = pattern?.observations?.at(-1)?.evidenceFingerprint ?? 'sem-evidencia'
+function fingerprintCiclo(id, cycleNumber) {
   return createHash('sha256')
-    .update(`${pattern?.id ?? 'sem-padrao'}:${pattern?.occurrences ?? 0}:${lastEvidence}`, 'utf8')
+    .update(`${id}:failure-remediation-cycle:${cycleNumber}`, 'utf8')
     .digest('hex')
+}
+
+export function geracaoPadraoFalha(pattern) {
+  if (hashValid(pattern?.cycleFingerprint)) return pattern.cycleFingerprint
+  return fingerprintCiclo(pattern?.id ?? 'sem-padrao', pattern?.cycleNumber ?? 1)
 }
 
 function safeText(value, label, minimum, maximum) {
@@ -51,6 +56,141 @@ function emptyStore(createdAt = now()) {
   }
 }
 
+function migrateV1(store) {
+  const migrated = structuredClone(store)
+  migrated.schemaVersion = 2
+  migrated.patterns = migrated.patterns.map((pattern) => ({
+    ...pattern,
+    cycleNumber: 1,
+    cycleFingerprint: fingerprintCiclo(pattern.id, 1),
+    cycleStartedAt: pattern.createdAt,
+    evaluationHistory: []
+  }))
+  return migrated
+}
+
+function migrateV2(store) {
+  const migrated = structuredClone(store)
+  migrated.schemaVersion = 5
+  migrated.patterns = migrated.patterns.map((pattern) => {
+    const legacyCandidates = [
+      ...(Array.isArray(pattern.legacyUnverifiedFixTests) ? pattern.legacyUnverifiedFixTests : []),
+      ...(Array.isArray(pattern.fixTests) ? pattern.fixTests : [])
+    ]
+    const legacy = legacyCandidates
+      .filter(legacyTestValid)
+      .map((item) => ({
+        id: item.id,
+        evidenceFingerprint: item.evidenceFingerprint,
+        outcomeFingerprint: item.outcomeFingerprint,
+        ...(item.criterionFingerprint === undefined ? {} : { criterionFingerprint: item.criterionFingerprint }),
+        success: item.success,
+        consistent: item.consistent,
+        testedAt: item.testedAt
+      }))
+    const invalidated = legacyCandidates.length > 0
+    return {
+      ...pattern,
+      analysis: pattern.analysis
+        ? { ...pattern.analysis, hypothesisFingerprint: fingerprint(pattern.analysis.hypothesis) }
+        : null,
+      legacyUnverifiedFixTests: legacy,
+      fixTests: [],
+      status: invalidated && ['testing', 'ready-for-eval', 'evaluated'].includes(pattern.status)
+        ? pattern.analysis ? 'analyzed' : pattern.occurrences >= 3 ? 'candidate' : 'observing'
+        : pattern.status,
+      evaluation: invalidated ? null : pattern.evaluation
+    }
+  })
+  return migrated
+}
+
+function migrateV3(store) {
+  const migrated = structuredClone(store)
+  migrated.schemaVersion = 5
+  migrated.patterns = migrated.patterns.map((pattern) => {
+    const legacyCandidates = [
+      ...(Array.isArray(pattern.legacyUnverifiedFixTests) ? pattern.legacyUnverifiedFixTests : []),
+      ...(Array.isArray(pattern.fixTests) ? pattern.fixTests : [])
+    ]
+    const legacy = legacyCandidates
+      .filter(legacyTestValid)
+      .map((item) => ({
+        id: item.id,
+        evidenceFingerprint: item.evidenceFingerprint,
+        outcomeFingerprint: item.outcomeFingerprint,
+        ...(item.criterionFingerprint === undefined ? {} : { criterionFingerprint: item.criterionFingerprint }),
+        success: item.success,
+        consistent: item.consistent,
+        testedAt: item.testedAt
+      }))
+    const invalidated = Array.isArray(pattern.fixTests) && pattern.fixTests.length > 0
+    return {
+      ...pattern,
+      analysis: pattern.analysis
+        ? { ...pattern.analysis, hypothesisFingerprint: fingerprint(pattern.analysis.hypothesis) }
+        : null,
+      legacyUnverifiedFixTests: legacy,
+      fixTests: [],
+      status: invalidated && ['testing', 'ready-for-eval', 'evaluated'].includes(pattern.status)
+        ? pattern.analysis ? 'analyzed' : pattern.occurrences >= 3 ? 'candidate' : 'observing'
+        : pattern.status,
+      evaluation: invalidated ? null : pattern.evaluation
+    }
+  })
+  return migrated
+}
+
+function migrateV4(store) {
+  return migrateV3(store)
+}
+
+function familiaVerificacao(value) {
+  const text = normalize(value ?? '')
+  if (/\b(?:git|branch|commit|refs?|index|worktree|diff|repository|repositorio)\b/.test(text)) return 'repository'
+  if (/\b(?:build|compile|compilar|bundle|empacotar)\b/.test(text)) return 'build'
+  if (/\b(?:agente|subagente|executor|delegacao)\b/.test(text)) return 'delegation'
+  // Arquivos, diretÃ³rios e artefatos costumam ser o objeto da correÃ§Ã£o, nÃ£o a
+  // prova. Sem um verbo de verificaÃ§Ã£o estrutural mais forte, a prova exigida Ã©
+  // um teste real; uma leitura ou `git status` genÃ©rico permanece insuficiente.
+  return 'test'
+}
+
+function fingerprintFamiliaVerificacao(pattern, hypothesis, family) {
+  return fingerprint(`${pattern.id}|${geracaoPadraoFalha(pattern)}|${hypothesis}|${family}`)
+}
+
+function migrateV5(store) {
+  const migrated = migrateV3(store)
+  migrated.schemaVersion = FAILURE_STORE_SCHEMA_VERSION
+  migrated.patterns = migrated.patterns.map((pattern) => {
+    if (!pattern.analysis) return pattern
+    const verificationFamily = familiaVerificacao(`${pattern.action} ${pattern.analysis.hypothesis}`)
+    return {
+      ...pattern,
+      analysis: {
+        ...pattern.analysis,
+        verificationFamily,
+        verificationFamilyFingerprint: fingerprintFamiliaVerificacao(
+          pattern,
+          pattern.analysis.hypothesis,
+          verificationFamily
+        )
+      }
+    }
+  })
+  return migrated
+}
+
+async function backupBeforeMigration(path, raw, version) {
+  const backup = `${path}.v${version}.backup`
+  try {
+    await writeFile(backup, raw, { encoding: 'utf8', flag: 'wx' })
+  } catch (error) {
+    if (error?.code !== 'EEXIST') throw error
+  }
+}
+
 export function caminhoDasFalhas(casa) {
   if (!isAbsolute(casa)) throw new Error('A casa do aprendizado de falhas precisa ser absoluta.')
   return join(casa, 'learning', 'failures.json')
@@ -60,7 +200,7 @@ async function readPolicy() {
   const policy = JSON.parse(await readFile(POLICY_PATH, 'utf8'))
   if (
     policy?.schemaVersion !== FAILURE_LEARNING_POLICY_VERSION ||
-    policy.policy !== 'failure-learning-v1' ||
+    policy.policy !== 'failure-learning-v3' ||
     !Array.isArray(policy.failureClasses) ||
     !Number.isInteger(policy.minimumPatternOccurrences) ||
     policy.minimumPatternOccurrences < 3 ||
@@ -71,6 +211,22 @@ async function readPolicy() {
     !Number.isInteger(policy.maximumFixTestsPerPattern) ||
     policy.maximumFixTestsPerPattern < policy.minimumSuccessfulFixTests ||
     policy.requireDistinctEvidence !== true ||
+    policy.verifiedFixTests?.source !== 'audit-self-correction' ||
+    policy.verifiedFixTests?.requiredActionEffect !== 'verification' ||
+    policy.verifiedFixTests?.requiredActionState !== 'succeeded' ||
+    policy.verifiedFixTests?.requireEvidence !== true ||
+    policy.verifiedFixTests?.requireAfterAnalysis !== true ||
+    policy.verifiedFixTests?.requireDistinctActions !== true ||
+    policy.verifiedFixTests?.requireDistinctExecutions !== true ||
+    policy.verifiedFixTests?.requireConsistentStrategy !== true ||
+    policy.verifiedFixTests?.requireConsistentCriterion !== true ||
+    policy.verifiedFixTests?.requireAutomationJob !== true ||
+    policy.verifiedFixTests?.requirePatternBinding !== true ||
+    policy.verifiedFixTests?.requireHypothesisBinding !== true ||
+    policy.verifiedFixTests?.requireDispatchBeforeVerification !== true ||
+    policy.verifiedFixTests?.requireExplicitCommandBinding !== true ||
+    policy.verifiedFixTests?.requireActionFamilyBinding !== true ||
+    policy.verifiedFixTests?.storeRawOutcome !== false ||
     policy.diagnosticSignature?.version !== 'failure-signature-v2' ||
     !Array.isArray(policy.diagnosticSignature.components) ||
     policy.diagnosticSignature.storeRawCommand !== false ||
@@ -109,6 +265,32 @@ function testValid(item) {
     item &&
       typeof item.id === 'string' &&
       item.id.startsWith('fix-test-') &&
+      typeof item.auditActionId === 'string' && item.auditActionId.startsWith('audit-action-') &&
+      typeof item.auditEvidenceId === 'string' && item.auditEvidenceId.startsWith('audit-evidence-') &&
+      hashValid(item.executionFingerprint) &&
+      hashValid(item.strategyFingerprint) &&
+      hashValid(item.evidenceFingerprint) &&
+      hashValid(item.outcomeFingerprint) &&
+      hashValid(item.criterionFingerprint) &&
+      typeof item.automationJobId === 'string' && item.automationJobId.startsWith('failure-job-') &&
+      hashValid(item.patternFingerprint) &&
+      hashValid(item.hypothesisFingerprint) &&
+      hashValid(item.verificationFamilyFingerprint) &&
+      hashValid(item.verificationBindingFingerprint) &&
+      hashValid(item.bindingFingerprint) &&
+      item.source === 'audit-self-correction' &&
+      item.verified === true &&
+      item.success === true &&
+      typeof item.consistent === 'boolean' &&
+      dateValid(item.actionRecordedAt) &&
+      dateValid(item.testedAt)
+  )
+}
+
+function legacyTestValid(item) {
+  return Boolean(
+    item &&
+      typeof item.id === 'string' && item.id.startsWith('fix-test-') &&
       hashValid(item.evidenceFingerprint) &&
       hashValid(item.outcomeFingerprint) &&
       (item.criterionFingerprint === undefined || hashValid(item.criterionFingerprint)) &&
@@ -130,9 +312,24 @@ function patternValid(item, policy) {
       STATUS.has(item.status) &&
       Number.isInteger(item.occurrences) &&
       item.occurrences >= 1 &&
+      Number.isInteger(item.cycleNumber) &&
+      item.cycleNumber >= 1 &&
+      hashValid(item.cycleFingerprint) &&
+      dateValid(item.cycleStartedAt) &&
+      Array.isArray(item.evaluationHistory) &&
       Array.isArray(item.observations) &&
       item.observations.every(observationValid) &&
-      (item.analysis === null || typeof item.analysis === 'object') &&
+      (item.analysis === null || (
+        typeof item.analysis === 'object' &&
+        typeof item.analysis.rootCause === 'string' &&
+        typeof item.analysis.hypothesis === 'string' &&
+        hashValid(item.analysis.hypothesisFingerprint) &&
+        typeof item.analysis.verificationFamily === 'string' &&
+        hashValid(item.analysis.verificationFamilyFingerprint) &&
+        dateValid(item.analysis.analyzedAt)
+      )) &&
+      Array.isArray(item.legacyUnverifiedFixTests) &&
+      item.legacyUnverifiedFixTests.every(legacyTestValid) &&
       Array.isArray(item.fixTests) &&
       item.fixTests.every(testValid) &&
       (item.evaluation === null || typeof item.evaluation === 'object') &&
@@ -178,12 +375,21 @@ async function acquireLock(casa) {
 async function load(casa, policy) {
   const path = caminhoDasFalhas(casa)
   try {
-    const store = JSON.parse(await readFile(path, 'utf8'))
+    const raw = await readFile(path, 'utf8')
+    let store = JSON.parse(raw)
     if (store.schemaVersion > FAILURE_STORE_SCHEMA_VERSION) {
       throw new Error(`Aprendizado de falhas v${store.schemaVersion} é mais novo que este plugin.`)
     }
+    if ([1, 2, 3, 4, 5].includes(store.schemaVersion)) {
+      await backupBeforeMigration(path, raw, store.schemaVersion)
+      if (store.schemaVersion === 1) store = migrateV1(store)
+      if (store.schemaVersion === 2) store = migrateV2(store)
+      if (store.schemaVersion === 3) store = migrateV3(store)
+      if (store.schemaVersion === 4) store = migrateV4(store)
+      if (store.schemaVersion === 5) store = migrateV5(store)
+    }
     validateStore(store, path, policy)
-    return { store, initialized: false }
+    return { store, initialized: false, migrated: store.schemaVersion !== JSON.parse(raw).schemaVersion }
   } catch (error) {
     if (error?.code === 'ENOENT') return { store: emptyStore(), initialized: true }
     throw error
@@ -204,7 +410,7 @@ export async function lerFalhas(casa) {
   const release = await acquireLock(casa)
   try {
     const loaded = await load(casa, policy)
-    if (loaded.initialized) await save(casa, loaded.store, policy)
+    if (loaded.initialized || loaded.migrated) await save(casa, loaded.store, policy)
     return loaded.store
   } finally {
     await release()
@@ -240,16 +446,22 @@ export async function registrarFalha(casa, input, { at } = {}) {
       observedAt
     }
     if (!pattern) {
+      const id = `failure-pattern-${randomUUID()}`
       pattern = {
-        id: `failure-pattern-${randomUUID()}`,
+        id,
         agent,
         action,
         failureClass,
         signatureFingerprint,
         status: 'observing',
         occurrences: 1,
+        cycleNumber: 1,
+        cycleFingerprint: fingerprintCiclo(id, 1),
+        cycleStartedAt: observedAt,
+        evaluationHistory: [],
         observations: [observation],
         analysis: null,
+        legacyUnverifiedFixTests: [],
         fixTests: [],
         evaluation: null,
         createdAt: observedAt,
@@ -257,14 +469,31 @@ export async function registrarFalha(casa, input, { at } = {}) {
       }
       loaded.store.patterns.push(pattern)
     } else {
+      const wasEvaluated = pattern.status === 'evaluated'
       pattern.observations = [...pattern.observations, observation].slice(-policy.maximumObservationsPerPattern)
       pattern.occurrences += 1
-      pattern.fixTests = []
-      pattern.evaluation = null
-      pattern.status = pattern.occurrences >= policy.minimumPatternOccurrences ? 'candidate' : 'observing'
+      if (wasEvaluated) {
+        pattern.evaluationHistory = [...pattern.evaluationHistory, {
+          cycleNumber: pattern.cycleNumber,
+          cycleFingerprint: pattern.cycleFingerprint,
+          evaluation: pattern.evaluation,
+          closedAt: observedAt
+        }].slice(-20)
+        pattern.cycleNumber += 1
+        pattern.cycleFingerprint = fingerprintCiclo(pattern.id, pattern.cycleNumber)
+        pattern.cycleStartedAt = observedAt
+        pattern.analysis = null
+        pattern.fixTests = []
+        pattern.evaluation = null
+        pattern.status = 'candidate'
+      } else if (pattern.status === 'observing' && pattern.occurrences >= policy.minimumPatternOccurrences) {
+        pattern.status = 'candidate'
+      }
       pattern.updatedAt = observedAt
     }
-    if (pattern.occurrences >= policy.minimumPatternOccurrences) pattern.status = 'candidate'
+    if (pattern.status === 'observing' && pattern.occurrences >= policy.minimumPatternOccurrences) {
+      pattern.status = 'candidate'
+    }
     await save(casa, loaded.store, policy)
     return { result: pattern.status, pattern, observation }
   } finally {
@@ -293,7 +522,18 @@ export async function analisarPadraoFalha(casa, id, input, { at } = {}) {
     if (!REANALYSABLE_STATUSES.includes(pattern.status)) {
       return { result: 'not-ready', requiredStatus: REANALYSABLE_STATUSES.join('|'), pattern }
     }
-    pattern.analysis = { rootCause, hypothesis, analyzedAt }
+    pattern.analysis = {
+      rootCause,
+      hypothesis,
+      hypothesisFingerprint: fingerprint(hypothesis),
+      verificationFamily: familiaVerificacao(`${pattern.action} ${hypothesis}`),
+      verificationFamilyFingerprint: fingerprintFamiliaVerificacao(
+        pattern,
+        hypothesis,
+        familiaVerificacao(`${pattern.action} ${hypothesis}`)
+      ),
+      analyzedAt
+    }
     pattern.fixTests = []
     pattern.evaluation = null
     pattern.status = 'analyzed'
@@ -314,18 +554,222 @@ function trailingConsistentSuccesses(tests) {
   return count
 }
 
-export async function testarCorrecaoFalha(casa, id, input, { at } = {}) {
+function verificacoesDaAuditoria(store, {
+  after,
+  usedActionIds = new Set(),
+  usedExecutionFingerprints = new Set(),
+  semanticBindingFingerprint = null,
+  expectedActionFamily = null
+} = {}) {
+  const threshold = Date.parse(after ?? '')
+  const verified = []
+  for (const turn of store.turns ?? []) {
+    for (const action of turn.actions ?? []) {
+      if (
+        action.effect !== 'verification' ||
+        action.state !== 'succeeded' ||
+        usedActionIds.has(action.id) ||
+        usedExecutionFingerprints.has(action.toolUseFingerprint) ||
+        (semanticBindingFingerprint !== null && action.semanticBindingFingerprint !== semanticBindingFingerprint) ||
+        (expectedActionFamily !== null && action.actionFamily !== expectedActionFamily) ||
+        !Number.isFinite(threshold) ||
+        Date.parse(action.recordedAt) <= threshold
+      ) continue
+      const evidence = (turn.evidence ?? []).find((item) =>
+        item.sourceActionId === action.id &&
+        item.kind === 'state-readback' &&
+        Date.parse(item.recordedAt) >= Date.parse(action.recordedAt)
+      )
+      if (evidence) verified.push({ action, evidence })
+    }
+  }
+  return verified.sort((left, right) => Date.parse(left.action.recordedAt) - Date.parse(right.action.recordedAt))
+}
+
+function fingerprintDoPadrao(pattern) {
+  return fingerprint([
+    pattern.id,
+    geracaoPadraoFalha(pattern),
+    pattern.agent,
+    pattern.action,
+    pattern.failureClass,
+    pattern.signatureFingerprint
+  ].join('|'))
+}
+
+export function vinculoVerificacaoFalha(pattern, automationJobId) {
+  if (
+    !pattern?.analysis ||
+    !hashValid(pattern.analysis.hypothesisFingerprint) ||
+    !hashValid(pattern.analysis.verificationFamilyFingerprint)
+  ) {
+    throw new Error('O padrão precisa estar analisado antes de gerar o vínculo de verificação.')
+  }
+  const jobId = safeText(automationJobId, 'Trabalho de automação', 3, 240)
+  return fingerprint([
+    fingerprintDoPadrao(pattern),
+    jobId,
+    pattern.analysis.hypothesisFingerprint,
+    pattern.analysis.verificationFamilyFingerprint
+  ].join('|'))
+}
+
+async function verificarJobNoHistorico(casa, {
+  jobId,
+  patternId,
+  generationFingerprint,
+  actionRecordedAt
+}) {
+  const path = join(casa, 'learning', 'failure-automation.json')
+  let store
+  try {
+    store = JSON.parse(await readFile(path, 'utf8'))
+  } catch (error) {
+    if (error?.code === 'ENOENT') return { result: 'unverified-job', job: null }
+    throw error
+  }
+  const job = (store.jobs ?? []).find((item) => item.id === jobId)
+  const dispatchAt = Date.parse(job?.dispatchRequestedAt ?? '')
+  const actionProvided = actionRecordedAt !== undefined
+  const actionAt = actionProvided ? Date.parse(actionRecordedAt) : null
+  if (
+    !job ||
+    job.patternId !== patternId ||
+    job.generationFingerprint !== generationFingerprint ||
+    job.state !== 'running' ||
+    job.dispatchState !== 'requested' ||
+    !Number.isFinite(dispatchAt) ||
+    (actionProvided && (!Number.isFinite(actionAt) || dispatchAt > actionAt))
+  ) return { result: 'unverified-job', job: null }
+  return { result: 'verified', job }
+}
+
+function jobValido(value, {
+  jobId,
+  patternId,
+  generationFingerprint,
+  actionRecordedAt
+}) {
+  const job = value?.job
+  return Boolean(
+    value?.result === 'verified' &&
+    job?.id === jobId &&
+    job.patternId === patternId &&
+    job.generationFingerprint === generationFingerprint &&
+    job.state === 'running' &&
+    job.dispatchState === 'requested' &&
+    dateValid(job.dispatchRequestedAt) &&
+    Date.parse(job.dispatchRequestedAt) <= Date.parse(actionRecordedAt)
+  )
+}
+
+async function verificarAcaoNoHistorico(casa, {
+  actionId,
+  evidenceId,
+  analyzedAt,
+  semanticBindingFingerprint,
+  expectedActionFamily
+}) {
+  const audit = await lerAuditoriaAutocorrecao(casa)
+  const candidate = verificacoesDaAuditoria(audit, {
+    after: analyzedAt,
+    semanticBindingFingerprint,
+    expectedActionFamily
+  })
+    .find((item) => item.action.id === actionId && (evidenceId === null || item.evidence.id === evidenceId))
+  return candidate
+    ? { result: 'verified', ...candidate }
+    : { result: 'unverified-action', action: null, evidence: null }
+}
+
+function verificacaoValida(value, {
+  actionId,
+  evidenceId,
+  analyzedAt,
+  semanticBindingFingerprint,
+  expectedActionFamily
+}) {
+  const action = value?.action
+  const evidence = value?.evidence
+  return Boolean(
+    value?.result === 'verified' &&
+    action?.id === actionId &&
+    (evidenceId === null || evidence?.id === evidenceId) &&
+    typeof action.id === 'string' && action.id.startsWith('audit-action-') &&
+    action.effect === 'verification' &&
+    action.state === 'succeeded' &&
+    action.semanticBindingFingerprint === semanticBindingFingerprint &&
+    action.actionFamily === expectedActionFamily &&
+    hashValid(action.toolUseFingerprint) &&
+    hashValid(action.strategyFingerprint) &&
+    dateValid(action.recordedAt) &&
+    Date.parse(action.recordedAt) > Date.parse(analyzedAt) &&
+    typeof evidence?.id === 'string' && evidence.id.startsWith('audit-evidence-') &&
+    evidence.sourceActionId === action.id &&
+    evidence.kind === 'state-readback' &&
+    hashValid(evidence.fingerprint) &&
+    dateValid(evidence.recordedAt) &&
+    Date.parse(evidence.recordedAt) >= Date.parse(action.recordedAt)
+  )
+}
+
+export async function listarEvidenciasVerificadasFalha(casa, id, { automationJobId } = {}) {
+  const [failures, audit] = await Promise.all([
+    lerFalhas(casa),
+    lerAuditoriaAutocorrecao(casa)
+  ])
+  const pattern = failures.patterns.find((item) => item.id === id)
+  if (!pattern) return { result: 'not-found', pattern: null, evidence: [] }
+  if (!pattern.analysis) return { result: 'not-ready', pattern, evidence: [] }
+  const jobId = safeText(automationJobId, 'Trabalho de automação', 3, 240)
+  const job = await verificarJobNoHistorico(casa, {
+    jobId,
+    patternId: pattern.id,
+    generationFingerprint: geracaoPadraoFalha(pattern)
+  })
+  if (job.result !== 'verified') return { result: 'unverified-job', pattern, evidence: [] }
+  const semanticBindingFingerprint = vinculoVerificacaoFalha(pattern, jobId)
+  const usedActionIds = new Set(pattern.fixTests.map((item) => item.auditActionId))
+  const usedExecutionFingerprints = new Set(pattern.fixTests.map((item) => item.executionFingerprint))
+  const evidence = verificacoesDaAuditoria(audit, {
+    after: Date.parse(pattern.analysis.analyzedAt) >= Date.parse(job.job.dispatchRequestedAt)
+      ? pattern.analysis.analyzedAt
+      : job.job.dispatchRequestedAt,
+    usedActionIds,
+    usedExecutionFingerprints,
+    semanticBindingFingerprint,
+    expectedActionFamily: pattern.analysis.verificationFamily
+  }).map((item) => ({
+    actionId: item.action.id,
+    evidenceId: item.evidence.id,
+    strategyFingerprint: item.action.strategyFingerprint,
+    executionFingerprint: item.action.toolUseFingerprint,
+    toolName: item.action.toolName,
+    actionRecordedAt: item.action.recordedAt,
+    evidenceRecordedAt: item.evidence.recordedAt
+  }))
+  return {
+    result: 'listed',
+    pattern,
+    job: { id: job.job.id, dispatchState: job.job.dispatchState },
+    bindingMarker: `omni-failure-binding:${semanticBindingFingerprint}`,
+    evidence
+  }
+}
+
+export async function testarCorrecaoFalha(casa, id, input) {
   const policy = await readPolicy()
-  const evidence = safeText(input?.evidenceId, 'Identificador do teste', 3, 240)
-  const outcome = safeText(input?.outcome, 'Resultado do teste', 2, 500)
-  const criterion = input?.criterion === undefined
+  if (['evidenceId', 'outcome', 'success'].some((field) => Object.hasOwn(input ?? {}, field))) {
+    throw new Error('O teste de correção não aceita evidência, resultado ou sucesso autodeclarado.')
+  }
+  const auditActionId = safeText(input?.auditActionId, 'Ação verificada da auditoria', 3, 240)
+  const auditEvidenceId = input?.auditEvidenceId === undefined
     ? null
-    : safeText(input.criterion, 'Critério de aceitação', 3, 500)
-  if (typeof input?.success !== 'boolean') throw new Error('O teste precisa declarar sucesso ou falha.')
-  const evidenceFingerprint = fingerprint(evidence)
-  const outcomeFingerprint = fingerprint(outcome)
-  const criterionFingerprint = criterion === null ? null : fingerprint(criterion)
-  const testedAt = now(at)
+    : safeText(input.auditEvidenceId, 'Evidência verificada da auditoria', 3, 240)
+  const criterion = safeText(input?.criterion, 'Critério de aceitação', 3, 500)
+  const automationJobId = safeText(input?.automationJobId, 'Trabalho de automação', 3, 240)
+  const criterionFingerprint = fingerprint(criterion)
+  const testedAt = now()
   const release = await acquireLock(casa)
   try {
     const loaded = await load(casa, policy)
@@ -337,24 +781,86 @@ export async function testarCorrecaoFalha(casa, id, input, { at } = {}) {
     if (!['analyzed', 'testing', 'ready-for-eval'].includes(pattern.status)) {
       return { result: 'not-ready', requiredStatus: 'analyzed', pattern }
     }
-    const evidenceUsed = [
-      ...pattern.observations.map((item) => item.evidenceFingerprint),
-      ...pattern.fixTests.map((item) => item.evidenceFingerprint)
-    ].includes(evidenceFingerprint)
-    if (evidenceUsed) return { result: 'duplicate-evidence', pattern }
+    if (pattern.fixTests.some((item) => item.auditActionId === auditActionId)) {
+      return { result: 'duplicate-evidence', pattern }
+    }
+    const jobIdentity = await verificarJobNoHistorico(casa, {
+      jobId: automationJobId,
+      patternId: pattern.id,
+      generationFingerprint: geracaoPadraoFalha(pattern)
+    })
+    if (jobIdentity.result !== 'verified') return { result: 'unverified-job', pattern }
+    const semanticBindingFingerprint = vinculoVerificacaoFalha(pattern, automationJobId)
+    const verified = await verificarAcaoNoHistorico(casa, {
+      actionId: auditActionId,
+      evidenceId: auditEvidenceId,
+      analyzedAt: pattern.analysis.analyzedAt,
+      semanticBindingFingerprint,
+      expectedActionFamily: pattern.analysis.verificationFamily
+    })
+    if (!verificacaoValida(verified, {
+      actionId: auditActionId,
+      evidenceId: auditEvidenceId,
+      analyzedAt: pattern.analysis.analyzedAt,
+      semanticBindingFingerprint,
+      expectedActionFamily: pattern.analysis.verificationFamily
+    })) return { result: 'unverified-action', pattern }
+    const { action, evidence } = verified
+    const verifiedJob = await verificarJobNoHistorico(casa, {
+      jobId: automationJobId,
+      patternId: pattern.id,
+      generationFingerprint: geracaoPadraoFalha(pattern),
+      actionRecordedAt: action.recordedAt
+    })
+    if (!jobValido(verifiedJob, {
+      jobId: automationJobId,
+      patternId: pattern.id,
+      generationFingerprint: geracaoPadraoFalha(pattern),
+      actionRecordedAt: action.recordedAt
+    })) return { result: 'unverified-job', pattern }
+    if (pattern.fixTests.some((item) => item.executionFingerprint === action.toolUseFingerprint)) {
+      return { result: 'duplicate-evidence', pattern }
+    }
     const previousSuccess = [...pattern.fixTests]
       .reverse()
       .find((item) => item.success && item.consistent)
-    const expected = criterionFingerprint ?? outcomeFingerprint
-    const previousExpected = previousSuccess?.criterionFingerprint ?? previousSuccess?.outcomeFingerprint ?? expected
-    const consistent = input.success && previousExpected === expected
+    const consistent = previousSuccess === undefined || (
+      previousSuccess.strategyFingerprint === action.strategyFingerprint &&
+      previousSuccess.criterionFingerprint === criterionFingerprint &&
+      previousSuccess.automationJobId === automationJobId &&
+      previousSuccess.hypothesisFingerprint === pattern.analysis.hypothesisFingerprint &&
+      previousSuccess.verificationFamilyFingerprint === pattern.analysis.verificationFamilyFingerprint
+    )
+    const patternFingerprint = fingerprintDoPadrao(pattern)
+    const bindingFingerprint = fingerprint([
+      patternFingerprint,
+      automationJobId,
+      pattern.analysis.hypothesisFingerprint,
+      pattern.analysis.verificationFamilyFingerprint,
+      semanticBindingFingerprint,
+      action.strategyFingerprint,
+      criterionFingerprint
+    ].join('|'))
     const fixTest = {
       id: `fix-test-${randomUUID()}`,
-      evidenceFingerprint,
-      outcomeFingerprint,
-      ...(criterionFingerprint === null ? {} : { criterionFingerprint }),
-      success: input.success,
+      auditActionId: action.id,
+      auditEvidenceId: evidence.id,
+      executionFingerprint: action.toolUseFingerprint,
+      strategyFingerprint: action.strategyFingerprint,
+      evidenceFingerprint: evidence.fingerprint,
+      outcomeFingerprint: evidence.fingerprint,
+      criterionFingerprint,
+      automationJobId,
+      patternFingerprint,
+      hypothesisFingerprint: pattern.analysis.hypothesisFingerprint,
+      verificationFamilyFingerprint: pattern.analysis.verificationFamilyFingerprint,
+      verificationBindingFingerprint: semanticBindingFingerprint,
+      bindingFingerprint,
+      source: 'audit-self-correction',
+      verified: true,
+      success: true,
       consistent,
+      actionRecordedAt: action.recordedAt,
       testedAt
     }
     pattern.fixTests = [...pattern.fixTests, fixTest].slice(-policy.maximumFixTestsPerPattern)
@@ -362,7 +868,7 @@ export async function testarCorrecaoFalha(casa, id, input, { at } = {}) {
     const successful = trailingConsistentSuccesses(pattern.fixTests)
     pattern.status = successful >= policy.minimumSuccessfulFixTests
       ? 'ready-for-eval'
-      : input.success && consistent ? 'testing' : 'analyzed'
+      : consistent ? 'testing' : 'analyzed'
     pattern.updatedAt = testedAt
     await save(casa, loaded.store, policy)
     return { result: pattern.status, pattern, fixTest, consecutiveSuccessfulTests: successful }

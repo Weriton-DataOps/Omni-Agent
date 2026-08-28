@@ -1,15 +1,21 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 
+import { caminhoDaAutomacaoFalhas, reivindicarAutomacaoFalha } from '../runtime/automacao-falhas.mjs'
 import { tratarHook } from '../runtime/hook-contexto.mjs'
 import { lembrarExplicitamente, lerMemoria } from '../runtime/memoria.mjs'
-import { lerEstadoVarredura } from '../runtime/varredura-diaria.mjs'
+import { caminhoDaCoberturaAoVivo } from '../runtime/varredura-diaria.mjs'
 import { registrarFalha } from '../runtime/falhas.mjs'
+import {
+  atualizarDelegacao,
+  lerCicloOperacional,
+  prepararDelegacao
+} from '../runtime/ciclo-operacional.mjs'
 
 const hookCli = fileURLToPath(new URL('../runtime/hook-contexto.mjs', import.meta.url))
 
@@ -60,7 +66,8 @@ test('sessao Omni recebe personalidade e memoria relevante em cada novo turno', 
     assert.match(contexto, /Inventor Cúmplice/)
     assert.match(contexto, /prefiro poucas palavras e uma analogia concreta/i)
     assert.match(contexto, /RELEVANT CONFIRMED MEMORY/)
-    assert.equal((await lerEstadoVarredura(env.OMNI_HOME)).capturedLiveEvidence.length, 1)
+    const liveCoverage = JSON.parse(await readFile(caminhoDaCoberturaAoVivo(env.OMNI_HOME), 'utf8'))
+    assert.equal(liveCoverage.fingerprints.length, 1)
   } finally {
     await rm(raiz, { recursive: true, force: true })
   }
@@ -172,7 +179,7 @@ test('hook aplica a rota fast ou deep escolhida pelo contexto', async () => {
   }
 })
 
-test('candidata de falha entra no turno como trabalho automatico de subagente', async () => {
+test('candidata de falha entra no turno como despacho solicitado e nao como spawn alegado', async () => {
   const { raiz, env } = await ambiente()
   const session_id = 'sessao-automacao-falhas'
   try {
@@ -196,7 +203,42 @@ test('candidata de falha entra no turno como trabalho automatico de subagente', 
     const context = turn.hookSpecificOutput.additionalContext
     assert.match(context, /AUTOMAÇÃO DE FALHAS/)
     assert.match(context, /subagente.*segundo plano/i)
-    assert.match(context, /não peça autorização ao proprietário/i)
+    assert.match(context, /dispatch-requested/i)
+    assert.match(context, /preparada e marcada como `visible`/i)
+    assert.match(context, /não prova que o host iniciou o subagente/i)
+    assert.match(context, /não peça nova autorização ao proprietário/i)
+    const automation = JSON.parse(await readFile(caminhoDaAutomacaoFalhas(env.OMNI_HOME), 'utf8'))
+    assert.equal(automation.jobs.length, 1)
+    assert.equal(automation.jobs[0].state, 'queued')
+    assert.equal(automation.jobs[0].dispatchState, 'requested')
+    assert.equal(automation.jobs[0].attempts, 0)
+    assert.equal(automation.jobs[0].executorFingerprint, null)
+    const cycle = await lerCicloOperacional(env.OMNI_HOME)
+    assert.equal(cycle.delegations.length, 1)
+    assert.equal(cycle.delegations[0].state, 'visible')
+    assert.equal(cycle.delegations[0].visiblePromptConfirmed, true)
+    assert.equal(cycle.delegations[0].agentFingerprint, null)
+    assert.match(context, new RegExp(cycle.delegations[0].id))
+    assert.deepEqual(
+      cycle.delegations[0].transitionHistory.map((item) => item.to),
+      ['prepared', 'visible']
+    )
+    assert.doesNotMatch(JSON.stringify(cycle), /Objetivo obrigatório|permissao negada ao executar teste local/i)
+
+    const workerClaim = await reivindicarAutomacaoFalha(env.OMNI_HOME, {
+      executorId: 'subagent-hook-test',
+      jobId: automation.jobs[0].id
+    })
+    assert.equal(workerClaim.result, 'claimed')
+    assert.equal(workerClaim.job.state, 'running')
+    assert.equal(workerClaim.job.attempts, 1)
+    assert.ok(workerClaim.job.executorFingerprint)
+
+    await tratarHook(
+      { hook_event_name: 'UserPromptSubmit', session_id, prompt: 'agora trate outro assunto' },
+      env
+    )
+    assert.equal((await lerCicloOperacional(env.OMNI_HOME)).delegations.length, 1)
   } finally {
     await rm(raiz, { recursive: true, force: true })
   }
@@ -208,6 +250,10 @@ test('terceira falha de ferramenta dispara o despacho sem esperar outro pedido',
   try {
     await tratarHook(
       { hook_event_name: 'UserPromptSubmit', session_id, prompt: '/omni:omni' },
+      env
+    )
+    await tratarHook(
+      { hook_event_name: 'UserPromptSubmit', session_id, prompt: 'execute o teste local e trate a falha' },
       env
     )
     let result
@@ -223,7 +269,84 @@ test('terceira falha de ferramenta dispara o despacho sem esperar outro pedido',
     }
     assert.equal(result.hookSpecificOutput.hookEventName, 'PostToolUseFailure')
     assert.match(result.hookSpecificOutput.additionalContext, /AUTOMAÇÃO DE FALHAS/)
-    assert.match(result.hookSpecificOutput.additionalContext, /antes de encerrar este turno/i)
+    assert.match(result.hookSpecificOutput.additionalContext, /dispatch-requested/i)
+    assert.match(result.hookSpecificOutput.additionalContext, /preparada e marcada como `visible`/i)
+    assert.match(result.hookSpecificOutput.additionalContext, /não prova que o host iniciou o subagente/i)
+    const cycle = await lerCicloOperacional(env.OMNI_HOME)
+    assert.equal(cycle.delegations.length, 1)
+    assert.equal(cycle.delegations[0].state, 'visible')
+    assert.equal(cycle.delegations[0].agentFingerprint, null)
+  } finally {
+    await rm(raiz, { recursive: true, force: true })
+  }
+})
+
+test('StopFailure executa o mesmo gate de auditoria antes de encerrar', async () => {
+  const { raiz, env } = await ambiente()
+  const session_id = 'sessao-stop-failure-auditado'
+  try {
+    await tratarHook(
+      { hook_event_name: 'UserPromptSubmit', session_id, prompt: '/omni:omni' },
+      env
+    )
+    await tratarHook(
+      { hook_event_name: 'UserPromptSubmit', session_id, prompt: 'corrija o arquivo quebrado' },
+      env
+    )
+    const result = await tratarHook({
+      hook_event_name: 'StopFailure',
+      session_id,
+      error: 'a resposta falhou antes de executar a correcao'
+    }, env)
+    assert.equal(result.decision, 'block')
+    assert.match(result.reason, /requested-action-not-executed/)
+  } finally {
+    await rm(raiz, { recursive: true, force: true })
+  }
+})
+
+test('SubagentStop liga o relato do ciclo à ação e evidência da auditoria', async () => {
+  const { raiz, env } = await ambiente()
+  const session_id = 'sessao-delegacao-auditada'
+  try {
+    await tratarHook(
+      { hook_event_name: 'UserPromptSubmit', session_id, prompt: '/omni:omni' },
+      env
+    )
+    await tratarHook(
+      { hook_event_name: 'UserPromptSubmit', session_id, prompt: 'delegue e verifique a tarefa' },
+      env
+    )
+    const prepared = await prepararDelegacao(env.OMNI_HOME, {
+      target: 'executor',
+      prompt: 'Execute a tarefa e devolva o artefato.',
+      sessionId: session_id
+    })
+    await atualizarDelegacao(env.OMNI_HOME, prepared.delegation.id, 'visible', {
+      evidence: 'prompt-visivel-hook'
+    })
+    await tratarHook({
+      hook_event_name: 'SubagentStart',
+      session_id,
+      agent_id: 'agent-hook-auditado',
+      agent_type: 'executor',
+      cwd: raiz
+    }, env)
+    await tratarHook({
+      hook_event_name: 'SubagentStop',
+      session_id,
+      agent_id: 'agent-hook-auditado',
+      agent_type: 'executor',
+      agent_transcript_path: join(raiz, 'agent-hook-auditado.jsonl'),
+      last_assistant_message: 'Tarefa executada e artefato entregue.',
+      cwd: raiz
+    }, env)
+    const cycle = await lerCicloOperacional(env.OMNI_HOME)
+    const delegation = cycle.delegations.find((item) => item.id === prepared.delegation.id)
+    assert.equal(delegation.state, 'reported')
+    assert.match(delegation.reportAuditActionId, /^audit-action-/)
+    assert.match(delegation.reportAuditEvidenceId, /^audit-evidence-/)
+    assert.equal(delegation.verificationAuditActionId, null)
   } finally {
     await rm(raiz, { recursive: true, force: true })
   }

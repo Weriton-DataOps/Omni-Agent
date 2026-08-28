@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { casaDoOmni } from './memoria.mjs'
 import { varrerAtividadesDoDia } from './varredura-diaria.mjs'
 import { sincronizarAutomacaoFalhas } from './automacao-falhas.mjs'
+import { auditarSaudeSistema } from './auditoria-sistema.mjs'
 
 export async function tratarHookVarredura(input, env = process.env) {
   if (!['SessionStart', 'Stop'].includes(input?.hook_event_name)) {
@@ -10,6 +11,7 @@ export async function tratarHookVarredura(input, env = process.env) {
   }
   await varrerAtividadesDoDia(casaDoOmni(env), { automatic: true })
   await sincronizarAutomacaoFalhas(casaDoOmni(env))
+  await auditarSaudeSistema(casaDoOmni(env), { repair: true })
   return { suppressOutput: true }
 }
 

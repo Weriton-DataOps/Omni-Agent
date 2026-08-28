@@ -46,6 +46,21 @@ export function validarSuite(suite) {
   if (suite.baseline === suite.candidate) {
     throw new Error('Eval comparativo precisa de baseline diferente da candidata.')
   }
+  if (suite.baselineProtocol !== undefined) {
+    const protocol = suite.baselineProtocol
+    if (
+      protocol?.kind !== 'same-model-without-omni-context' ||
+      protocol.sameProvider !== true ||
+      protocol.sameModel !== true ||
+      protocol.sameModelVersion !== true ||
+      protocol.sameSettings !== true ||
+      protocol.sameInputs !== true ||
+      protocol.omniPersonalityInjected !== false ||
+      protocol.omniContextInjected !== false
+    ) {
+      throw new Error('Protocolo da baseline nao garante comparacao controlada sem contexto do Omni.')
+    }
+  }
   const ids = new Set()
   for (const caso of suite.cases) {
     if (typeof caso.id !== 'string' || !caso.id) throw new Error('Caso sem id.')

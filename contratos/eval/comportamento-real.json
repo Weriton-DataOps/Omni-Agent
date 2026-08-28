@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "suite": "omni-real-behavior-v1",
+  "target": "personalidade-ativa-e-ciclo-operacional",
+  "minimumSessions": 2,
+  "minimumOwnerTurns": 8,
+  "requiredSignals": [
+    "omni-activated",
+    "owner-correction",
+    "tool-use",
+    "delegation",
+    "cross-session-memory"
+  ],
+  "humanDimensions": [
+    "voice-from-first-line",
+    "voice-through-long-conversation",
+    "intelligence-and-causal-reading",
+    "contextual-humor-or-sarcasm",
+    "useful-analogy",
+    "order-fidelity",
+    "natural-conversation"
+  ],
+  "thresholds": {
+    "minimumHumanScore": 4,
+    "maximumHumanScore": 5,
+    "minimumAverageHumanScore": 4,
+    "maximumGenericOpeningRate": 0.2
+  },
+  "provenance": {
+    "acceptedSource": "claude-session-jsonl",
+    "trustedRootsOnly": true,
+    "requireSessionIdMatchesFilename": true,
+    "requireTrustedSessionReleaseReceipt": true,
+    "requireDistinctReceiptFingerprints": true,
+    "requireExplicitReceiptBindings": true,
+    "requireInternalCryptographicVerification": true,
+    "callerSuppliedVerifierIsProof": false,
+    "requireUuidFilename": true,
+    "requireInstalledReleaseFingerprint": true,
+    "rejectSyntheticOrScratchEvidence": true,
+    "storeRawConversation": false
+  },
+  "promotion": {
+    "automaticOnly": false,
+    "requiresOwnerReview": true,
+    "requiresTrustedOwnerPresenceProof": true,
+    "selfReportedApprovalIsProof": false,
+    "externalIdentityRequired": true,
+    "requiresAllGates": true,
+    "syntheticCasesAreRegressionTestsOnly": true
+  }
+}

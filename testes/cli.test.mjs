@@ -1,10 +1,23 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
+
+import {
+  abrirTurnoAuditoria,
+  registrarAcaoAuditoria,
+  registrarDelegacaoAuditoria
+} from '../runtime/auditoria-autocorrecao.mjs'
+import {
+  observarDelegacao,
+  prepararDelegacao,
+  proporMelhoriaOperacional
+} from '../runtime/ciclo-operacional.mjs'
+import { materializarMelhoriaOperacional } from '../runtime/evolucao.mjs'
+import { vinculoVerificacaoAtalho } from '../runtime/atalhos.mjs'
 
 const cli = fileURLToPath(new URL('../runtime/cli.mjs', import.meta.url))
 
@@ -12,6 +25,24 @@ function executar(args, env) {
   const run = spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8', env })
   assert.equal(run.status, 0, run.stderr)
   return JSON.parse(run.stdout)
+}
+
+async function registrarVerificacaoCli(casa, suffix, at, command = 'node --test testes/falhas.test.mjs') {
+  const sessionId = `cli-failure-verification-${suffix}`
+  const executionId = `cli-tool-${suffix}`
+  await abrirTurnoAuditoria(casa, {
+    session_id: sessionId,
+    prompt: 'Verifique a correção com o teste focal.'
+  }, { at: new Date(Date.parse(at) - 1_000).toISOString() })
+  const recorded = await registrarAcaoAuditoria(casa, {
+    hook_event_name: 'PostToolUse',
+    session_id: sessionId,
+    tool_use_id: executionId,
+    tool_name: 'Bash',
+    tool_input: { command },
+    cwd: 'C:\\projetos\\teste'
+  }, { at })
+  return { ...recorded, sessionId, executionId }
 }
 
 test('operador confirma declaração estável criada pelo pipeline', async () => {
@@ -32,11 +63,95 @@ test('operador confirma declaração estável criada pelo pipeline', async () =>
   }
 })
 
+test('operador registra implementação operacional somente com recibo auditado do mesmo artefato', async () => {
+  const raiz = await mkdtemp(join(tmpdir(), 'omni-cli-source-implementation-'))
+  const home = join(raiz, 'home')
+  const repo = join(raiz, 'repo')
+  const env = { ...process.env, OMNI_HOME: home }
+  try {
+    await mkdir(join(repo, '.git'), { recursive: true })
+    await mkdir(join(repo, 'contratos', 'operacao'), { recursive: true })
+    await mkdir(join(repo, 'runtime'), { recursive: true })
+    await writeFile(join(repo, 'package.json'), JSON.stringify({ name: 'omni-agent' }), 'utf8')
+    await writeFile(join(repo, 'contratos', 'operacao', 'regras-aprendidas.json'), JSON.stringify({
+      schemaVersion: 1,
+      rules: []
+    }), 'utf8')
+    const artifact = join(repo, 'runtime', 'roteamento.mjs')
+    await writeFile(artifact, 'export const route = "learned"\n', 'utf8')
+    const input = {
+      category: 'cli-test',
+      destination: 'routing',
+      statement: 'Vincular a implementação auditada pela rota pública.'
+    }
+    await proporMelhoriaOperacional(home, input)
+    const ready = await proporMelhoriaOperacional(home, input)
+    const required = await materializarMelhoriaOperacional(home, ready.candidate.id, repo)
+    const after = (seconds) => new Date(Date.parse(required.candidate.updatedAt) + seconds * 1_000).toISOString()
+    const session = 'cli-source-implementation-session'
+    await abrirTurnoAuditoria(home, {
+      session_id: session,
+      prompt: 'Implemente e verifique o artefato de roteamento.'
+    }, { at: after(1) })
+    const mutation = await registrarAcaoAuditoria(home, {
+      hook_event_name: 'PostToolUse',
+      session_id: session,
+      tool_use_id: 'cli-source-mutation',
+      tool_name: 'Write',
+      tool_input: { file_path: artifact, content: 'não persistir no recibo' }
+    }, { at: after(2) })
+    const readback = await registrarAcaoAuditoria(home, {
+      hook_event_name: 'PostToolUse',
+      session_id: session,
+      tool_use_id: 'cli-source-readback',
+      tool_name: 'Read',
+      tool_input: { file_path: artifact }
+    }, { at: after(3) })
+
+    const result = executar([
+      'melhoria-operacional-registrar-implementacao', ready.candidate.id,
+      '--repo', repo,
+      '--artefato', 'runtime/roteamento.mjs',
+      '--acao-mutacao', mutation.action.id,
+      '--evidencia-mutacao', mutation.evidence.id,
+      '--acao-readback', readback.action.id,
+      '--evidencia-readback', readback.evidence.id
+    ], env)
+    assert.equal(result.improvement.result, 'materialized-pending-release')
+    assert.match(result.improvement.artifactRef.implementationReceipt.targetFingerprint, /^[a-f0-9]{64}$/)
+    assert.equal(JSON.stringify(result).includes(repo), false)
+  } finally {
+    await rm(raiz, { recursive: true, force: true })
+  }
+})
+
 test('operador entrega a personalidade escolhida pelo manifesto', () => {
   const result = executar(['personalidade'], process.env)
   assert.equal(result.personality.id, 'omni-persona-v1-candidate')
   assert.match(result.personality.nucleus, /Inventor Cúmplice/)
   assert.match(result.personality.nucleus, /INDEPENDÊNCIA INTELECTUAL/)
+})
+
+test('operador expoe plano e historico da rodada de personalidade', async () => {
+  const raiz = await mkdtemp(join(tmpdir(), 'omni-cli-personality-eval-'))
+  const env = { ...process.env, OMNI_HOME: join(raiz, 'home') }
+  try {
+    const plan = executar(['eval-personalidade-plano'], env)
+    assert.equal(plan.evaluation.candidate, 'omni-persona-v1-candidate')
+    assert.equal(plan.evaluation.cases.length, 26)
+    assert.deepEqual(plan.evaluation.pendingLearnedCandidates, [])
+
+    const history = executar(['eval-personalidade-historico'], env)
+    assert.deepEqual(history.runs, [])
+    assert.equal(history.rawResponsesStored, false)
+
+    const state = executar(['estado'], env)
+    assert.equal(state.evaluation.personality.recordedRuns, 0)
+    assert.equal(state.evaluation.personality.trustedPassedRuns, 0)
+    assert.equal(state.evaluation.personality.unverifiedClaims, 0)
+  } finally {
+    await rm(raiz, { recursive: true, force: true })
+  }
 })
 
 test('operador expõe manutenção, consolidação e arquivo sem apagar histórico', async () => {
@@ -79,13 +194,32 @@ test('operador observa, lista e valida atalho sem promove-lo', async () => {
     'atalho-observar',
     '--objetivo', 'diagnosticar conexoes do Postgres',
     '--base', 'CPU > RAM > Processos > Postgres > Conexoes',
-    '--atalho', 'Postgres > Conexoes',
-    '--resultado', 'gargalo de conexoes confirmado'
+    '--atalho', 'Postgres > Conexoes'
   ]
+  const shortcut = {
+    goal: 'diagnosticar conexoes do Postgres',
+    baselineSteps: ['CPU', 'RAM', 'Processos', 'Postgres', 'Conexoes'],
+    shortcutSteps: ['Postgres', 'Conexoes'],
+    scope: { type: 'user' }
+  }
+  const binding = vinculoVerificacaoAtalho(shortcut)
+  const verificationCommand = `node --test testes/atalhos.test.mjs # omni-shortcut-binding:${binding}`
   try {
-    executar(observe, env)
-    executar(observe, env)
-    const validatedAutomatically = executar(observe, env)
+    const observations = []
+    for (let index = 1; index <= 3; index += 1) {
+      const evidence = await registrarVerificacaoCli(
+        env.OMNI_HOME,
+        `shortcut-${index}`,
+        `2099-01-01T00:0${index}:00.000Z`,
+        verificationCommand
+      )
+      observations.push(executar([
+        ...observe,
+        '--sessao', evidence.sessionId,
+        '--execucao', evidence.executionId
+      ], env))
+    }
+    const validatedAutomatically = observations.at(-1)
     assert.equal(validatedAutomatically.learning.result, 'validated')
     assert.equal(validatedAutomatically.learning.promotion, 'not-performed')
 
@@ -95,9 +229,16 @@ test('operador observa, lista e valida atalho sem promove-lo', async () => {
     assert.equal(listed.effectiveAfterFirstSuccess, true)
     assert.equal(listed.automaticPortablePromotion, false)
 
+    const validationEvidence = await registrarVerificacaoCli(
+      env.OMNI_HOME,
+      'shortcut-validation',
+      '2099-01-01T00:04:00.000Z',
+      verificationCommand
+    )
     const validated = executar([
       'atalho-validar', listed.shortcuts[0].id,
-      '--resultado', 'gargalo de conexoes confirmado'
+      '--sessao', validationEvidence.sessionId,
+      '--execucao', validationEvidence.executionId
     ], env)
     assert.equal(validated.learning.result, 'validated')
     assert.equal(validated.learning.promotion, 'not-performed')
@@ -150,13 +291,31 @@ test('operador aprende padrão de falha sem transformar ocorrência isolada em r
     ], env)
     assert.equal(analyzed.failure.status, 'analyzed')
 
-    const fixTest = (execution) => [
+    executar(['falhas'], env)
+    const claimed = executar([
+      'falha-automacao-reivindicar', '--executor', 'cli-test-failure-executor'
+    ], env)
+    const jobId = claimed.automation.jobId
+
+    const binding = executar(['falha-evidencias', candidate.failure.id, '--job', jobId], env)
+    assert.match(binding.bindingMarker, /^omni-failure-binding:[a-f0-9]{64}$/)
+
+    const verificationCommand = `node --test testes/falhas.test.mjs # ${binding.bindingMarker}`
+    await registrarVerificacaoCli(env.OMNI_HOME, 'one', '2099-01-01T00:01:00.000Z', verificationCommand)
+    await registrarVerificacaoCli(env.OMNI_HOME, 'two', '2099-01-01T00:02:00.000Z', verificationCommand)
+    const available = executar(['falha-evidencias', candidate.failure.id, '--job', jobId], env)
+    assert.equal(available.evidence.length, 2)
+    assert.equal(JSON.stringify(available).includes('node --test'), false)
+
+    const fixTest = (evidence) => [
       'falha-testar', candidate.failure.id,
-      '--execucao', execution,
-      '--resultado', 'healthcheck passou e a consulta respondeu'
+      '--job', jobId,
+      '--acao-auditoria', evidence.actionId,
+      '--evidencia-auditoria', evidence.evidenceId,
+      '--criterio', 'healthcheck passa e a consulta responde'
     ]
-    assert.equal(executar(fixTest('teste-1'), env).failure.status, 'testing')
-    assert.equal(executar(fixTest('teste-2'), env).failure.status, 'ready-for-eval')
+    assert.equal(executar(fixTest(available.evidence[0]), env).failure.status, 'testing')
+    assert.equal(executar(fixTest(available.evidence[1]), env).failure.status, 'ready-for-eval')
 
     const evaluated = executar(['falha-avaliar', candidate.failure.id], env)
     assert.equal(evaluated.failure.status, 'evaluated')
@@ -204,7 +363,156 @@ test('operador expõe evals, checkpoints e backlog sem executar melhoria sozinho
 
     const state = executar(['estado'], env)
     assert.equal(state.evaluation.automaticExecution, false)
+    assert.equal(state.evaluation.realBehavior.recordedRuns, 0)
+    assert.equal(state.evaluation.realBehavior.passedRuns, 0)
+    assert.equal(state.systemAudit.recordedRuns, 0)
     assert.equal(state.structuredContext.rawConversationStored, false)
+  } finally {
+    await rm(raiz, { recursive: true, force: true })
+  }
+})
+
+test('operador publica briefing visivel com autoridade herdada sem persistir o prompt bruto', async () => {
+  const raiz = await mkdtemp(join(tmpdir(), 'omni-cli-delegation-'))
+  const home = join(raiz, 'home')
+  const env = { ...process.env, OMNI_HOME: home }
+  const prompt = 'Corrija o componente publico, rode os testes e devolva evidencia.'
+  try {
+    await abrirTurnoAuditoria(home, {
+      session_id: 'sessao-publica-1',
+      prompt: 'Delegue a correção do componente público.'
+    })
+    const prepared = executar([
+      'delegacao-preparar',
+      '--destino', 'executor-publico',
+      '--prompt', prompt,
+      '--sessao', 'sessao-publica-1',
+      '--efeitos', 'editar|testar',
+      '--risco', 'compensable',
+      '--alcance', 'single-scoped-target',
+      '--dados', 'project',
+      '--modo', 'prepare-and-proceed'
+    ], env)
+
+    assert.equal(prepared.delegation.state, 'visible')
+    assert.equal(prepared.delegation.visiblePromptConfirmed, true)
+    assert.equal(prepared.delegation.authorityEnvelope.source, 'owner-intent')
+    assert.equal(prepared.delegation.authorityEnvelope.inherited, true)
+    assert.match(prepared.delegation.authorityEnvelope.turnFingerprint, /^[a-f0-9]{64}$/)
+    assert.equal(prepared.delegation.authorityEnvelope.effectFingerprints.length, 2)
+    assert.equal(prepared.delegation.authorityEnvelope.risk.reversibility, 'compensable')
+    assert.equal(prepared.dispatch.prompt, prompt)
+    assert.equal(prepared.promptVisible, true)
+    assert.equal(prepared.rawPromptPersistedInOmniState, false)
+
+    const raw = await readFile(join(home, 'runs', 'operational-cycle.json'), 'utf8')
+    assert.doesNotMatch(raw, /Corrija o componente publico|editar|testar/)
+
+    const started = await observarDelegacao(home, {
+      state: 'running',
+      sessionId: 'sessao-publica-1',
+      agentId: 'executor-publico-1',
+      agentType: 'executor'
+    })
+    assert.equal(started.delegation.id, prepared.delegation.id)
+    assert.equal(started.delegation.state, 'running')
+
+    const report = await registrarDelegacaoAuditoria(home, {
+      session_id: 'sessao-publica-1',
+      agent_id: 'executor-publico-1',
+      agent_type: 'executor',
+      agent_transcript_path: 'artefato-publico-1',
+      cwd: home
+    }, 'reported')
+    await observarDelegacao(home, {
+      state: 'reported',
+      sessionId: 'sessao-publica-1',
+      agentId: 'executor-publico-1',
+      agentType: 'executor',
+      evidence: 'relato-publico-1',
+      summary: 'O executor entregou o relato.',
+      auditActionId: report.action.id,
+      auditEvidenceId: report.evidence.id
+    })
+    const readback = await registrarAcaoAuditoria(home, {
+      hook_event_name: 'PostToolUse',
+      session_id: 'sessao-publica-1',
+      tool_use_id: 'readback-publico-1',
+      tool_name: 'Read',
+      tool_input: { file_path: 'artefato-publico-1' },
+      cwd: home
+    })
+    const verified = executar([
+      'delegacao-estado', prepared.delegation.id, 'verified',
+      '--resumo', 'Artefato conferido depois do relato.',
+      '--acao-auditoria', readback.action.id,
+      '--evidencia-auditoria', readback.evidence.id
+    ], env)
+    assert.equal(verified.delegation.state, 'verified')
+  } finally {
+    await rm(raiz, { recursive: true, force: true })
+  }
+})
+
+test('operador recusa owner-intent sem turno ativo da sessao informada', async () => {
+  const raiz = await mkdtemp(join(tmpdir(), 'omni-cli-delegation-unbound-'))
+  const env = { ...process.env, OMNI_HOME: join(raiz, 'home') }
+  try {
+    const run = spawnSync(process.execPath, [
+      cli,
+      'delegacao-preparar',
+      '--destino', 'executor',
+      '--prompt', 'Execute a tarefa.',
+      '--sessao', 'sessao-inventada'
+    ], { encoding: 'utf8', env })
+    assert.notEqual(run.status, 0)
+    assert.match(JSON.parse(run.stdout).error, /turno auditado ativo/)
+  } finally {
+    await rm(raiz, { recursive: true, force: true })
+  }
+})
+
+test('operador encaminha fonte, pai, checkpoint e rollback pelo caminho publico', async () => {
+  const raiz = await mkdtemp(join(tmpdir(), 'omni-cli-delegation-state-'))
+  const home = join(raiz, 'home')
+  const env = { ...process.env, OMNI_HOME: home }
+  try {
+    await abrirTurnoAuditoria(home, {
+      session_id: 'sessao-publica-2',
+      prompt: 'Continue a tarefa por uma delegação subordinada.'
+    })
+    const parent = await prepararDelegacao(home, {
+      target: 'executor-pai',
+      prompt: 'Execute o objetivo principal autorizado.',
+      sessionId: 'sessao-publica-2',
+      authority: { source: 'owner-intent', inherited: true }
+    })
+    const parentFingerprint = parent.delegation.authorityFingerprint
+    const prepared = executar([
+      'delegacao-preparar',
+      '--destino', 'executor-herdado',
+      '--prompt', 'Continue a tarefa subordinada dentro do escopo herdado.',
+      '--sessao', 'sessao-publica-2',
+      '--fonte', 'inherited-authority',
+      '--pai', parentFingerprint
+    ], env)
+    assert.equal(prepared.delegation.authorityEnvelope.source, 'inherited-authority')
+    assert.equal(prepared.delegation.authorityEnvelope.parentFingerprint, parentFingerprint)
+    assert.equal(prepared.delegation.authorityEnvelope.inherited, true)
+
+    const running = executar([
+      'delegacao-estado', prepared.delegation.id, 'running',
+      '--evidencia', 'subagent-start-public-2',
+      '--checkpoint', 'snapshot-public-2',
+      '--rollback', 'restore-snapshot-public-2'
+    ], env)
+    assert.equal(running.result, 'running')
+    assert.equal(running.delegation.state, 'running')
+    assert.match(running.delegation.checkpointFingerprint, /^[a-f0-9]{64}$/)
+    assert.match(running.delegation.rollbackFingerprint, /^[a-f0-9]{64}$/)
+
+    const raw = await readFile(join(home, 'runs', 'operational-cycle.json'), 'utf8')
+    assert.doesNotMatch(raw, /snapshot-public-2|restore-snapshot-public-2|Continue a tarefa subordinada/)
   } finally {
     await rm(raiz, { recursive: true, force: true })
   }

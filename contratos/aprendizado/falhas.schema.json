@@ -1,11 +1,11 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/Weriton-DataOps/Omni-Agent/contratos/aprendizado/falhas.schema.json",
-  "title": "Omni Failure Learning Store V1",
+  "title": "Omni Failure Learning Store V6",
   "type": "object",
   "required": ["schemaVersion", "store", "patterns"],
   "properties": {
-    "schemaVersion": { "const": 1 },
+    "schemaVersion": { "const": 6 },
     "store": {
       "type": "object",
       "required": ["id", "createdAt", "updatedAt"],
@@ -22,7 +22,8 @@
         "type": "object",
         "required": [
           "id", "agent", "action", "failureClass", "signatureFingerprint", "status",
-          "occurrences", "observations", "analysis", "fixTests", "evaluation", "createdAt", "updatedAt"
+          "occurrences", "cycleNumber", "cycleFingerprint", "cycleStartedAt", "evaluationHistory",
+          "observations", "analysis", "legacyUnverifiedFixTests", "fixTests", "evaluation", "createdAt", "updatedAt"
         ],
         "properties": {
           "id": { "type": "string", "pattern": "^failure-pattern-" },
@@ -32,15 +33,65 @@
           "signatureFingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
           "status": { "enum": ["observing", "candidate", "analyzed", "testing", "ready-for-eval", "evaluated"] },
           "occurrences": { "type": "integer", "minimum": 1 },
+          "cycleNumber": { "type": "integer", "minimum": 1 },
+          "cycleFingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+          "cycleStartedAt": { "type": "string", "format": "date-time" },
+          "evaluationHistory": { "type": "array", "items": { "type": "object" } },
           "observations": { "type": "array", "items": { "type": "object" } },
-          "analysis": { "type": ["object", "null"] },
+          "analysis": {
+            "type": ["object", "null"],
+            "required": [
+              "rootCause", "hypothesis", "hypothesisFingerprint",
+              "verificationFamily", "verificationFamilyFingerprint", "analyzedAt"
+            ],
+            "properties": {
+              "rootCause": { "type": "string", "minLength": 1 },
+              "hypothesis": { "type": "string", "minLength": 1 },
+              "hypothesisFingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+              "verificationFamily": { "enum": ["test", "repository", "build", "file", "delegation"] },
+              "verificationFamilyFingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+              "analyzedAt": { "type": "string", "format": "date-time" }
+            },
+            "additionalProperties": false
+          },
+          "legacyUnverifiedFixTests": {
+            "type": "array",
+            "description": "Hashes preservados de testes v1/v2 autodeclarados; nunca contam como validação."
+          },
           "fixTests": {
             "type": "array",
             "items": {
               "type": "object",
+              "required": [
+                "id", "auditActionId", "auditEvidenceId", "executionFingerprint",
+                "strategyFingerprint", "evidenceFingerprint", "outcomeFingerprint",
+                "criterionFingerprint", "automationJobId", "patternFingerprint",
+                "hypothesisFingerprint", "verificationFamilyFingerprint", "verificationBindingFingerprint", "bindingFingerprint", "source", "verified", "success", "consistent",
+                "actionRecordedAt", "testedAt"
+              ],
               "properties": {
-                "criterionFingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
-              }
+                "id": { "type": "string", "pattern": "^fix-test-" },
+                "auditActionId": { "type": "string", "pattern": "^audit-action-" },
+                "auditEvidenceId": { "type": "string", "pattern": "^audit-evidence-" },
+                "executionFingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+                "strategyFingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+                "evidenceFingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+                "outcomeFingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+                "criterionFingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+                "automationJobId": { "type": "string", "pattern": "^failure-job-" },
+                "patternFingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+                "hypothesisFingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+                "verificationFamilyFingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+                "verificationBindingFingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+                "bindingFingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+                "source": { "const": "audit-self-correction" },
+                "verified": { "const": true },
+                "success": { "const": true },
+                "consistent": { "type": "boolean" },
+                "actionRecordedAt": { "type": "string", "format": "date-time" },
+                "testedAt": { "type": "string", "format": "date-time" }
+              },
+              "additionalProperties": false
             }
           },
           "evaluation": { "type": ["object", "null"] },

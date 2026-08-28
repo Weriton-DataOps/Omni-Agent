@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
 
@@ -27,7 +30,31 @@ function success(value = '') {
   }
 }
 
-function runner({ before = '0.19.0', after = '0.20.0', marketplace = canonicalMarketplace } = {}) {
+function trustedIntegrity(version, fingerprint = 'a'.repeat(64)) {
+  return {
+    status: 'verified',
+    versionMatchesManifest: true,
+    releaseVersion: version,
+    manifestVersion: version,
+    fingerprint,
+    declaredFingerprint: fingerprint
+  }
+}
+
+const emptyReadback = async () => ({ result: 'checked', verified: 0 })
+
+async function pluginCarregadoNaVersao(version) {
+  const root = await mkdtemp(join(tmpdir(), 'omni-update-'))
+  await mkdir(join(root, '.claude-plugin'), { recursive: true })
+  await writeFile(
+    join(root, '.claude-plugin', 'plugin.json'),
+    `${JSON.stringify({ name: 'omni', version })}\n`,
+    'utf8'
+  )
+  return root
+}
+
+function runner({ before = '0.19.0', after = '0.20.0', marketplace = canonicalMarketplace, installPath } = {}) {
   const calls = []
   let pluginListCalls = 0
   return {
@@ -42,7 +69,8 @@ function runner({ before = '0.19.0', after = '0.20.0', marketplace = canonicalMa
             id: 'omni@omni-hub',
             version: pluginListCalls === 1 ? before : after,
             scope: 'user',
-            enabled: true
+            enabled: true,
+            ...(pluginListCalls > 1 && installPath ? { installPath } : {})
           }
         ])
       }
@@ -56,13 +84,19 @@ function runner({ before = '0.19.0', after = '0.20.0', marketplace = canonicalMa
 }
 
 test('atualiza, valida e orienta a aplicação conforme a interface', async () => {
-  const fake = runner()
-  const result = await atualizarPlugin({
+  const loadedRoot = await pluginCarregadoNaVersao('0.19.0')
+  try {
+    const fake = runner({ installPath: 'C:\\installed\\omni-0.20.0' })
+    const result = await atualizarPlugin({
     casa: 'C:\\omni-test',
+    pluginRoot: loadedRoot,
     run: fake.run,
     resolveCli: async () => 'claude-test',
     checkVersion: async () => ({ latestVersion: '0.20.0', status: 'outdated' }),
-    readChanges: async () => [{ version: '0.20.0', change: 'Mudança testada.' }]
+    readChanges: async () => [{ version: '0.20.0', change: 'Mudança testada.' }],
+    verifyInstalledIntegrity: async () => trustedIntegrity('0.20.0'),
+    recordInstalledReadback: emptyReadback,
+    recordOperationalReadback: emptyReadback
   })
 
   assert.equal(result.status, 'updated')
@@ -73,24 +107,162 @@ test('atualiza, valida e orienta a aplicação conforme a interface', async () =
   assert.equal(result.applyInstructions.vscode.action, 'Clique em Restart.')
   assert.equal(result.applyInstructions.terminal.command, '/reload-plugins')
   assert.equal(result.applyInstructions.preservesSession, true)
-  assert.deepEqual(result.verifiedBy, ['claude-plugin-list', 'github-manifest'])
+  assert.deepEqual(result.verifiedBy, ['claude-plugin-list', 'installed-root-integrity', 'github-release-contract', 'payload-fingerprint'])
   assert.deepEqual(result.changes, [{ version: '0.20.0', change: 'Mudança testada.' }])
-  assert.ok(fake.calls.some(({ args }) => args.includes('update') && args.includes('omni@omni-hub')))
+    assert.ok(fake.calls.some(({ args }) => args.includes('update') && args.includes('omni@omni-hub')))
+  } finally {
+    await rm(loadedRoot, { recursive: true, force: true })
+  }
 })
 
 test('versão atual é validada sem pedir nova sessão', async () => {
-  const fake = runner({ before: '0.19.2', after: '0.19.2' })
-  const result = await atualizarPlugin({
+  const loadedRoot = await pluginCarregadoNaVersao('0.19.2')
+  try {
+    const fake = runner({ before: '0.19.2', after: '0.19.2' })
+    const result = await atualizarPlugin({
     casa: 'C:\\omni-test',
+    pluginRoot: loadedRoot,
     run: fake.run,
     resolveCli: async () => 'claude-test',
-    checkVersion: async () => ({ latestVersion: '0.19.2', status: 'current' })
+    checkVersion: async () => ({ latestVersion: '0.19.2', status: 'current' }),
+    verifyInstalledIntegrity: async () => trustedIntegrity('0.19.2'),
+    recordInstalledReadback: emptyReadback,
+    recordOperationalReadback: emptyReadback
   })
 
   assert.equal(result.status, 'current')
   assert.equal(result.reloadRequired, false)
   assert.equal(result.applyInstructions, null)
-  assert.deepEqual(result.changes, [])
+    assert.deepEqual(result.changes, [])
+  } finally {
+    await rm(loadedRoot, { recursive: true, force: true })
+  }
+})
+
+test('atualizacao confirma os dois readbacks somente com release integra', async () => {
+  const loadedRoot = await pluginCarregadoNaVersao('0.19.0')
+  try {
+    const fake = runner({ installPath: 'C:\\installed\\omni-0.20.0' })
+    const calls = []
+    const fingerprint = 'a'.repeat(64)
+    const result = await atualizarPlugin({
+      casa: 'C:\\omni-test',
+      pluginRoot: loadedRoot,
+      run: fake.run,
+      resolveCli: async () => 'claude-test',
+      checkVersion: async () => ({
+        latestVersion: '0.20.0',
+        installedVersion: '0.20.0',
+        installedFingerprint: fingerprint,
+        installedDeclaredFingerprint: fingerprint,
+        installedIntegrity: 'verified',
+        status: 'current-verified'
+      }),
+      verifyInstalledIntegrity: async () => trustedIntegrity('0.20.0', fingerprint),
+      readChanges: async () => [{ version: '0.20.0', change: 'Readback conectado.' }],
+      recordInstalledReadback: async (_casa, input) => {
+        calls.push({ kind: 'capability', input })
+        return { result: 'checked', verified: 2 }
+      },
+      recordOperationalReadback: async (_casa, input) => {
+        calls.push({ kind: 'operational', input })
+        return { result: 'checked', verified: 3 }
+      }
+    })
+    assert.deepEqual(calls.map((item) => item.kind), ['capability', 'operational'])
+    assert.ok(calls.every((item) => item.input.payloadFingerprint === fingerprint))
+    assert.deepEqual(result.learningReadback, {
+      verifiedArtifacts: 5,
+      capabilityArtifacts: 2,
+      operationalArtifacts: 3
+    })
+  } finally {
+    await rm(loadedRoot, { recursive: true, force: true })
+  }
+})
+
+test('bundle legado não pode ser declarado current nem produzir readback instalado', async () => {
+  const loadedRoot = await pluginCarregadoNaVersao('0.19.2')
+  try {
+    const fake = runner({ before: '0.19.2', after: '0.19.2' })
+    let called = false
+    const recorder = async () => {
+      called = true
+      return { result: 'checked', verified: 99 }
+    }
+    await assert.rejects(atualizarPlugin({
+      casa: 'C:\\omni-test',
+      pluginRoot: loadedRoot,
+      run: fake.run,
+      resolveCli: async () => 'claude-test',
+      verifyInstalledIntegrity: async () => ({
+        status: 'legacy-unverifiable',
+        versionMatchesManifest: true,
+        releaseVersion: '0.19.2',
+        fingerprint: 'b'.repeat(64),
+        declaredFingerprint: null
+      }),
+      recordInstalledReadback: recorder,
+      recordOperationalReadback: recorder
+    }), /raiz realmente instalada não comprovou/)
+    assert.equal(called, false)
+  } finally {
+    await rm(loadedRoot, { recursive: true, force: true })
+  }
+})
+
+test('mesma versão com payload divergente não é aceita como atual', async () => {
+  const loadedRoot = await pluginCarregadoNaVersao('0.19.2')
+  const fake = runner({ before: '0.19.2', after: '0.19.2' })
+  try {
+    await assert.rejects(
+      atualizarPlugin({
+        casa: 'C:\\omni-test',
+        pluginRoot: loadedRoot,
+        run: fake.run,
+        resolveCli: async () => 'claude-test',
+        verifyInstalledIntegrity: async () => trustedIntegrity('0.19.2'),
+        recordInstalledReadback: emptyReadback,
+        recordOperationalReadback: emptyReadback,
+        checkVersion: async () => ({
+          latestVersion: '0.19.2', status: 'diverged'
+        })
+      }),
+      /sem paridade de payload/
+    )
+  } finally {
+    await rm(loadedRoot, { recursive: true, force: true })
+  }
+})
+
+test('versão nova sem raiz instalada e raiz antiga não podem produzir updated', async () => {
+  const loadedRoot = await pluginCarregadoNaVersao('0.19.0')
+  try {
+    const withoutRoot = runner({ before: '0.19.0', after: '0.20.0' })
+    await assert.rejects(
+      atualizarPlugin({
+        casa: 'C:\\omni-test',
+        pluginRoot: loadedRoot,
+        run: withoutRoot.run,
+        resolveCli: async () => 'claude-test'
+      }),
+      /não expôs uma raiz verificável/
+    )
+
+    const oldRoot = runner({ before: '0.19.0', after: '0.20.0', installPath: loadedRoot })
+    await assert.rejects(
+      atualizarPlugin({
+        casa: 'C:\\omni-test',
+        pluginRoot: loadedRoot,
+        run: oldRoot.run,
+        resolveCli: async () => 'claude-test',
+        verifyInstalledIntegrity: async () => trustedIntegrity('0.19.0')
+      }),
+      /não expôs uma raiz verificável|não comprovou a versão/
+    )
+  } finally {
+    await rm(loadedRoot, { recursive: true, force: true })
+  }
 })
 
 test('registro retorna somente mudanças entre a versão anterior e a instalada', async () => {
@@ -139,7 +311,7 @@ test('registro da 0.16.1 fixa o ciclo e o relatório da varredura solicitada', a
   assert.equal(changes.length, 3)
   assert.ok(changes.every((item) => item.version === '0.16.1'))
   const text = changes.map((item) => item.change).join(' ')
-  assert.match(text, /avaliar.*materializar.*testar.*publicar/i)
+  assert.match(text, /avalia[cç][aã]o.*materializa[cç][aã]o.*testes.*publica[cç][aã]o/i)
   assert.match(text, /valeu subir.*origin\/main/i)
   assert.match(text, /manutenção silenciosa/i)
 })
@@ -159,7 +331,7 @@ test('registro da 0.18.0 descreve a validação autônoma de falhas', async () =
   assert.equal(changes.length, 4)
   assert.ok(changes.every((item) => item.version === '0.18.0'))
   const text = changes.map((item) => item.change).join(' ')
-  assert.match(text, /subagente em segundo plano.*sem nova pergunta/i)
+  assert.match(text, /pedido.*despacho.*subagente.*sem nova pergunta/i)
   assert.match(text, /reserva idempotente.*lease/i)
   assert.match(text, /causa raiz.*dois testes.*eval/i)
   assert.match(text, /destrutivas.*escrita remota.*autoriza/i)

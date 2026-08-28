@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto'
 
-import { registrarObservacaoAtalho } from './atalhos.mjs'
 import {
   observarDelegacao,
   observarEvento,
@@ -9,6 +8,29 @@ import {
 import { registrarFalha } from './falhas.mjs'
 import { pareceConterSegredo } from './memoria.mjs'
 import { materializarMelhoriaConfigurada } from './evolucao.mjs'
+
+function feedbackNegativoPersonalidade(value) {
+  const prompt = String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim()
+  const dry = '(?:seco|seca|frio|fria|sem vida|generico|generica|robotico|robotica)'
+  const evidence = prompt.replace(
+    new RegExp(`\\bnao\\s+(?:esta|ta|ficou|continua|segue|soa|parece)\\s+(?:muito\\s+)?${dry}\\b`, 'g'),
+    ''
+  )
+  return [
+    new RegExp(`\\b(?:voce|vc|tu|omni|dialogo|conversa|resposta|tom|jeito|personalidade)\\b.{0,90}\\b(?:esta|ta|ficou|continua|segue|soa|parece|veio|respondeu)\\b.{0,35}\\b(?:muito\\s+|ainda\\s+)?${dry}\\b`),
+    new RegExp(`\\b(?:muito|demais|ainda)\\s+${dry}\\b.{0,60}\\b(?:resposta|dialogo|conversa|tom|omni|voce|vc)\\b`),
+    /\b(?:seco|seca|frio|fria|generico|generica|robotico|robotica)\b.{0,30}\b(?:e\s+)?sem vida\b/,
+    /\b(?:faltou|falta|sumiu|cade|quero mais|precisa de mais|preciso de mais|insisto na)\b.{0,70}\b(?:personalidade|humor|sarcasmo|analogia|analogias|inteligencia)\b/,
+    /\b(?:nao|nunca)\s+(?:esta\s+|ta\s+)?(?:usou|usa|usando|aplicou|aplica|aplicando|trouxe|mostrou)\b.{0,60}\b(?:a\s+)?(?:personalidade|humor|sarcasmo|analogia|analogias)\b/,
+    /\b(?:personalidade|humor|sarcasmo|analogia|analogias)\b.{0,60}\b(?:nao apareceu|nao entrou|nao pegou|nao funciona|nao funcionou|nao esta funcionando|nao esta sendo usada|nao esta usando)\b/,
+    /\b(?:nada da|sem sinal de|cade a)\s+personalidade\b/
+  ].some((pattern) => pattern.test(evidence))
+}
 
 const CORRECOES = [
   {
@@ -34,7 +56,7 @@ const CORRECOES = [
   },
   {
     id: 'dry-personality',
-    pattern: /\b(seco|frio|sem vida|personalidade|poucas analogias|sem analogia)\b/i,
+    matches: feedbackNegativoPersonalidade,
     action: 'aplicar personalidade canonica na conversa',
     destination: 'personality',
     statement: 'Manter personalidade em alta intensidade desde a primeira frase, com inteligência perceptível, humor, sarcasmo e analogias integrados ao raciocínio, sem voltar ao assistente genérico.'
@@ -48,7 +70,7 @@ const CORRECOES = [
   },
   {
     id: 'request-unfaithful',
-    pattern: /\b(n[aã]o (?:foi|era|falei|pedi).{0,60}|seja mais fiel|fez errado|respondeu errado)\b/i,
+    pattern: /(?:\b(?:eu\s+)?n[aã]o\s+(?:falei|pedi|disse)\s+(?:isso|isto|essa|esse|assim|desse\s+jeito)\b|\b(?:isso\s+)?n[aã]o\s+(?:foi|era|[eé])\s+(?:isso\s+)?(?:o\s+)?que\s+(?:eu\s+)?(?:pedi|falei|disse|quis)\b|\b(?:voc[eê]|vc|tu)(?=\s|[,:;.!?]|$).{0,80}\b(?:fez|entendeu|respondeu|executou|interpretou)\b.{0,60}\b(?:errad[oa]|diferente|outra\s+coisa)\b|\bseja\s+mais\s+fiel(?:\s+ao\s+que\s+eu\s+(?:pedi|disse|falei))?\b|\b(?:fez|respondeu|executou)\s+errad[oa]\b)/i,
     action: 'executar fielmente o pedido atual',
     destination: 'eval',
     statement: 'Comparar pedido, acao e resultado antes de concluir, corrigindo divergencias enquanto o turno ainda esta ativo.'
@@ -230,7 +252,11 @@ export async function observarPrompt(casa, input) {
     objective: objetivoDeclarado(prompt)
   })
   const corrections = []
-  for (const correction of CORRECOES.filter((item) => item.pattern.test(prompt))) {
+  const origin = input?.origin ?? 'owner-live'
+  const ownerOrigin = origin === 'owner-live' || origin === 'owner-transcript'
+  for (const correction of ownerOrigin
+    ? CORRECOES.filter((item) => item.matches ? item.matches(prompt) : item.pattern.test(prompt))
+    : []) {
     const evidenceId = `correction:${input.session_id}:${correction.id}:${hash(prompt)}`
     const failure = await registrarFalha(casa, {
       agent: 'omni',
@@ -244,10 +270,19 @@ export async function observarPrompt(casa, input) {
       destination: correction.destination,
       statement: correction.statement
     })
+    let materialization = null
     if (improvement.candidate?.status === 'ready') {
-      await materializarMelhoriaConfigurada(casa, improvement.candidate.id)
+      materialization = await materializarMelhoriaConfigurada(casa, improvement.candidate.id)
     }
-    corrections.push({ id: correction.id, failure: failure.result, improvement: improvement.result })
+    corrections.push({
+      id: correction.id,
+      failure: failure.result,
+      improvement: improvement.result,
+      candidateId: improvement.candidate?.id ?? null,
+      destination: improvement.candidate?.destination ?? null,
+      candidateStatus: materialization?.candidate?.status ?? improvement.candidate?.status ?? null,
+      materialization
+    })
   }
   return { event, corrections }
 }
@@ -266,7 +301,7 @@ export async function observarFerramenta(casa, input) {
       : `${input.tool_name ?? 'tool'} concluida`,
     durationMs: input.duration_ms
   })
-  if (!failed) return { event, failure: null }
+  if (!failed) return { event, failure: null, improvement: null, materialization: null }
   const failure = await registrarFalha(casa, {
     agent: 'omni',
     action: `executar ${texto(input.tool_name, 80) ?? 'ferramenta'}`,
@@ -274,19 +309,29 @@ export async function observarFerramenta(casa, input) {
     signature: assinaturaDiagnosticaFalha(input),
     evidenceId: input.tool_use_id ?? `${input.session_id}:${hash(input.error)}`
   })
+  let improvement = null
+  let materialization = null
   if (failure.result === 'candidate') {
     const toolName = texto(input.tool_name, 80) ?? 'a ferramenta'
     const failureClass = failure.pattern?.failureClass ?? classeDeErro(input)
-    const improvement = await proporMelhoriaOperacional(casa, {
+    improvement = await proporMelhoriaOperacional(casa, {
       category: 'repeated-tool-failure',
       destination: 'procedure',
       statement: `Quando ${toolName} falhar por ${failureClass}, ${recuperacaoParaClasse(failureClass)}.`
     })
     if (improvement.candidate?.status === 'ready') {
-      await materializarMelhoriaConfigurada(casa, improvement.candidate.id)
+      materialization = await materializarMelhoriaConfigurada(casa, improvement.candidate.id)
     }
   }
-  return { event, failure }
+  return {
+    event,
+    failure,
+    improvement,
+    candidateId: improvement?.candidate?.id ?? null,
+    destination: improvement?.candidate?.destination ?? null,
+    candidateStatus: materialization?.candidate?.status ?? improvement?.candidate?.status ?? null,
+    materialization
+  }
 }
 
 export async function observarInicioSubagente(casa, input) {
@@ -301,7 +346,7 @@ export async function observarInicioSubagente(casa, input) {
     sessionId: input.session_id,
     evidenceId: `agent-start:${input.agent_id}`,
     cwd: input.cwd,
-    status: 'running',
+    status: delegation.result,
     summary: `Executor ${texto(input.agent_type, 80) ?? 'agent'} iniciado`
   })
   return delegation
@@ -309,30 +354,24 @@ export async function observarInicioSubagente(casa, input) {
 
 export async function observarFimSubagente(casa, input) {
   const rawSummary = texto(input.last_assistant_message, 1000)
-  const summary = `Execucao concluida (${rawSummary?.length ?? 0} caracteres)`
+  const summary = `Relato do executor recebido (${rawSummary?.length ?? 0} caracteres)`
   const delegation = await observarDelegacao(casa, {
-    state: 'completed',
+    state: 'reported',
     sessionId: input.session_id,
     agentId: input.agent_id,
     agentType: input.agent_type,
-    evidence: input.agent_transcript_path ?? input.agent_id,
-    summary
+    evidence: input.agent_transcript_path,
+    summary,
+    auditActionId: input.audit_action_id,
+    auditEvidenceId: input.audit_evidence_id
   })
   await observarEvento(casa, {
-    eventType: 'delegation-complete',
+    eventType: 'delegation-report',
     sessionId: input.session_id,
     evidenceId: `agent-stop:${input.agent_id}:${hash(summary)}`,
     cwd: input.cwd,
-    status: 'completed',
+    status: delegation.result,
     summary
-  })
-  await registrarObservacaoAtalho(casa, {
-    goal: `delegar para ${texto(input.agent_type, 80) ?? 'executor'}`,
-    baselineSteps: ['preparar tarefa', 'executar na conversa central', 'verificar', 'reportar'],
-    shortcutSteps: ['delegar com contexto', 'receber evidencia', 'reportar'],
-    outcome: 'delegacao concluida com evidencia',
-    success: true,
-    scope: { type: 'user' }
   })
   return delegation
 }

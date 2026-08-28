@@ -3,9 +3,10 @@ import { mkdir, open, readFile, rename, stat, unlink, writeFile } from 'node:fs/
 import { isAbsolute, join } from 'node:path'
 
 import { pareceConterSegredo } from './memoria.mjs'
+import { lerAuditoriaAutocorrecao } from './auditoria-autocorrecao.mjs'
 
-export const SHORTCUT_STORE_SCHEMA_VERSION = 2
-export const SHORTCUT_POLICY_VERSION = 2
+export const SHORTCUT_STORE_SCHEMA_VERSION = 4
+export const SHORTCUT_POLICY_VERSION = 4
 
 const POLICY_PATH = new URL('../contratos/aprendizado/atalhos.json', import.meta.url)
 const STATUS = new Set(['observing', 'active', 'validated'])
@@ -28,6 +29,10 @@ function normalizar(text) {
 
 function fingerprint(outcome) {
   return createHash('sha256').update(normalizar(outcome)).digest('hex')
+}
+
+function auditFingerprint(value) {
+  return createHash('sha256').update(String(value ?? ''), 'utf8').digest('hex')
 }
 
 function storeVazio(now = new Date().toISOString()) {
@@ -62,11 +67,32 @@ function observacaoValida(item) {
       typeof item.id === 'string' &&
       item.id.startsWith('obs-') &&
       dataValida(item.recordedAt) &&
-      typeof item.success === 'boolean' &&
+      typeof item.auditActionId === 'string' && item.auditActionId.startsWith('audit-action-') &&
+      typeof item.auditEvidenceId === 'string' && item.auditEvidenceId.startsWith('audit-evidence-') &&
+      /^[a-f0-9]{64}$/.test(item.executionFingerprint ?? '') &&
+      /^[a-f0-9]{64}$/.test(item.strategyFingerprint ?? '') &&
+      /^[a-f0-9]{64}$/.test(item.evidenceFingerprint ?? '') &&
+      /^[a-f0-9]{64}$/.test(item.patternFingerprint ?? '') &&
+      /^[a-f0-9]{64}$/.test(item.verificationFamilyFingerprint ?? '') &&
+      /^[a-f0-9]{64}$/.test(item.verificationBindingFingerprint ?? '') &&
+      item.source === 'audit-self-correction' &&
+      item.verified === true &&
+      item.success === true &&
       typeof item.consistent === 'boolean' &&
       typeof item.outcomeFingerprint === 'string' &&
       /^[a-f0-9]{64}$/.test(item.outcomeFingerprint) &&
       (item.durationMs === null || (Number.isInteger(item.durationMs) && item.durationMs >= 0))
+  )
+}
+
+function observacaoLegadaValida(item) {
+  return Boolean(
+    item &&
+      typeof item.id === 'string' && item.id.startsWith('obs-') &&
+      dataValida(item.recordedAt) &&
+      typeof item.success === 'boolean' &&
+      typeof item.consistent === 'boolean' &&
+      /^[a-f0-9]{64}$/.test(item.outcomeFingerprint ?? '')
   )
 }
 
@@ -96,6 +122,11 @@ function atalhoValido(item) {
       item.shortcutSteps.every((step) => typeof step === 'string' && step.length > 0) &&
       STATUS.has(item.status) &&
       (item.outcomeFingerprint === null || /^[a-f0-9]{64}$/.test(item.outcomeFingerprint)) &&
+      (item.strategyFingerprint === null || /^[a-f0-9]{64}$/.test(item.strategyFingerprint)) &&
+      /^[a-f0-9]{64}$/.test(item.patternFingerprint ?? '') &&
+      typeof item.verificationFamily === 'string' && item.verificationFamily.length > 0 &&
+      /^[a-f0-9]{64}$/.test(item.verificationFamilyFingerprint ?? '') &&
+      /^[a-f0-9]{64}$/.test(item.verificationBindingFingerprint ?? '') &&
       Number.isInteger(item.consecutiveSuccesses) &&
       item.consecutiveSuccesses >= 0 &&
       Number.isInteger(item.successCount) &&
@@ -112,6 +143,8 @@ function atalhoValido(item) {
       item.mergedFrom.every((id) => typeof id === 'string' && id.startsWith('shortcut-')) &&
       Array.isArray(item.observations) &&
       item.observations.every(observacaoValida) &&
+      Array.isArray(item.legacyUnverifiedObservations) &&
+      item.legacyUnverifiedObservations.every(observacaoLegadaValida) &&
       validationValid &&
       dataValida(item.createdAt) &&
       dataValida(item.updatedAt)
@@ -215,7 +248,57 @@ function enriquecerV1(item) {
 }
 
 function chaveDeIdentidade(item) {
-  return `${item.scope.type}:${item.scope.id ?? ''}:${item.family}`
+  return `${item.scope.type}:${item.scope.id ?? ''}:${item.family}:${item.patternFingerprint ?? ''}`
+}
+
+function fingerprintDoPadraoAtalho({ family, scope, baselineSteps, shortcutSteps }) {
+  return fingerprint(JSON.stringify({
+    family: familiaCanonica(family),
+    scope,
+    baselineSteps,
+    shortcutSteps
+  }))
+}
+
+function familiaVerificacaoAtalho({ family, baselineSteps, shortcutSteps }) {
+  const text = normalizar([family, ...baselineSteps, ...shortcutSteps].join(' '))
+  if (/\b(?:git|branch|commit|refs?|worktree|diff|repository|repositorio)\b/.test(text)) return 'repository'
+  if (/\b(?:build|compile|compilar|bundle|empacotar)\b/.test(text)) return 'build'
+  // O domÃ­nio do atalho nÃ£o Ã© a famÃ­lia de sua prova. Atalhos sobre arquivo
+  // ou delegaÃ§Ã£o ainda precisam de um teste verificÃ¡vel; a mera leitura ou o
+  // prÃ³prio ato de delegar nÃ£o demonstra que o procedimento funciona.
+  return 'test'
+}
+
+function contratoVerificacaoAtalho(input) {
+  const declaredGoal = validarTexto(input?.goal, 'Objetivo', 3, 240)
+  const family = familiaCanonica(declaredGoal)
+  const goal = family
+  const baselineSteps = validarPassos(input?.baselineSteps, 'referÃªncia')
+  const shortcutSteps = passosComVerificacao(validarPassos(input?.shortcutSteps, 'atalho'))
+  const scope = input?.scope ?? { type: 'user' }
+  if (!escopoValido(scope)) throw new Error('Escopo do atalho Ã© invÃ¡lido.')
+  const patternFingerprint = fingerprintDoPadraoAtalho({ family, scope, baselineSteps, shortcutSteps })
+  const verificationFamily = familiaVerificacaoAtalho({ family, baselineSteps, shortcutSteps })
+  const verificationFamilyFingerprint = fingerprint(`${patternFingerprint}:${verificationFamily}`)
+  const verificationBindingFingerprint = fingerprint(
+    `${patternFingerprint}:${verificationFamilyFingerprint}:shortcut-verification-v1`
+  )
+  return {
+    family,
+    goal,
+    scope,
+    baselineSteps,
+    shortcutSteps,
+    patternFingerprint,
+    verificationFamily,
+    verificationFamilyFingerprint,
+    verificationBindingFingerprint
+  }
+}
+
+export function vinculoVerificacaoAtalho(input) {
+  return contratoVerificacaoAtalho(input).verificationBindingFingerprint
 }
 
 function consolidarIdentidades(store, policy, at) {
@@ -280,11 +363,82 @@ function migrarV1(source, policy) {
   return migrated
 }
 
+function migrarV2(store) {
+  const migrated = structuredClone(store)
+  migrated.schemaVersion = 3
+  migrated.shortcuts = migrated.shortcuts.map((item) => ({
+    ...item,
+    status: 'observing',
+    outcomeFingerprint: null,
+    strategyFingerprint: null,
+    patternFingerprint: fingerprintDoPadraoAtalho(item),
+    consecutiveSuccesses: 0,
+    successCount: 0,
+    failureCount: 0,
+    inconsistentCount: 0,
+    lastSucceededAt: null,
+    observations: [],
+    legacyUnverifiedObservations: (item.observations ?? []).map((observation) => ({
+      id: observation.id,
+      recordedAt: observation.recordedAt,
+      success: observation.success,
+      consistent: observation.consistent,
+      outcomeFingerprint: observation.outcomeFingerprint,
+      durationMs: observation.durationMs ?? null
+    })),
+    validation: null
+  }))
+  return migrated
+}
+
+function migrarV3(store) {
+  const migrated = structuredClone(store)
+  migrated.schemaVersion = SHORTCUT_STORE_SCHEMA_VERSION
+  migrated.shortcuts = migrated.shortcuts.map((item) => {
+    const patternFingerprint = item.patternFingerprint ?? fingerprintDoPadraoAtalho(item)
+    const verificationFamily = familiaVerificacaoAtalho(item)
+    const verificationFamilyFingerprint = fingerprint(`${patternFingerprint}:${verificationFamily}`)
+    const verificationBindingFingerprint = fingerprint(
+      `${patternFingerprint}:${verificationFamilyFingerprint}:shortcut-verification-v1`
+    )
+    const legacyUnverifiedObservations = [
+      ...(item.legacyUnverifiedObservations ?? []),
+      ...(item.observations ?? []).map((observation) => ({
+        id: observation.id,
+        recordedAt: observation.recordedAt,
+        success: observation.success,
+        consistent: observation.consistent,
+        outcomeFingerprint: observation.outcomeFingerprint,
+        durationMs: observation.durationMs ?? null
+      }))
+    ]
+    return {
+      ...item,
+      status: 'observing',
+      outcomeFingerprint: null,
+      strategyFingerprint: null,
+      patternFingerprint,
+      verificationFamily,
+      verificationFamilyFingerprint,
+      verificationBindingFingerprint,
+      consecutiveSuccesses: 0,
+      successCount: 0,
+      failureCount: 0,
+      inconsistentCount: 0,
+      lastSucceededAt: null,
+      observations: [],
+      legacyUnverifiedObservations,
+      validation: null
+    }
+  })
+  return migrated
+}
+
 async function lerPolitica() {
   const policy = JSON.parse(await readFile(POLICY_PATH, 'utf8'))
   if (
     policy?.schemaVersion !== SHORTCUT_POLICY_VERSION ||
-    policy.policy !== 'shortcut-learning-v2' ||
+    policy.policy !== 'shortcut-learning-v4' ||
     policy.activationSuccessfulRuns !== 1 ||
     !Number.isInteger(policy.validationSuccessfulRuns) ||
     policy.validationSuccessfulRuns < 2 ||
@@ -301,6 +455,14 @@ async function lerPolitica() {
     !Number.isInteger(policy.maximumFailuresBeforeArchive) ||
     policy.maximumFailuresBeforeArchive < 2 ||
     policy.automaticPortablePromotion !== false ||
+    policy.verifiedObservations?.source !== 'audit-self-correction' ||
+    policy.verifiedObservations?.requireSessionBinding !== true ||
+    policy.verifiedObservations?.requireExecutionBinding !== true ||
+    policy.verifiedObservations?.requirePatternBinding !== true ||
+    policy.verifiedObservations?.requireSemanticBinding !== true ||
+    policy.verifiedObservations?.requireActionFamily !== true ||
+    policy.verifiedObservations?.requiredActionEffect !== 'verification' ||
+    policy.verifiedObservations?.requiredActionState !== 'succeeded' ||
     policy.storeRawOutcome !== false
   ) {
     throw new Error('Política de aprendizado de atalhos fora do contrato seguro v2.')
@@ -334,12 +496,19 @@ async function carregar(casa, policy) {
   try {
     const source = await readFile(path, 'utf8')
     const parsed = JSON.parse(source)
-    const store = parsed.schemaVersion === 1 ? migrarV1(source, policy) : parsed
+    let store = parsed.schemaVersion === 1 ? migrarV1(source, policy) : parsed
+    if (store.schemaVersion === 2) store = migrarV2(store)
+    if (store.schemaVersion === 3) store = migrarV3(store)
     if (store.schemaVersion > SHORTCUT_STORE_SCHEMA_VERSION) {
       throw new Error(`Aprendizado v${store.schemaVersion} é mais novo que este plugin.`)
     }
     validarStore(store, path)
-    return { store, initialized: false, migratedFrom: parsed.schemaVersion === 1 ? 1 : null, source }
+    return {
+      store,
+      initialized: false,
+      migratedFrom: parsed.schemaVersion < SHORTCUT_STORE_SCHEMA_VERSION ? parsed.schemaVersion : null,
+      source
+    }
   } catch (error) {
     if (error?.code === 'ENOENT') {
       return { store: storeVazio(), initialized: true, migratedFrom: null, source: null }
@@ -390,7 +559,7 @@ export async function prepararAtalhos(casa) {
     ]
     if (loaded.migratedFrom !== null) {
       const stamp = new Date().toISOString().replace(/[^0-9]/g, '')
-      await writeFile(`${caminhoDosAtalhos(casa)}.before-v1-to-v2.${stamp}.backup`, loaded.source, {
+      await writeFile(`${caminhoDosAtalhos(casa)}.before-v${loaded.migratedFrom}-to-v${SHORTCUT_STORE_SCHEMA_VERSION}.${stamp}.backup`, loaded.source, {
         encoding: 'utf8',
         flag: 'wx'
       })
@@ -519,11 +688,117 @@ function validarDuracao(durationMs) {
   return durationMs
 }
 
-function novaObservacao({ success, outcomeFingerprint, durationMs, now, consistent }) {
+async function verificarExecucaoNoHistorico(casa, {
+  sessionId,
+  executionId,
+  semanticBindingFingerprint,
+  expectedActionFamily,
+  sourceRequestFingerprint = null
+}) {
+  const audit = await lerAuditoriaAutocorrecao(casa)
+  const sessionFingerprint = auditFingerprint(sessionId)
+  const executionFingerprint = auditFingerprint(executionId)
+  for (const turn of audit.turns ?? []) {
+    if (turn.sessionFingerprint !== sessionFingerprint) continue
+    const sourceBound = /^[a-f0-9]{64}$/.test(sourceRequestFingerprint ?? '') &&
+      turn.requestFingerprint === sourceRequestFingerprint
+    const action = (turn.actions ?? []).find((item) =>
+      item.toolUseFingerprint === executionFingerprint &&
+      item.effect === 'verification' &&
+      item.state === 'succeeded' &&
+      (item.semanticBindingFingerprint === semanticBindingFingerprint || sourceBound) &&
+      item.actionFamily === expectedActionFamily
+    )
+    if (!action) continue
+    const evidence = (turn.evidence ?? []).find((item) =>
+      item.sourceActionId === action.id &&
+      item.kind === 'state-readback' &&
+      Date.parse(item.recordedAt) >= Date.parse(action.recordedAt)
+    )
+    if (evidence) {
+      const bindingFingerprint = itemBindingFingerprint({
+        semanticBindingFingerprint,
+        sourceRequestFingerprint: sourceBound ? sourceRequestFingerprint : null,
+        action,
+        evidence
+      })
+      return { result: 'verified', turn, action, evidence, bindingFingerprint }
+    }
+  }
+  return { result: 'unverified-action', turn: null, action: null, evidence: null }
+}
+
+function verificacaoValida(value, {
+  sessionId,
+  executionId,
+  semanticBindingFingerprint,
+  expectedActionFamily,
+  sourceRequestFingerprint = null
+}) {
+  const { turn, action, evidence } = value ?? {}
+  return Boolean(
+    value?.result === 'verified' &&
+    turn?.sessionFingerprint === auditFingerprint(sessionId) &&
+    action?.toolUseFingerprint === auditFingerprint(executionId) &&
+    action.effect === 'verification' &&
+    action.state === 'succeeded' &&
+    (
+      action.semanticBindingFingerprint === semanticBindingFingerprint ||
+      (/^[a-f0-9]{64}$/.test(sourceRequestFingerprint ?? '') && turn.requestFingerprint === sourceRequestFingerprint)
+    ) &&
+    value.bindingFingerprint === itemBindingFingerprint({
+      semanticBindingFingerprint,
+      sourceRequestFingerprint: turn.requestFingerprint === sourceRequestFingerprint ? sourceRequestFingerprint : null,
+      action,
+      evidence
+    }) &&
+    action.actionFamily === expectedActionFamily &&
+    typeof action.id === 'string' && action.id.startsWith('audit-action-') &&
+    /^[a-f0-9]{64}$/.test(action.strategyFingerprint ?? '') &&
+    dataValida(action.recordedAt) &&
+    typeof evidence?.id === 'string' && evidence.id.startsWith('audit-evidence-') &&
+    evidence.sourceActionId === action.id &&
+    evidence.kind === 'state-readback' &&
+    /^[a-f0-9]{64}$/.test(evidence.fingerprint ?? '') &&
+    dataValida(evidence.recordedAt) &&
+    Date.parse(evidence.recordedAt) >= Date.parse(action.recordedAt)
+  )
+}
+
+function itemBindingFingerprint({ semanticBindingFingerprint, sourceRequestFingerprint, action, evidence }) {
+  if (sourceRequestFingerprint === null) return semanticBindingFingerprint
+  return fingerprint([
+    semanticBindingFingerprint,
+    sourceRequestFingerprint,
+    action.toolUseFingerprint,
+    evidence.fingerprint,
+    'daily-scan-shortcut-evidence-v1'
+  ].join(':'))
+}
+
+function novaObservacao({
+  verification,
+  patternFingerprint,
+  verificationFamilyFingerprint,
+  verificationBindingFingerprint,
+  outcomeFingerprint,
+  durationMs,
+  consistent
+}) {
   return {
     id: `obs-${randomUUID()}`,
-    recordedAt: now,
-    success,
+    recordedAt: verification.action.recordedAt,
+    auditActionId: verification.action.id,
+    auditEvidenceId: verification.evidence.id,
+    executionFingerprint: verification.action.toolUseFingerprint,
+    strategyFingerprint: verification.action.strategyFingerprint,
+    evidenceFingerprint: verification.evidence.fingerprint,
+    patternFingerprint,
+    verificationFamilyFingerprint,
+    verificationBindingFingerprint,
+    source: 'audit-self-correction',
+    verified: true,
+    success: true,
     consistent,
     outcomeFingerprint,
     durationMs
@@ -557,31 +832,56 @@ function aplicarObservacao(item, observation, policy) {
     : null
 }
 
-export async function registrarObservacaoAtalho(casa, input, { now } = {}) {
+export async function registrarObservacaoAtalho(casa, input, { sourceRequestFingerprint = null } = {}) {
+  if (['outcome', 'success', 'auditActionId', 'auditEvidenceId'].some((field) => Object.hasOwn(input ?? {}, field))) {
+    throw new Error('O atalho não aceita sucesso, resultado ou evidência autodeclarados.')
+  }
   const policy = await lerPolitica()
   await prepararAtalhos(casa)
-  const declaredGoal = validarTexto(input?.goal, 'Objetivo', 3, 240)
-  const family = familiaCanonica(declaredGoal)
-  const goal = family
-  const baselineSteps = validarPassos(input?.baselineSteps, 'referência')
-  const shortcutSteps = passosComVerificacao(validarPassos(input?.shortcutSteps, 'atalho'))
+  const {
+    family,
+    goal,
+    baselineSteps,
+    shortcutSteps,
+    scope,
+    patternFingerprint,
+    verificationFamily,
+    verificationFamilyFingerprint,
+    verificationBindingFingerprint
+  } = contratoVerificacaoAtalho(input)
   if (baselineSteps.length - shortcutSteps.length < policy.minimumRemovedSteps) {
     throw new Error('O atalho precisa remover ao menos uma etapa da referência.')
   }
-  const scope = input?.scope ?? { type: 'user' }
-  if (!escopoValido(scope)) throw new Error('Escopo do atalho é inválido.')
-  const outcome = validarTexto(input?.outcome, 'Resultado', 2, 240)
-  if (typeof input?.success !== 'boolean') throw new Error('O resultado precisa declarar sucesso ou falha.')
+  const sessionId = validarTexto(input?.sessionId, 'Sessão auditada', 3, 240)
+  const executionId = validarTexto(input?.executionId, 'Execução auditada', 3, 240)
   const durationMs = validarDuracao(input?.durationMs)
-  const recordedAt = now ? new Date(now).toISOString() : new Date().toISOString()
-  const outcomeFingerprint = fingerprint(outcome)
+  const verification = await verificarExecucaoNoHistorico(casa, {
+    sessionId,
+    executionId,
+    semanticBindingFingerprint: verificationBindingFingerprint,
+    expectedActionFamily: verificationFamily,
+    sourceRequestFingerprint
+  })
+  if (!verificacaoValida(verification, {
+    sessionId,
+    executionId,
+    semanticBindingFingerprint: verificationBindingFingerprint,
+    expectedActionFamily: verificationFamily,
+    sourceRequestFingerprint
+  })) {
+    return { result: 'unverified-action', shortcut: null, observation: null, promotion: 'not-performed' }
+  }
+  const recordedAt = verification.action.recordedAt
+  const outcomeFingerprint = fingerprint(`${patternFingerprint}:${verification.action.strategyFingerprint}:verified-success`)
 
   const release = await adquirirTrava(casa)
   try {
     const loaded = await carregar(casa, policy)
     const store = loaded.store
     const inputKey = chave({ family, scope })
-    let item = store.shortcuts.find((candidate) => chave(candidate) === inputKey)
+    let item = store.shortcuts.find((candidate) =>
+      chave(candidate) === inputKey && candidate.patternFingerprint === patternFingerprint
+    )
     if (!item) {
       item = {
         id: `shortcut-${randomUUID()}`,
@@ -591,7 +891,12 @@ export async function registrarObservacaoAtalho(casa, input, { now } = {}) {
         baselineSteps,
         shortcutSteps,
         status: 'observing',
-        outcomeFingerprint: input.success ? outcomeFingerprint : null,
+        outcomeFingerprint,
+        strategyFingerprint: verification.action.strategyFingerprint,
+        patternFingerprint,
+        verificationFamily,
+        verificationFamilyFingerprint,
+        verificationBindingFingerprint,
         consecutiveSuccesses: 0,
         successCount: 0,
         failureCount: 0,
@@ -601,22 +906,27 @@ export async function registrarObservacaoAtalho(casa, input, { now } = {}) {
         lastUsedAt: null,
         mergedFrom: [],
         observations: [],
+        legacyUnverifiedObservations: [],
         validation: null,
         createdAt: recordedAt,
         updatedAt: recordedAt
       }
       store.shortcuts.push(item)
-    } else if (shortcutSteps.length < item.shortcutSteps.length) {
-      item.baselineSteps = baselineSteps
-      item.shortcutSteps = shortcutSteps
     }
-    if (item.outcomeFingerprint === null && input.success) item.outcomeFingerprint = outcomeFingerprint
-    const consistent = input.success && item.outcomeFingerprint === outcomeFingerprint
+    if (item.observations.some((observation) =>
+      observation.executionFingerprint === verification.action.toolUseFingerprint ||
+      observation.auditActionId === verification.action.id
+    )) return { result: 'duplicate-evidence', shortcut: item, observation: null, promotion: 'not-performed' }
+    const consistent = item.strategyFingerprint === verification.action.strategyFingerprint &&
+      item.patternFingerprint === patternFingerprint &&
+      item.outcomeFingerprint === outcomeFingerprint
     const observation = novaObservacao({
-      success: input.success,
+      verification,
+      patternFingerprint,
+      verificationFamilyFingerprint,
+      verificationBindingFingerprint: verification.bindingFingerprint,
       outcomeFingerprint,
       durationMs,
-      now: recordedAt,
       consistent
     })
     aplicarObservacao(item, observation, policy)
@@ -638,15 +948,15 @@ export async function registrarObservacaoAtalho(casa, input, { now } = {}) {
   }
 }
 
-export async function validarAtalho(casa, id, input, { now } = {}) {
+export async function validarAtalho(casa, id, input) {
+  if (['outcome', 'success', 'auditActionId', 'auditEvidenceId'].some((field) => Object.hasOwn(input ?? {}, field))) {
+    throw new Error('A validação do atalho não aceita sucesso, resultado ou evidência autodeclarados.')
+  }
   const policy = await lerPolitica()
   await prepararAtalhos(casa)
-  const outcome = validarTexto(input?.outcome, 'Resultado', 2, 240)
-  if (typeof input?.success !== 'boolean') throw new Error('A validação precisa declarar sucesso ou falha.')
+  const sessionId = validarTexto(input?.sessionId, 'Sessão auditada', 3, 240)
+  const executionId = validarTexto(input?.executionId, 'Execução auditada', 3, 240)
   const durationMs = validarDuracao(input?.durationMs)
-  const recordedAt = now ? new Date(now).toISOString() : new Date().toISOString()
-  const outcomeFingerprint = fingerprint(outcome)
-
   const release = await adquirirTrava(casa)
   try {
     const loaded = await carregar(casa, policy)
@@ -655,17 +965,40 @@ export async function validarAtalho(casa, id, input, { now } = {}) {
     if (!['active', 'validated'].includes(item.status)) {
       return { result: 'not-ready', shortcut: item, requiredStatus: 'active' }
     }
-    const consistent = input.success && item.outcomeFingerprint === outcomeFingerprint
+    const verification = await verificarExecucaoNoHistorico(casa, {
+      sessionId,
+      executionId,
+      semanticBindingFingerprint: item.verificationBindingFingerprint,
+      expectedActionFamily: item.verificationFamily
+    })
+    if (!verificacaoValida(verification, {
+      sessionId,
+      executionId,
+      semanticBindingFingerprint: item.verificationBindingFingerprint,
+      expectedActionFamily: item.verificationFamily
+    })) {
+      return { result: 'unverified-action', shortcut: item, observation: null, promotion: 'not-performed' }
+    }
+    const recordedAt = verification.action.recordedAt
+    if (item.observations.some((observation) =>
+      observation.executionFingerprint === verification.action.toolUseFingerprint ||
+      observation.auditActionId === verification.action.id
+    )) return { result: 'duplicate-evidence', shortcut: item, observation: null, promotion: 'not-performed' }
+    const outcomeFingerprint = fingerprint(`${item.patternFingerprint}:${verification.action.strategyFingerprint}:verified-success`)
+    const consistent = item.strategyFingerprint === verification.action.strategyFingerprint &&
+      item.outcomeFingerprint === outcomeFingerprint
     const observation = novaObservacao({
-      success: input.success,
+      verification,
+      patternFingerprint: item.patternFingerprint,
+      verificationFamilyFingerprint: item.verificationFamilyFingerprint,
+      verificationBindingFingerprint: item.verificationBindingFingerprint,
       outcomeFingerprint,
       durationMs,
-      now: recordedAt,
       consistent
     })
     aplicarObservacao(item, observation, policy)
     let result
-    if (input.success && consistent) {
+    if (consistent) {
       item.status = 'validated'
       item.validation = { status: 'passed', validatedAt: recordedAt, observationId: observation.id }
       result = 'validated'

@@ -1,6 +1,7 @@
 {
   "schemaVersion": 1,
   "contract": "omni-operational-cycle-v1",
+  "authorityContract": "omni-responsible-freedom-v1",
   "eventRetention": 500,
   "sessionRetention": 100,
   "delegationRetention": 200,
@@ -12,11 +13,65 @@
     "captureSeveralSignalsPerTurn": true,
     "promoteExplicitStablePreferences": true
   },
+  "improvement": {
+    "states": [
+      "observing",
+      "ready",
+      "implementation-required",
+      "materialized-pending-release",
+      "installed-verified"
+    ],
+    "transitions": {
+      "observing": ["ready"],
+      "ready": ["implementation-required", "materialized-pending-release"],
+      "implementation-required": ["materialized-pending-release"],
+      "materialized-pending-release": ["installed-verified"],
+      "installed-verified": []
+    },
+    "minimumOccurrencesReady": 2,
+    "materializedState": "materialized-pending-release",
+    "effectiveState": "installed-verified",
+    "reinforcementNeverRegressesState": true,
+    "installedVerificationRequiresReleaseIntegrity": true,
+    "sourceImplementationRequiresAuditedMutationAndReadback": true
+  },
   "delegation": {
-    "states": ["prepared", "visible", "running", "blocked", "completed", "closed"],
+    "states": [
+      "prepared",
+      "visible",
+      "running",
+      "reported",
+      "verified",
+      "closed",
+      "blocked",
+      "failed",
+      "cancelled"
+    ],
+    "transitions": {
+      "prepared": ["visible", "failed", "cancelled"],
+      "visible": ["running", "failed", "cancelled"],
+      "running": ["reported", "blocked", "failed", "cancelled"],
+      "reported": ["verified", "running", "blocked", "failed", "cancelled"],
+      "verified": ["closed"],
+      "blocked": ["running", "failed", "cancelled"],
+      "closed": [],
+      "failed": [],
+      "cancelled": []
+    },
+    "successStates": ["verified"],
+    "closedSuccessRequiresOutcome": "verified",
+    "subagentStopProduces": "reported",
+    "untrackedExecutorProduces": "failed",
+    "evidenceRequiredFor": ["visible", "running", "reported", "verified", "blocked", "failed", "cancelled"],
     "targetReceivesVisiblePrompt": true,
     "centralConversationRemainsAvailable": true,
-    "completionReturnsEvidence": true
+    "completionReturnsEvidence": true,
+    "authorityIsInherited": true,
+    "reportedIsNotSuccess": true,
+    "verificationPrecedesClosure": true,
+    "verifiedRequiresAuditActionAndEvidence": true,
+    "verificationMustFollowReport": true,
+    "verificationMustMatchAuditedObject": true
   },
   "privacy": {
     "storeRawConversation": false,

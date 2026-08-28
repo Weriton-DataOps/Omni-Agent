@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "contract": "omni-release-integrity-v1",
+  "algorithm": "sha256-canonical-text-v1",
+  "payloadRoots": ["contratos", "hooks", "runtime", "scripts", "skills"],
+  "excluded": [
+    "contratos/atualizacao/integridade.json",
+    "contratos/atualizacao/releases.json",
+    ".claude-plugin/plugin.json"
+  ],
+  "identity": {
+    "version": "0.20.0",
+    "releaseFingerprint": "83579983a290d55d4bf8bfdfb90fb0460ceaf7a20429a8cfa22bfe0d1f42f4fe",
+    "required": ["version", "releaseFingerprint"],
+    "sameVersionDifferentFingerprint": "diverged",
+    "missingFingerprint": "legacy-unverifiable"
+  },
+  "invariants": [
+    "Uma release corrente exige igualdade entre versão, fingerprint declarado e payload instalado.",
+    "Alteração funcional sem nova versão e novo fingerprint falha no gate do pacote.",
+    "A versão pública do manifesto precisa coincidir com a versão desta identidade canônica.",
+    "SHA do blob do contrato não substitui o fingerprint do payload."
+  ]
+}

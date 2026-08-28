@@ -11,7 +11,28 @@
     "failure-pattern",
     "agent-improvement"
   ],
-  "destinations": ["discard", "memory", "capability"],
+  "destinations": [
+    "discard",
+    "memory",
+    "operational-rule",
+    "procedure",
+    "routing",
+    "hook",
+    "runtime-fix",
+    "personality",
+    "eval",
+    "capability"
+  ],
+  "implementationRoutes": {
+    "operational-rule": "contract-change",
+    "procedure": "procedure-change",
+    "routing": "runtime-change",
+    "hook": "runtime-change",
+    "runtime-fix": "runtime-change",
+    "personality": "personality-candidate-and-real-eval",
+    "eval": "eval-change",
+    "capability": "skill-admission"
+  },
   "minimumSuccessfulRuns": 4,
   "requiresIndependentValidation": true,
   "requiresOwnerApproval": true,

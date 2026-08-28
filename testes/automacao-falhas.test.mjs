@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 
+import { abrirTurnoAuditoria, registrarAcaoAuditoria } from '../runtime/auditoria-autocorrecao.mjs'
 import {
   bloquearAutomacaoFalha,
   caminhoDaAutomacaoFalhas,
@@ -14,9 +15,45 @@ import {
 import {
   analisarPadraoFalha,
   avaliarPadraoFalha,
+  lerFalhas,
   registrarFalha,
-  testarCorrecaoFalha
+  testarCorrecaoFalha as testarCorrecaoFalhaReal,
+  vinculoVerificacaoFalha
 } from '../runtime/falhas.mjs'
+
+async function testarCorrecaoFalha(casa, id, input, options = {}) {
+  const automation = await sincronizarAutomacaoFalhas(casa)
+  let job = automation.jobs.find((item) => item.patternId === id && ['queued', 'running'].includes(item.state))
+  if (job?.state === 'queued') {
+    job = (await reivindicarAutomacaoFalha(casa, { executorId: `executor-test-${id}` })).job
+  }
+  const pattern = (await lerFalhas(casa)).patterns.find((item) => item.id === id)
+  const bindingMarker = vinculoVerificacaoFalha(pattern, job?.id)
+  const execution = input.evidenceId ?? input.auditActionId
+  const actionRecordedAt = input.actionRecordedAt ?? '2099-01-01T00:00:00.000Z'
+  const sessionId = `failure-automation-${execution}`
+  const toolUseId = `tool-${execution}`
+  await abrirTurnoAuditoria(casa, {
+    session_id: sessionId,
+    prompt: 'Verifique a correção da falha automatizada.'
+  }, { at: new Date(Date.parse(actionRecordedAt) - 1_000).toISOString() })
+  const recorded = await registrarAcaoAuditoria(casa, {
+    hook_event_name: 'PostToolUse',
+    session_id: sessionId,
+    tool_use_id: toolUseId,
+    tool_name: 'Bash',
+    tool_input: {
+      command: `${input.strategy ?? 'node --test testes/automacao-falhas.test.mjs'} # omni-failure-binding:${bindingMarker}`
+    },
+    cwd: 'C:\\projetos\\teste'
+  }, { at: actionRecordedAt })
+  return testarCorrecaoFalhaReal(casa, id, {
+    auditActionId: recorded.action.id,
+    automationJobId: job?.id,
+    criterion: input.criterion ?? input.outcome,
+    generation: input.generation
+  })
+}
 
 async function home() {
   return mkdtemp(join(tmpdir(), 'omni-failure-automation-'))
@@ -48,13 +85,88 @@ test('candidata cria um unico trabalho idempotente e reivindicavel', async () =>
     const claimed = await reivindicarAutomacaoFalha(casa, { executorId: 'executor-background-1' })
     assert.equal(claimed.result, 'claimed')
     assert.equal(claimed.job.state, 'running')
+    assert.equal(claimed.job.dispatchState, 'requested')
+    assert.ok(Number.isFinite(Date.parse(claimed.job.dispatchRequestedAt)))
     assert.match(claimed.prompt, /subagente.*segundo plano/i)
     assert.match(claimed.prompt, /duas vezes de verdade/i)
-    assert.match(claimed.prompt, /não peça ao proprietário/i)
+    assert.match(claimed.prompt, /falha-evidencias/i)
+    assert.match(claimed.prompt, /--job/i)
+    assert.match(claimed.prompt, /bindingMarker/)
+    assert.match(claimed.prompt, /ação sem esse marcador não pertence/i)
+    assert.match(claimed.prompt, /--acao-auditoria.*--evidencia-auditoria/i)
+    assert.doesNotMatch(claimed.prompt, /--resultado|--falhou/i)
+    assert.match(claimed.prompt, /autoridade herdada da tarefa original/i)
+    assert.match(claimed.prompt, /envelope de autoridade.*objetivo.*alvo.*escopo material.*efeitos/i)
+    assert.match(claimed.prompt, /checkpoint verificável/i)
+    assert.match(claimed.prompt, /rollback proporcional/i)
+    assert.match(claimed.prompt, /verifique o resultado real.*evidência/i)
+    assert.doesNotMatch(claimed.prompt, /não faça commit|exigem autorização do proprietário/i)
     assert.match(claimed.prompt, new RegExp(failure.pattern.id))
 
     const empty = await reivindicarAutomacaoFalha(casa, { executorId: 'executor-background-2' })
     assert.equal(empty.result, 'busy')
+  } finally {
+    await rm(casa, { recursive: true, force: true })
+  }
+})
+
+test('trabalho não pode concluir antes da análise, dois testes e eval', async () => {
+  const casa = await home()
+  try {
+    await candidate(casa, 'sem-eval')
+    const claimed = await reivindicarAutomacaoFalha(casa, { executorId: 'executor-sem-eval' })
+    const result = await concluirAutomacaoFalha(casa, claimed.job.id, 'evidencia-inventada')
+    assert.equal(result.result, 'not-evaluated')
+    assert.equal(result.job.state, 'running')
+    assert.equal(result.job.evidenceFingerprint, null)
+  } finally {
+    await rm(casa, { recursive: true, force: true })
+  }
+})
+
+test('novas ocorrencias do mesmo ciclo reforcam o padrao sem multiplicar trabalhos', async () => {
+  const casa = await home()
+  try {
+    const failure = await candidate(casa, 'stable-cycle')
+    const first = await sincronizarAutomacaoFalhas(casa)
+    const generation = first.jobs[0].generationFingerprint
+
+    for (let index = 4; index <= 20; index += 1) {
+      await registrarFalha(casa, {
+        agent: 'omni',
+        action: 'executar Bash',
+        failureClass: 'permission',
+        signature: 'permissao negada stable-cycle',
+        evidenceId: `stable-cycle-run-${index}`
+      })
+      await sincronizarAutomacaoFalhas(casa)
+    }
+
+    const store = await sincronizarAutomacaoFalhas(casa)
+    const pattern = (await lerFalhas(casa)).patterns.find((item) => item.id === failure.pattern.id)
+    assert.equal(pattern.occurrences, 20)
+    assert.equal(pattern.cycleFingerprint, generation)
+    assert.equal(store.jobs.filter((item) => item.patternId === pattern.id && item.state === 'queued').length, 1)
+  } finally {
+    await rm(casa, { recursive: true, force: true })
+  }
+})
+
+test('store de automacao v1 migra com backup sem perder trabalhos', async () => {
+  const casa = await home()
+  try {
+    await candidate(casa, 'migration')
+    await sincronizarAutomacaoFalhas(casa)
+    const path = caminhoDaAutomacaoFalhas(casa)
+    const v1 = JSON.parse(await readFile(path, 'utf8'))
+    v1.schemaVersion = 1
+    const raw = `${JSON.stringify(v1, null, 2)}\n`
+    await writeFile(path, raw, 'utf8')
+
+    const migrated = await sincronizarAutomacaoFalhas(casa)
+    assert.equal(migrated.schemaVersion, 3)
+    assert.equal(migrated.jobs.length, 1)
+    assert.equal(await readFile(`${path}.v1.backup`, 'utf8'), raw)
   } finally {
     await rm(casa, { recursive: true, force: true })
   }
@@ -185,11 +297,27 @@ test('eval concluido nao rouba do subagente o fechamento com evidencia', async (
   }
 })
 
-test('fechamento tardio repara job concluido sem fingerprint', async () => {
+test('fechamento tardio só repara job avaliado sem fingerprint', async () => {
   const casa = await home()
   try {
-    await candidate(casa, 'late-close')
+    const failure = await candidate(casa, 'late-close')
     const claimed = await reivindicarAutomacaoFalha(casa, { executorId: 'executor-late-close' })
+    const generation = claimed.job.generationFingerprint
+    await analisarPadraoFalha(casa, failure.pattern.id, {
+      generation,
+      rootCause: 'o executor usava um alvo sem a permissão necessária',
+      hypothesis: 'usar o alvo permitido elimina a falha'
+    })
+    for (let index = 1; index <= 2; index += 1) {
+      await testarCorrecaoFalha(casa, failure.pattern.id, {
+        generation,
+        evidenceId: `late-close-test-${index}`,
+        criterion: 'a execução termina com código zero',
+        outcome: `execução ${index} terminou com código zero`,
+        success: true
+      })
+    }
+    await avaliarPadraoFalha(casa, failure.pattern.id, { generation })
     const path = caminhoDaAutomacaoFalhas(casa)
     const store = JSON.parse(await readFile(path, 'utf8'))
     store.jobs[0].state = 'completed'

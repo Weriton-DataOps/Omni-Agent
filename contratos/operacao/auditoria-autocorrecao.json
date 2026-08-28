@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "contract": "omni-audit-self-correction-v1",
+  "enabled": true,
+  "retention": {
+    "turns": 300,
+    "actionsPerTurn": 120,
+    "evidencePerTurn": 120,
+    "findingsPerTurn": 40,
+    "correctionsPerTurn": 40
+  },
+  "stopGate": {
+    "enabled": true,
+    "maximumBlocksPerTurn": 1,
+    "requireVerificationAfterMutation": true,
+    "requireVerificationAfterDelegation": true,
+    "rejectUnverifiedCompletionClaims": true,
+    "recursionGuardRequired": true
+  },
+  "correction": {
+    "producesRepairDirectiveOnly": true,
+    "neverExecutesExternalMutation": true,
+    "idempotentByFindingFingerprint": true,
+    "maximumIdenticalFailedStrategies": 1,
+    "requireDifferentStrategyAfterFailure": true,
+    "requireReadBackAfterCorrection": true
+  },
+  "authority": {
+    "doesNotGrantNewAuthority": true,
+    "allRepairsRemainBoundByCurrentRequest": true
+  },
+  "objectiveBinding": {
+    "algorithm": "omni-authority-objective-v1",
+    "legacyWithoutAlgorithm": "unverifiable",
+    "storeRawObjective": false
+  },
+  "privacy": {
+    "storeRawRequest": false,
+    "storeRawResponse": false,
+    "storeRawToolInput": false,
+    "storeRawToolOutput": false,
+    "storeRawError": false,
+    "storeSecrets": false
+  }
+}

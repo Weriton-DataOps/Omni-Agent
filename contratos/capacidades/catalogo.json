@@ -264,30 +264,6 @@
         "filesystem"
       ],
       "recommended_agent": "omni"
-    },
-    {
-      "name": "learned-recuperar-executar-fielmente-o-pedido-atual",
-      "description": "Aplicar a recuperação validada para falha de executar fielmente o pedido atual.",
-      "when_to_use": [
-        "falha logic durante executar fielmente o pedido atual"
-      ],
-      "when_not_to_use": [
-        "falha diferente do padrão validado",
-        "sem possibilidade de repetir a verificação"
-      ],
-      "inputs": [
-        "contexto da falha",
-        "estado da ação"
-      ],
-      "outputs": [
-        "recuperação verificada"
-      ],
-      "risk": "medium",
-      "permissions": [],
-      "latency": "procedure-dependent",
-      "cost": "tool-dependent",
-      "required_tools": [],
-      "recommended_agent": "omni"
     }
   ]
 }
