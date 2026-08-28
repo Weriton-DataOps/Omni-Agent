@@ -1,6 +1,8 @@
 # Resultados de eval aprovados
 
-Esta pasta permanece sem rodada enquanto a personalidade estiver candidata.
+Esta pasta permanece sem **resultado aprovado de promoção** enquanto a personalidade candidata não
+concluir o gate confiável. Rodadas locais e alegações não autenticadas podem existir durante a
+avaliação, mas ficam no estado privado do Omni e não entram aqui como se fossem aprovação.
 
 Uma promoção futura adicionará somente o resumo definido por
 `../resultado-personalidade.schema.json`. Respostas completas e conversas permanecem fora do Git;

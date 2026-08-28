@@ -146,6 +146,17 @@
         "Tornou sinais repetidos candidatas revisaveis e expos feedback, adaptador e ancora no operador canonico.",
         "Removeu a consulta redundante de personalidade e estado que atrasava a primeira resposta sem acrescentar contexto."
       ]
+    },
+    {
+      "version": "0.21.1",
+      "changes": [
+        "Adicionou um marcador alternativo de sessao para preservar a personalidade quando o estado primario do plugin falhar.",
+        "Isolou o voto e o ajuste de personalidade das falhas do observador operacional, sem esconder o estado degradado.",
+        "Esclareceu que candidatas devem ser avaliadas e que somente resultados confiaveis de promocao entram no Git.",
+        "Preservou a ativacao da personalidade ao encerrar uma sessao e passou a reinjetar a v3 em retomadas e compactacoes, sem afetar sessoes novas ou nunca ativadas.",
+        "Passou a reconhecer a chamada implicita da Skill Omni por PreToolUse e a injetar a personalidade sem conceder aprovacao automatica a ferramenta.",
+        "Limitou todo contexto adicional do hook a 9.500 caracteres, preservando o nucleo, o adaptador textual e o ajuste explicito antes de truncar contexto auxiliar."
+      ]
     }
   ]
 }

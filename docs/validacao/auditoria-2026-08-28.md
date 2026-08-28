@@ -133,12 +133,20 @@ uso.
 | AUD-170 | falha no store de feedback bloqueia conversa, correções e observação | corrigido; o componente falha fechado para a escrita incompatível, mas isolado do restante do turno |
 | AUD-171 | consulta de `personalidade` e `estado` é obrigatória antes de conversar | removido; o hook já entrega a identidade e o operador fica reservado para diagnóstico explícito |
 | AUD-172 | testes estruturais provam que a personalidade já funciona em conversa real | falso; o DoD comportamental e a promoção confiável continuam pendentes de uso do proprietário |
+| AUD-173 | falha do marcador de sessão primário derruba o hook | corrigido; a ativação escreve também um marcador alternativo e cada leitura falha isoladamente |
+| AUD-174 | falha do observador operacional engole o voto do proprietário | corrigido; voto e ajuste são capturados antes, retornam ao hook e a falha operacional aparece como degradação |
+| AUD-175 | candidata não deve produzir nenhuma rodada de eval | corrigido na documentação; candidatas são avaliadas, mas só resultado confiável de promoção entra no Git |
+| AUD-176 | retomada ou compactação perde a personalidade da sessão ativa | corrigido; todo `SessionEnd` preserva o marcador, `SessionStart` em `resume` ou `compact` reinjeta a v3, sessões novas continuam neutras e a retenção limita o estado a 256 marcadores |
+| AUD-177 | contexto profundo acima do limite deixa a v3 reduzida a prévia de arquivo | corrigido; todo `additionalContext` do hook fica em até 9.500 caracteres e preserva núcleo, adaptador textual e ajuste explícito antes de truncar seções auxiliares com aviso |
+| AUD-178 | chamada implícita da Skill pode executar sem ativar a personalidade | corrigido; `PreToolUse` reconhece estritamente `omni` ou `omni:omni` nos campos suportados e injeta a v3 sem emitir `permissionDecision` |
+| AUD-179 | a própria candidata v3 pode se promover sem raiz de confiança | deliberadamente bloqueado; a v3 continua ativa para uso e eval, mas promoção futura para `approved` exige evidência confiável e raiz de confiança independente |
 
 ## Estado de fechamento
 
-- gates determinísticos: `check`, 295/295 testes, `npm pack --dry-run` e `claude plugin validate .` verdes para a `0.21.0`, com o fingerprint final;
-- publicação e instalação: a `0.20.1` foi confirmada no `origin/main` e relida da instalação; a `0.21.0`
-  desta rodada só será considerada concluída depois da mesma confirmação externa e do novo readback;
+- gates focais desta correção: sintaxe do hook e 29 testes de `hook-contexto` + pacote verdes;
+- gates de fechamento: `npm run check`, 302/302 testes, `npm pack --dry-run`, `claude plugin validate . --strict` e gate real contra `%APPDATA%\omni` verdes; payload final com 83 arquivos e fingerprint verificado;
+- publicação e instalação: a `0.21.0` foi confirmada no `origin/main` e relida da instalação; a `0.21.1`
+  desta correção só será considerada concluída depois da mesma confirmação externa e do novo readback;
 - guardião v2: fonte canônica e testes prontos; troca do hook global não executada sem aprovação
   explícita da mudança de autorização;
 - comportamento real: deliberadamente pendente de conversa do proprietário;

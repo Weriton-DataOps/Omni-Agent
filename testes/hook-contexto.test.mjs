@@ -79,7 +79,7 @@ test('sessao Omni recebe personalidade e memoria relevante em cada novo turno', 
   }
 })
 
-test('hook não afeta sessão sem ativação e encerra o estado ao fechar', async () => {
+test('hook não afeta sessão nunca ativada e preserva o estado da sessão ao fechar', async () => {
   const { raiz, env } = await ambiente()
   const session_id = 'sessao-controlada'
   try {
@@ -113,12 +113,202 @@ test('hook não afeta sessão sem ativação e encerra o estado ao fechar', asyn
     )
     assert.equal(ativa.hookSpecificOutput?.hookEventName, 'UserPromptSubmit')
 
-    await tratarHook({ hook_event_name: 'SessionEnd', session_id }, env)
-    const encerrada = await tratarHook(
+    await tratarHook({ hook_event_name: 'SessionEnd', session_id, reason: 'other' }, env)
+    const mesmaSessao = await tratarHook(
       { hook_event_name: 'UserPromptSubmit', session_id, prompt: 'mensagem posterior' },
       env
     )
-    assert.equal(encerrada.hookSpecificOutput, undefined)
+    assert.equal(mesmaSessao.hookSpecificOutput?.hookEventName, 'UserPromptSubmit')
+
+    const retomada = await tratarHook(
+      { hook_event_name: 'SessionStart', session_id, source: 'resume' },
+      env
+    )
+    assert.match(retomada.hookSpecificOutput?.additionalContext, /Inventor Cúmplice/)
+
+    const sessaoNova = await tratarHook(
+      { hook_event_name: 'UserPromptSubmit', session_id: 'sessao-nova', prompt: 'mensagem comum' },
+      env
+    )
+    assert.equal(sessaoNova.hookSpecificOutput, undefined)
+  } finally {
+    await rm(raiz, { recursive: true, force: true })
+  }
+})
+
+test('sessão ativada preserva a personalidade ao sair para resume e ao retomar', async () => {
+  const { raiz, env } = await ambiente()
+  const session_id = 'sessao-retomada'
+  try {
+    await tratarHook(
+      { hook_event_name: 'UserPromptSubmit', session_id, prompt: '/omni:omni' },
+      env
+    )
+    await tratarHook(
+      { hook_event_name: 'SessionEnd', session_id, reason: 'resume' },
+      env
+    )
+
+    const retomada = await tratarHook(
+      { hook_event_name: 'SessionStart', session_id, source: 'resume' },
+      env
+    )
+    assert.equal(retomada.hookSpecificOutput?.hookEventName, 'SessionStart')
+    assert.match(retomada.hookSpecificOutput?.additionalContext, /sessão já ativada do Omni acaba de ser retomada/i)
+    assert.match(retomada.hookSpecificOutput?.additionalContext, /Inventor Cúmplice/)
+
+    const turno = await tratarHook(
+      { hook_event_name: 'UserPromptSubmit', session_id, prompt: 'Continue de onde parou.' },
+      env
+    )
+    assert.match(turno.hookSpecificOutput?.additionalContext, /PERSONALIDADE CANÔNICA/)
+  } finally {
+    await rm(raiz, { recursive: true, force: true })
+  }
+})
+
+test('fechamento da interface preserva ativação para retomada posterior', async () => {
+  const { raiz, env } = await ambiente()
+  const session_id = 'sessao-fechada-retomavel'
+  try {
+    await tratarHook(
+      { hook_event_name: 'UserPromptSubmit', session_id, prompt: '/omni:omni' },
+      env
+    )
+    await tratarHook(
+      { hook_event_name: 'SessionEnd', session_id, reason: 'prompt_input_exit' },
+      env
+    )
+
+    const retomada = await tratarHook(
+      { hook_event_name: 'SessionStart', session_id, source: 'resume' },
+      env
+    )
+    assert.match(retomada.hookSpecificOutput?.additionalContext, /Inventor Cúmplice/)
+  } finally {
+    await rm(raiz, { recursive: true, force: true })
+  }
+})
+
+test('compactação reinjeta a personalidade somente em sessão ativada', async () => {
+  const { raiz, env } = await ambiente()
+  const ativa = 'sessao-compactada-ativa'
+  const inativa = 'sessao-compactada-inativa'
+  try {
+    await tratarHook(
+      { hook_event_name: 'UserPromptSubmit', session_id: ativa, prompt: '/omni:omni' },
+      env
+    )
+
+    const compactada = await tratarHook(
+      { hook_event_name: 'SessionStart', session_id: ativa, source: 'compact' },
+      env
+    )
+    assert.equal(compactada.hookSpecificOutput?.hookEventName, 'SessionStart')
+    assert.match(compactada.hookSpecificOutput?.additionalContext, /passar por compactação/i)
+    assert.match(compactada.hookSpecificOutput?.additionalContext, /Inventor Cúmplice/)
+
+    const nuncaAtivadaResume = await tratarHook(
+      { hook_event_name: 'SessionStart', session_id: inativa, source: 'resume' },
+      env
+    )
+    const nuncaAtivadaCompact = await tratarHook(
+      { hook_event_name: 'SessionStart', session_id: inativa, source: 'compact' },
+      env
+    )
+    assert.equal(nuncaAtivadaResume.hookSpecificOutput, undefined)
+    assert.equal(nuncaAtivadaCompact.hookSpecificOutput, undefined)
+  } finally {
+    await rm(raiz, { recursive: true, force: true })
+  }
+})
+
+test('chamada implícita da Skill Omni ativa a sessão sem autoaprovar a ferramenta', async () => {
+  const { raiz, env } = await ambiente()
+  try {
+    for (const [index, tool_input] of [
+      { skill: 'omni' },
+      { name: 'omni:omni' },
+      { command: ' omni ' },
+      { skill: 'omni', name: 'omni:omni' }
+    ].entries()) {
+      const session_id = `sessao-skill-implicita-${index}`
+      const ativacao = await tratarHook({
+        hook_event_name: 'PreToolUse',
+        session_id,
+        tool_name: 'Skill',
+        tool_input
+      }, env)
+      assert.equal(ativacao.hookSpecificOutput?.hookEventName, 'PreToolUse')
+      assert.match(ativacao.hookSpecificOutput?.additionalContext, /Inventor Cúmplice/)
+      assert.equal(ativacao.hookSpecificOutput?.permissionDecision, undefined)
+      assert.equal(ativacao.permissionDecision, undefined)
+
+      const turno = await tratarHook({
+        hook_event_name: 'UserPromptSubmit',
+        session_id,
+        prompt: 'Continue como Omni.'
+      }, env)
+      assert.match(turno.hookSpecificOutput?.additionalContext, /PERSONALIDADE CANÔNICA/)
+    }
+
+    for (const [index, tool_input] of [
+      { skill: 'outra-skill' },
+      { skill: 'outra-skill', name: 'omni' },
+      { command: 'omni:omni atualizar' }
+    ].entries()) {
+      const inativa = await tratarHook({
+        hook_event_name: 'PreToolUse',
+        session_id: `sessao-skill-estranha-${index}`,
+        tool_name: 'Skill',
+        tool_input
+      }, env)
+      assert.equal(inativa.hookSpecificOutput, undefined)
+    }
+  } finally {
+    await rm(raiz, { recursive: true, force: true })
+  }
+})
+
+test('contexto deep permanece inline e preserva personalidade e ajuste explícito', async () => {
+  const { raiz, env } = await ambiente()
+  const session_id = 'sessao-contexto-inline'
+  try {
+    for (let index = 0; index < 14; index += 1) {
+      await lembrarExplicitamente(
+        env.OMNI_HOME,
+        [
+          `Ao analisar arquitetura e riscos, prefiro a evidência detalhada ${index}.`,
+          'Inclua impacto, alternativa, verificação, dependências e contexto operacional relevante',
+          'para que a decisão técnica seja rastreável sem perder o objetivo atual.'
+        ].join(' '),
+        'preference'
+      )
+    }
+    await tratarHook(
+      { hook_event_name: 'UserPromptSubmit', session_id, prompt: '/omni:omni' },
+      env
+    )
+    await registrarUltimaRespostaPersonalidade(env.OMNI_HOME, {
+      sessionId: session_id,
+      answer: 'Resposta anterior neutra usada para ligar o voto ao turno.'
+    })
+
+    const turno = await tratarHook({
+      hook_event_name: 'UserPromptSubmit',
+      session_id,
+      origin: 'owner-live',
+      cwd: raiz,
+      prompt: 'Essa resposta sobre a analise dos riscos da arquitetura ficou seca e genérica; faltou humor e analogia.'
+    }, env)
+    const contexto = turno.hookSpecificOutput.additionalContext
+    assert.ok(contexto.length <= 9_500)
+    assert.match(contexto, /PERSONALIDADE omni-persona-v3-candidate/)
+    assert.match(contexto, /Entregue evidência e resultado\./)
+    assert.match(contexto, /AJUSTE EXPLÍCITO DO PROPRIETÁRIO PARA ESTA RESPOSTA/)
+    assert.match(contexto, /mais humor nascido deste contexto/)
+    assert.match(contexto, /analogia forte que ajude a entender/)
+    assert.match(contexto, /CONTEXTO AUXILIAR TRUNCADO/)
   } finally {
     await rm(raiz, { recursive: true, force: true })
   }
@@ -217,6 +407,33 @@ test('falha de contexto mantém a personalidade com fallback explícito e observ
     }, env)
     assert.match(ferramenta.hookSpecificOutput?.additionalContext, /<omni-ancora-compacta>/)
     assert.match(ferramenta.hookSpecificOutput?.additionalContext, /ESTADO DE CONTEXTO: DEGRADADO/)
+  } finally {
+    await rm(raiz, { recursive: true, force: true })
+  }
+})
+
+test('falha no marcador primário usa estado alternativo sem cortar a personalidade', async () => {
+  const { raiz, env } = await ambiente()
+  const session_id = 'sessao-estado-alternativo'
+  const pluginDataBloqueado = join(raiz, 'plugin-data-bloqueado')
+  try {
+    await writeFile(pluginDataBloqueado, 'arquivo no lugar do diretorio', 'utf8')
+    env.CLAUDE_PLUGIN_DATA = pluginDataBloqueado
+
+    const ativacao = await tratarHook(
+      { hook_event_name: 'UserPromptSubmit', session_id, prompt: '/omni:omni' },
+      env
+    )
+    assert.match(ativacao.hookSpecificOutput?.additionalContext, /Inventor Cúmplice/)
+    assert.match(ativacao.hookSpecificOutput?.additionalContext, /ESTADO DE CONTEXTO: DEGRADADO/)
+    assert.match(ativacao.hookSpecificOutput?.additionalContext, /estado-sessao-primario/)
+
+    const turno = await tratarHook(
+      { hook_event_name: 'UserPromptSubmit', session_id, prompt: 'Continue com a mesma voz.' },
+      env
+    )
+    assert.equal(turno.hookSpecificOutput?.hookEventName, 'UserPromptSubmit')
+    assert.match(turno.hookSpecificOutput?.additionalContext, /Inventor Cúmplice/)
   } finally {
     await rm(raiz, { recursive: true, force: true })
   }

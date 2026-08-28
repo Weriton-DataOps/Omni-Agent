@@ -1,5 +1,5 @@
 {
-  "description": "Mantém a Engenharia de Contexto ativa nos turnos seguintes a /omni:omni.",
+  "description": "Mantém a Engenharia de Contexto e a personalidade ativas em toda sessão do Omni, inclusive após retomada ou compactação.",
   "hooks": {
     "SessionStart": [
       {
@@ -11,6 +11,17 @@
             "args": ["${CLAUDE_PLUGIN_ROOT}/runtime/hook-varredura.mjs"],
             "timeout": 120,
             "async": true
+          }
+        ]
+      },
+      {
+        "matcher": "resume|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/runtime/hook-contexto.mjs"],
+            "timeout": 10
           }
         ]
       }
@@ -31,6 +42,19 @@
     "UserPromptExpansion": [
       {
         "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/runtime/hook-contexto.mjs"],
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Skill",
         "hooks": [
           {
             "type": "command",

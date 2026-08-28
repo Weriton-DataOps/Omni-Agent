@@ -332,3 +332,23 @@ test('observador integra Stop e prompt sem expor texto bruto', async () => {
     await rm(casa, { recursive: true, force: true })
   }
 })
+
+test('falha do observador operacional não engole o voto nem o ajuste do proprietário', async () => {
+  const casa = await home()
+  try {
+    await response(casa, 's-observer-degraded', 'Resposta anterior sem a voz esperada.')
+    await writeFile(join(casa, 'runs'), 'arquivo bloqueando o store operacional', 'utf8')
+
+    const observed = await observarPrompt(casa, {
+      session_id: 's-observer-degraded',
+      origin: 'owner-live',
+      prompt: 'Essa resposta ficou seca e genérica; faltou humor e analogia.'
+    })
+    assert.equal(observed.personalityFeedback.result, 'recorded')
+    assert.equal(observed.personalityFeedback.adjustment.scope, 'next-response')
+    assert.equal(observed.observationFailure.result, 'failed')
+    assert.equal((await lerFeedbackPersonalidade(casa)).votes.length, 1)
+  } finally {
+    await rm(casa, { recursive: true, force: true })
+  }
+})

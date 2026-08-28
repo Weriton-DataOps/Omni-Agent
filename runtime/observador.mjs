@@ -263,14 +263,6 @@ function objetivoDeclarado(prompt) {
 export async function observarPrompt(casa, input) {
   const prompt = texto(input?.prompt, 1000)
   if (!prompt) return { event: null, corrections: [], personalityFeedback: null }
-  const event = await observarEvento(casa, {
-    eventType: 'user-prompt',
-    sessionId: input.session_id,
-    evidenceId: `prompt:${input.session_id}:${hash(prompt)}`,
-    cwd: input.cwd,
-    summary: `Pedido recebido (${prompt.length} caracteres)`,
-    objective: objetivoDeclarado(prompt)
-  })
   const corrections = []
   const origin = input?.origin ?? 'owner-live'
   const ownerOrigin = origin === 'owner-live' || origin === 'owner-transcript'
@@ -279,37 +271,58 @@ export async function observarPrompt(casa, input) {
     feedback: input.prompt,
     origin
   }).catch(falhaSeguraDoFeedback)
-  for (const correction of ownerOrigin
-    ? CORRECOES.filter((item) => item.matches ? item.matches(prompt) : item.pattern.test(prompt))
-    : []) {
-    const evidenceId = `correction:${input.session_id}:${correction.id}:${hash(prompt)}`
-    const failure = await registrarFalha(casa, {
-      agent: 'omni',
-      action: correction.action,
-      failureClass: 'logic',
-      signature: correction.id,
-      evidenceId
+  let event = null
+  try {
+    event = await observarEvento(casa, {
+      eventType: 'user-prompt',
+      sessionId: input.session_id,
+      evidenceId: `prompt:${input.session_id}:${hash(prompt)}`,
+      cwd: input.cwd,
+      summary: `Pedido recebido (${prompt.length} caracteres)`,
+      objective: objetivoDeclarado(prompt)
     })
-    const improvement = await proporMelhoriaOperacional(casa, {
-      category: 'owner-correction',
-      destination: correction.destination,
-      statement: correction.statement
-    })
-    let materialization = null
-    if (improvement.candidate?.status === 'ready') {
-      materialization = await materializarMelhoriaConfigurada(casa, improvement.candidate.id)
+    for (const correction of ownerOrigin
+      ? CORRECOES.filter((item) => item.matches ? item.matches(prompt) : item.pattern.test(prompt))
+      : []) {
+      const evidenceId = `correction:${input.session_id}:${correction.id}:${hash(prompt)}`
+      const failure = await registrarFalha(casa, {
+        agent: 'omni',
+        action: correction.action,
+        failureClass: 'logic',
+        signature: correction.id,
+        evidenceId
+      })
+      const improvement = await proporMelhoriaOperacional(casa, {
+        category: 'owner-correction',
+        destination: correction.destination,
+        statement: correction.statement
+      })
+      let materialization = null
+      if (improvement.candidate?.status === 'ready') {
+        materialization = await materializarMelhoriaConfigurada(casa, improvement.candidate.id)
+      }
+      corrections.push({
+        id: correction.id,
+        failure: failure.result,
+        improvement: improvement.result,
+        candidateId: improvement.candidate?.id ?? null,
+        destination: improvement.candidate?.destination ?? null,
+        candidateStatus: materialization?.candidate?.status ?? improvement.candidate?.status ?? null,
+        materialization
+      })
     }
-    corrections.push({
-      id: correction.id,
-      failure: failure.result,
-      improvement: improvement.result,
-      candidateId: improvement.candidate?.id ?? null,
-      destination: improvement.candidate?.destination ?? null,
-      candidateStatus: materialization?.candidate?.status ?? improvement.candidate?.status ?? null,
-      materialization
-    })
+    return { event, corrections, personalityFeedback, observationFailure: null }
+  } catch (error) {
+    return {
+      event,
+      corrections,
+      personalityFeedback,
+      observationFailure: {
+        result: 'failed',
+        error: falhaSeguraDoFeedback(error).error
+      }
+    }
   }
-  return { event, corrections, personalityFeedback }
 }
 
 export async function observarFerramenta(casa, input) {
