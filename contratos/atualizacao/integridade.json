@@ -15,9 +15,9 @@
     ".claude-plugin/plugin.json"
   ],
   "identity": {
-    "version": "0.21.2",
-    "releaseFingerprint": "4f208d8a728fabe3a67dd6a01470e1f2dc6e3d7b802f0e712b4dc7cd82b6ab11",
-    "releaseAuditScopeStartedAt": "2026-08-28T19:00:00.000Z",
+    "version": "0.22.0",
+    "releaseFingerprint": "ceaede53c6ebcf457063e58e61b8ca51df9ab9fa7f76731063adc52a7a24fc56",
+    "releaseAuditScopeStartedAt": "2026-08-29T13:10:36.888Z",
     "required": [
       "version",
       "releaseFingerprint",

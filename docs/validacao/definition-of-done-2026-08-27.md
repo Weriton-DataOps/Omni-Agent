@@ -96,8 +96,8 @@ a identidade nem substituir a conversa real.
 - [ ] correção do proprietário muda o turno seguinte.
 - [ ] voto explícito do proprietário ajusta a resposta seguinte, fica ligado ao turno por fingerprints
   e não persiste conversa bruta;
-- [ ] resultado registrado pelo gate usa duas sessões reais, revisão explícita do proprietário,
-  recibos criptográficos verificados internamente e identidade externa autenticada;
+- [ ] resultado registrado pelo gate usa duas sessões reais, revisão explícita e local do proprietário,
+  release instalada íntegra e recibos distintos com bindings revalidados internamente;
 
 ## Contexto e memória
 

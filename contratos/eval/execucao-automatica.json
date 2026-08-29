@@ -1,0 +1,74 @@
+{
+  "schemaVersion": 1,
+  "contract": "omni-controlled-personality-eval-v1",
+  "enabled": true,
+  "trigger": {
+    "bootstrapWithoutTrustedRun": true,
+    "reviewableCandidate": true,
+    "minimumCandidateOccurrences": 2
+  },
+  "runner": {
+    "provider": "anthropic-claude-code",
+    "model": "sonnet",
+    "effort": "medium",
+    "chunkSize": 26,
+    "timeoutMs": 180000,
+    "maxBudgetUsdPerCall": 0.75,
+    "tools": [],
+    "safeMode": true,
+    "sessionPersistence": false
+  },
+  "retry": {
+    "backoffMinutes": 60,
+    "staleLeaseMinutes": 30
+  },
+  "correction": {
+    "maximumAutomaticAttempts": 1,
+    "strategy": "canonical-directives-only"
+  },
+  "privacy": {
+    "persistRawPrompts": false,
+    "persistRawResponses": false,
+    "persistOnlyFingerprintsAndResults": true
+  },
+  "promotion": {
+    "automaticWhenAllGatesPass": true,
+    "localAuthority": "omni-controlled-local-judge-v1",
+    "externalIdentityRequired": false,
+    "threatModel": "single-owner-local-machine",
+    "releaseFlow": {
+      "enabled": true,
+      "source": "configured-canonical-repository",
+      "versionBump": "patch",
+      "initialRepositoryState": "clean",
+      "controlledPathsOnlyBeforeCommit": true,
+      "gatesBeforeCommit": [
+        "npm-run-check",
+        "npm-test",
+        "release-gate"
+      ],
+      "commit": "automatic-versioned",
+      "push": "origin-current-branch-with-remote-readback",
+      "pluginUpdate": "automatic-after-verified-push",
+      "completionRequires": [
+        "installed-version-equals-published-version",
+        "installed-fingerprint-equals-published-fingerprint"
+      ],
+      "localState": {
+        "identity": "hash-only",
+        "rawPrompts": false,
+        "rawResponses": false,
+        "rawErrors": false,
+        "idempotentResume": [
+          "push",
+          "plugin-installation",
+          "installed-readback"
+        ]
+      },
+      "rollback": {
+        "beforeCommit": "restore-snapshot",
+        "afterCommit": "never-revert-publication-resume-forward"
+      }
+    }
+  }
+}

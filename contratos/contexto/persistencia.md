@@ -5,10 +5,15 @@ As seções 33, 34, 43 e 44 usam a política `structured-context-persistence-v1`
 ```text
 conversa / execução
        ↓ extrair somente estrutura
-Task → Run → State → Events → Artifacts → Memory references
+Trabalho → Checkpoint → Estado → Referências de evidência e memória
        ↓
 checkpoint limitado
 ```
+
+Esses registros pertencem somente à continuidade do assistente. Eles não formam um Task Manager,
+um Event Store, um Artifact Registry nem o runtime de uma plataforma externa. Os campos legados
+`runFingerprint`, `eventRefs` e `artifactRefs` são identificadores hash-only de compatibilidade para
+checkpoint/readback; não autorizam incorporar as camadas sugeridas por seus nomes.
 
 Checkpoint não é resumo livre de uma conversa inteira. Ele exige objetivo, escopo, non-goals,
 requisitos, critérios, Definition of Done e restrições; preserva estado, decisões, pendências e apenas

@@ -1,40 +1,20 @@
 import { createHash } from 'node:crypto'
 
 import {
-  observarDelegacao,
   observarEvento,
   proporMelhoriaOperacional
 } from './ciclo-operacional.mjs'
+import {
+  adaptarFimSubagenteClaude,
+  adaptarInicioSubagenteClaude
+} from './adaptador-claude-delegacao.mjs'
 import { registrarFalha } from './falhas.mjs'
 import { pareceConterSegredo } from './memoria.mjs'
-import { materializarMelhoriaConfigurada } from './evolucao.mjs'
+import { materializarMelhoriaComBaselineConfigurada } from './automacao-melhorias.mjs'
 import {
   observarVotoPersonalidade,
   registrarUltimaRespostaPersonalidade
 } from './feedback-personalidade.mjs'
-
-function feedbackNegativoPersonalidade(value) {
-  const prompt = String(value ?? '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/\s+/g, ' ')
-    .trim()
-  const dry = '(?:seco|seca|frio|fria|sem vida|generico|generica|robotico|robotica)'
-  const evidence = prompt.replace(
-    new RegExp(`\\bnao\\s+(?:esta|ta|ficou|continua|segue|soa|parece)\\s+(?:muito\\s+)?${dry}\\b`, 'g'),
-    ''
-  )
-  return [
-    new RegExp(`\\b(?:voce|vc|tu|omni|dialogo|conversa|resposta|tom|jeito|personalidade)\\b.{0,90}\\b(?:esta|ta|ficou|continua|segue|soa|parece|veio|respondeu)\\b.{0,35}\\b(?:muito\\s+|ainda\\s+)?${dry}\\b`),
-    new RegExp(`\\b(?:muito|demais|ainda)\\s+${dry}\\b.{0,60}\\b(?:resposta|dialogo|conversa|tom|omni|voce|vc)\\b`),
-    /\b(?:seco|seca|frio|fria|generico|generica|robotico|robotica)\b.{0,30}\b(?:e\s+)?sem vida\b/,
-    /\b(?:faltou|falta|sumiu|cade|quero mais|precisa de mais|preciso de mais|insisto na)\b.{0,70}\b(?:personalidade|humor|sarcasmo|analogia|analogias|inteligencia)\b/,
-    /\b(?:nao|nunca)\s+(?:esta\s+|ta\s+)?(?:usou|usa|usando|aplicou|aplica|aplicando|trouxe|mostrou)\b.{0,60}\b(?:a\s+)?(?:personalidade|humor|sarcasmo|analogia|analogias)\b/,
-    /\b(?:personalidade|humor|sarcasmo|analogia|analogias)\b.{0,60}\b(?:nao apareceu|nao entrou|nao pegou|nao funciona|nao funcionou|nao esta funcionando|nao esta sendo usada|nao esta usando)\b/,
-    /\b(?:nada da|sem sinal de|cade a)\s+personalidade\b/
-  ].some((pattern) => pattern.test(evidence))
-}
 
 function falhaSeguraDoFeedback(error) {
   const name = typeof error?.name === 'string' && /^[A-Za-z][A-Za-z0-9_-]{0,39}$/.test(error.name)
@@ -48,6 +28,8 @@ function falhaSeguraDoFeedback(error) {
     vote: null,
     response: null,
     adjustment: null,
+    candidateSignals: [],
+    persistentAdjustment: null,
     error: code ? `${name}/${code}` : name
   }
 }
@@ -75,13 +57,6 @@ const CORRECOES = [
     statement: 'Manter a conversa central livre e encaminhar execucao especializada para a sessao ou agente responsavel.'
   },
   {
-    id: 'dry-personality',
-    matches: feedbackNegativoPersonalidade,
-    action: 'aplicar personalidade canonica na conversa',
-    destination: 'personality',
-    statement: 'Manter personalidade em alta intensidade desde a primeira frase, com inteligência perceptível, humor, sarcasmo e analogias integrados ao raciocínio, sem voltar ao assistente genérico.'
-  },
-  {
     id: 'premature-refusal',
     pattern: /\b(j[aá] deu como n[aã]o consegue|me mandando fazer|recusou|nem deu bola)\b/i,
     action: 'tentar caminhos executaveis antes de devolver trabalho',
@@ -103,6 +78,81 @@ const CORRECOES = [
     statement: 'Transformar correcoes, sucessos repetidos e preferencias estaveis em eventos de aprendizado automaticamente.'
   }
 ]
+
+const PERSONALITY_SIGNAL_ROUTES = Object.freeze({
+  'overall-approved': {
+    statement: 'Preservar a entrega geral aprovada pelo proprietario sem transformar a voz em formula repetida.',
+    canonicalCaseId: 'voz-perceptivel-sem-piada'
+  },
+  'overall-rejected': {
+    statement: 'Mudar de forma perceptivel a entrega geral rejeitada pelo proprietario, preservando verdade, seguranca e objetivo.',
+    canonicalCaseId: 'voz-perceptivel-sem-piada'
+  },
+  'tone-approved': {
+    statement: 'Preservar o tom aprovado pelo proprietario com a mesma naturalidade e proporcao.',
+    canonicalCaseId: 'voz-perceptivel-sem-piada'
+  },
+  'tone-too-dry': {
+    statement: 'Dar mais calor e presenca ao tom seco sem aumentar cerimonia nem esconder o ponto principal.',
+    canonicalCaseId: 'voz-perceptivel-sem-piada'
+  },
+  'presence-effective': {
+    statement: 'Preservar a presenca humana percebida como eficaz sem aumentar cerimonia.',
+    canonicalCaseId: 'voz-perceptivel-sem-piada'
+  },
+  'presence-too-cold': {
+    statement: 'Trazer cumplicidade e presenca humana quando a resposta for percebida como fria.',
+    canonicalCaseId: 'voz-perceptivel-sem-piada'
+  },
+  'voice-distinct': {
+    statement: 'Preservar a voz propria reconhecida pelo proprietario sem depender de bordao.',
+    canonicalCaseId: 'identidade-original'
+  },
+  'voice-generic': {
+    statement: 'Reescrever a voz generica com uma assinatura reconhecivel do Omni ligada ao assunto.',
+    canonicalCaseId: 'voz-perceptivel-sem-piada'
+  },
+  'personality-present': {
+    statement: 'Preservar a intensidade da personalidade que permaneceu perceptivel durante a resposta.',
+    canonicalCaseId: 'identidade-nao-apaga-sob-carga'
+  },
+  'personality-absent': {
+    statement: 'Manter a personalidade perceptivel desde a primeira frase e durante toda a carga tecnica.',
+    canonicalCaseId: 'identidade-nao-apaga-sob-carga'
+  },
+  'humor-effective': {
+    statement: 'Preservar o nivel de humor contextual aprovado sem recorrer a piada pronta.',
+    canonicalCaseId: 'humor-contextual-nao-forcado'
+  },
+  'humor-missing': {
+    statement: 'Fazer o humor nascer da situacao concreta sem transformar a resposta em piada pronta.',
+    canonicalCaseId: 'humor-contextual-nao-forcado'
+  },
+  'sarcasm-effective': {
+    statement: 'Preservar o sarcasmo contextual aprovado, dirigido ao problema e nunca ao proprietario.',
+    canonicalCaseId: 'humor-contextual-nao-forcado'
+  },
+  'sarcasm-missing': {
+    statement: 'Usar sarcasmo contextual contra o problema, nunca contra o proprietario, quando ele estiver ausente.',
+    canonicalCaseId: 'humor-contextual-nao-forcado'
+  },
+  'analogy-effective': {
+    statement: 'Preservar analogias que ensinaram dentro do raciocinio sem rotulo nem explicacao posterior.',
+    canonicalCaseId: 'analogia-ensina-sem-cerimonia'
+  },
+  'analogy-missing': {
+    statement: 'Integrar uma analogia util ao raciocinio quando ela estiver ausente, sem rotulo nem epilogo.',
+    canonicalCaseId: 'analogia-ensina-sem-cerimonia'
+  },
+  'intelligence-perceived': {
+    statement: 'Preservar a densidade de raciocinio e o angulo original reconhecidos pelo proprietario.',
+    canonicalCaseId: 'inteligencia-com-angulo-original'
+  },
+  'intelligence-flat': {
+    statement: 'Aumentar a densidade do raciocinio com uma conexao causal e um angulo original verificavel.',
+    canonicalCaseId: 'inteligencia-com-angulo-original'
+  }
+})
 
 function hash(value) {
   return createHash('sha256').update(String(value ?? ''), 'utf8').digest('hex')
@@ -281,6 +331,41 @@ export async function observarPrompt(casa, input) {
       summary: `Pedido recebido (${prompt.length} caracteres)`,
       objective: objetivoDeclarado(prompt)
     })
+    for (const signal of personalityFeedback?.candidateSignals ?? []) {
+      const route = PERSONALITY_SIGNAL_ROUTES[signal.reasonCode]
+      if (!route) continue
+      const improvement = await proporMelhoriaOperacional(casa, {
+        category: 'owner-personality-feedback',
+        destination: 'personality',
+        statement: route.statement,
+        sourceRef: {
+          kind: 'personality-feedback',
+          candidateId: signal.candidateId,
+          voteFingerprint: signal.voteFingerprint,
+          turnFingerprint: signal.turnFingerprint,
+          answerFingerprint: signal.answerFingerprint,
+          personaId: signal.personaId,
+          releaseFingerprint: signal.releaseFingerprint,
+          reasonCode: signal.reasonCode,
+          canonicalCaseId: route.canonicalCaseId
+        }
+      })
+      let materialization = null
+      if (improvement.candidate?.status === 'ready') {
+        materialization = await materializarMelhoriaComBaselineConfigurada(casa, improvement.candidate.id)
+      }
+      corrections.push({
+        id: `personality-feedback:${signal.reasonCode}`,
+        source: 'personality-feedback',
+        sourceCandidateId: signal.candidateId,
+        failure: null,
+        improvement: improvement.result,
+        candidateId: improvement.candidate?.id ?? null,
+        destination: improvement.candidate?.destination ?? null,
+        candidateStatus: materialization?.candidate?.status ?? improvement.candidate?.status ?? null,
+        materialization
+      })
+    }
     for (const correction of ownerOrigin
       ? CORRECOES.filter((item) => item.matches ? item.matches(prompt) : item.pattern.test(prompt))
       : []) {
@@ -299,7 +384,7 @@ export async function observarPrompt(casa, input) {
       })
       let materialization = null
       if (improvement.candidate?.status === 'ready') {
-        materialization = await materializarMelhoriaConfigurada(casa, improvement.candidate.id)
+        materialization = await materializarMelhoriaComBaselineConfigurada(casa, improvement.candidate.id)
       }
       corrections.push({
         id: correction.id,
@@ -342,7 +427,7 @@ export async function observarFerramenta(casa, input) {
   if (!failed) return { event, failure: null, improvement: null, materialization: null }
   const failure = await registrarFalha(casa, {
     agent: 'omni',
-    action: `executar ${texto(input.tool_name, 80) ?? 'ferramenta'}`,
+    action: `executar ${texto(input.omni_operation_class, 80) ?? texto(input.tool_name, 80) ?? 'ferramenta'}`,
     failureClass: classeDeErro(input),
     signature: assinaturaDiagnosticaFalha(input),
     evidenceId: input.tool_use_id ?? `${input.session_id}:${hash(input.error)}`
@@ -358,7 +443,7 @@ export async function observarFerramenta(casa, input) {
       statement: `Quando ${toolName} falhar por ${failureClass}, ${recuperacaoParaClasse(failureClass)}.`
     })
     if (improvement.candidate?.status === 'ready') {
-      materialization = await materializarMelhoriaConfigurada(casa, improvement.candidate.id)
+      materialization = await materializarMelhoriaComBaselineConfigurada(casa, improvement.candidate.id)
     }
   }
   return {
@@ -373,45 +458,11 @@ export async function observarFerramenta(casa, input) {
 }
 
 export async function observarInicioSubagente(casa, input) {
-  const delegation = await observarDelegacao(casa, {
-    state: 'running',
-    sessionId: input.session_id,
-    agentId: input.agent_id,
-    agentType: input.agent_type
-  })
-  await observarEvento(casa, {
-    eventType: 'delegation-start',
-    sessionId: input.session_id,
-    evidenceId: `agent-start:${input.agent_id}`,
-    cwd: input.cwd,
-    status: delegation.result,
-    summary: `Executor ${texto(input.agent_type, 80) ?? 'agent'} iniciado`
-  })
-  return delegation
+  return adaptarInicioSubagenteClaude(casa, input)
 }
 
 export async function observarFimSubagente(casa, input) {
-  const rawSummary = texto(input.last_assistant_message, 1000)
-  const summary = `Relato do executor recebido (${rawSummary?.length ?? 0} caracteres)`
-  const delegation = await observarDelegacao(casa, {
-    state: 'reported',
-    sessionId: input.session_id,
-    agentId: input.agent_id,
-    agentType: input.agent_type,
-    evidence: input.agent_transcript_path,
-    summary,
-    auditActionId: input.audit_action_id,
-    auditEvidenceId: input.audit_evidence_id
-  })
-  await observarEvento(casa, {
-    eventType: 'delegation-report',
-    sessionId: input.session_id,
-    evidenceId: `agent-stop:${input.agent_id}:${hash(summary)}`,
-    cwd: input.cwd,
-    status: delegation.result,
-    summary
-  })
-  return delegation
+  return adaptarFimSubagenteClaude(casa, input)
 }
 
 export async function observarParada(casa, input) {

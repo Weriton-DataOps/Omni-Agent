@@ -1,6 +1,6 @@
 {
   "name": "omni-agent",
-  "version": "0.21.2",
+  "version": "0.22.0",
   "private": true,
   "type": "module",
   "description": "Nucleo cognitivo e plugin do Omni",
@@ -8,10 +8,10 @@
     "node": ">=22"
   },
   "scripts": {
-    "precheck": "node --check runtime/rodada-personalidade.mjs && node --check runtime/release-gate.mjs",
+    "precheck": "node --check runtime/rodada-personalidade.mjs && node --check runtime/executor-eval-personalidade.mjs && node --check runtime/release-autonoma.mjs && node --check runtime/release-gate.mjs",
     "prepack": "npm run check && npm test && node runtime/release-gate.mjs",
     "release:gate": "node runtime/release-gate.mjs",
-    "check": "node --check runtime/cli.mjs && node --check runtime/memoria.mjs && node --check runtime/contexto.mjs && node --check runtime/recuperacao.mjs && node --check runtime/pipeline-memoria.mjs && node --check runtime/personalidade.mjs && node --check runtime/feedback-personalidade.mjs && node --check runtime/eval-personalidade.mjs && node --check runtime/eval-comportamental.mjs && node --check runtime/historico-evals.mjs && node --check runtime/persistencia-contexto.mjs && node --check runtime/atalhos.mjs && node --check runtime/falhas.mjs && node --check runtime/automacao-falhas.mjs && node --check runtime/autoaperfeicoamento.mjs && node --check runtime/ciclo-operacional.mjs && node --check runtime/observador.mjs && node --check runtime/evolucao.mjs && node --check runtime/varredura-diaria.mjs && node --check runtime/integridade-release.mjs && node --check runtime/versao.mjs && node --check runtime/atualizacao.mjs && node --check runtime/auditoria-autocorrecao.mjs && node --check runtime/auditoria-sistema.mjs && node --check runtime/passe.mjs && node --check runtime/guardiao.mjs && node --check runtime/hook-contexto.mjs && node --check runtime/hook-varredura.mjs",
+    "check": "node --check runtime/cli.mjs && node --check runtime/memoria.mjs && node --check runtime/contexto.mjs && node --check runtime/recuperacao.mjs && node --check runtime/pipeline-memoria.mjs && node --check runtime/personalidade.mjs && node --check runtime/ajustes-personalidade.mjs && node --check runtime/feedback-personalidade.mjs && node --check runtime/eval-personalidade.mjs && node --check runtime/executor-eval-personalidade.mjs && node --check runtime/release-autonoma.mjs && node --check runtime/eval-comportamental.mjs && node --check runtime/historico-evals.mjs && node --check runtime/persistencia-contexto.mjs && node --check runtime/atalhos.mjs && node --check runtime/falhas.mjs && node --check runtime/automacao-falhas.mjs && node --check runtime/automacao-melhorias.mjs && node --check runtime/autoaperfeicoamento.mjs && node --check runtime/ciclo-operacional.mjs && node --check runtime/porta-delegacao.mjs && node --check runtime/adaptador-claude-delegacao.mjs && node --check runtime/observador.mjs && node --check runtime/evolucao.mjs && node --check runtime/varredura-diaria.mjs && node --check runtime/integridade-release.mjs && node --check runtime/versao.mjs && node --check runtime/atualizacao.mjs && node --check runtime/auditoria-autocorrecao.mjs && node --check runtime/auditoria-sistema.mjs && node --check runtime/passe.mjs && node --check runtime/guardiao.mjs && node --check runtime/hook-contexto.mjs && node --check runtime/hook-varredura.mjs",
     "test": "node --test testes/*.test.mjs"
   }
 }

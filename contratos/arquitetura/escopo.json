@@ -1,17 +1,42 @@
 {
-  "schemaVersion": 1,
-  "decision": "independent-initiatives-v1",
+  "schemaVersion": 2,
+  "decision": "independent-assistant-neutral-delegation-v2",
   "activeInitiative": "omni",
   "activeAgents": ["omni"],
   "embeddedInitiatives": [],
   "externalInitiatives": ["oracle", "overcore"],
-  "futureIntegration": "contracts-events-adapters",
+  "futureIntegration": "neutral-delegation-port-then-contracts-events-adapters",
+  "referenceOnly": {
+    "overcoreStudio": "historical-read-only"
+  },
+  "futureOvercore": {
+    "status": "rebuild-from-zero",
+    "location": "separate-folder-and-repository",
+    "technology": "undecided"
+  },
+  "forbiddenEmbeddedComponents": [
+    "task-manager",
+    "dag",
+    "graph-engine",
+    "event-store",
+    "artifact-registry",
+    "agent-sdk",
+    "harness"
+  ],
+  "delegationIntegration": {
+    "contract": "omni-neutral-delegation-v1",
+    "lifecycle": "omni-operational-cycle-v1",
+    "transport": "adapter-owned",
+    "store": "existing-operational-cycle-only",
+    "externalCanVerifyOrClose": false
+  },
   "interface": {
     "chat": "deferred-until-conversation-validation",
     "realtime": "deferred-until-conversation-validation",
-    "section35": "deferred-by-owner"
+    "section35": "external-execution-environment-reference-only"
   },
   "sections": {
+    "15-18": "external-execution-environment-reference-only",
     "27-30": "omni-active",
     "31": "out-of-scope-agent-selection",
     "32-34": "omni-active",

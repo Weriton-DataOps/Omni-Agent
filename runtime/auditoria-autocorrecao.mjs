@@ -75,10 +75,21 @@ async function contract() {
     stopGate?.enabled !== true ||
     stopGate.maximumBlocksPerTurn !== 1 ||
     stopGate.recursionGuardRequired !== true ||
-    correction?.producesRepairDirectiveOnly !== true ||
+    correction?.producesRepairDirectiveOnly !== false ||
+    correction.producesRecoverableWork !== true ||
+    correction.reversibleAuthorizedRepair !== 'execute-or-delegate-automatically' ||
     correction.neverExecutesExternalMutation !== true ||
     correction.idempotentByFindingFingerprint !== true ||
     value.authority?.doesNotGrantNewAuthority !== true ||
+    !Array.isArray(value.authority?.automaticWithoutNewApproval) ||
+    value.authority.automaticWithoutNewApproval.length !== 3 ||
+    !Array.isArray(value.authority?.ownerDecisionOnlyWhen) ||
+    value.authority.ownerDecisionOnlyWhen.length !== 3 ||
+    value.recovery?.terminalizeOnRecursionGuard !== false ||
+    value.recovery?.terminalizeOnSessionEnd !== false ||
+    value.recovery?.legacyBlockedTurnsBecomeRepairing !== true ||
+    value.recovery?.resumeAutomaticallyWhenCauseClears !== true ||
+    value.recovery?.survivesSessionAndReleaseBoundary !== true ||
     value.objectiveBinding?.algorithm !== OBJECTIVE_FINGERPRINT_ALGORITHM ||
     value.objectiveBinding?.legacyWithoutAlgorithm !== 'unverifiable' ||
     value.objectiveBinding?.storeRawObjective !== false ||
@@ -249,12 +260,34 @@ async function load(casa) {
     if (store.schemaVersion > AUDIT_SELF_CORRECTION_SCHEMA_VERSION) {
       throw new Error(`Auditoria v${store.schemaVersion} é mais nova que este plugin.`)
     }
+    migrarTurnosRecuperaveis(store)
     validateStore(store, path)
     return { store, initialized: false }
   } catch (error) {
     if (error?.code === 'ENOENT') return { store: emptyStore(), initialized: true }
     throw error
   }
+}
+
+function migrarTurnosRecuperaveis(store) {
+  for (const turn of store.turns ?? []) {
+    const hasUnresolvedWork = (turn.findings ?? []).some((item) =>
+      item.state === 'open' || item.state === 'unresolved'
+    )
+    if (turn.state !== 'blocked' || !hasUnresolvedWork) continue
+    turn.state = 'repairing'
+    turn.closedAt = null
+    for (const commitment of turn.commitments ?? []) {
+      if (commitment.state === 'blocked') commitment.state = 'open'
+    }
+    for (const finding of turn.findings ?? []) {
+      if (finding.state === 'unresolved') finding.state = 'open'
+    }
+    for (const correction of turn.corrections ?? []) {
+      if (correction.state === 'failed') correction.state = 'requested'
+    }
+  }
+  return store
 }
 
 async function save(casa, store, policy) {
@@ -498,77 +531,165 @@ export async function resolverImplementacaoOperacionalAuditoria(casa, {
   if (!dateValid(notBefore) || !Array.isArray(targetFingerprints) || !targetFingerprints.every(fingerprintValid)) {
     return { result: 'unverified-implementation', receipt: null }
   }
+  const suppliedAuditIds = [
+    mutationActionId,
+    mutationEvidenceId,
+    verificationActionId,
+    verificationEvidenceId
+  ].filter((item) => item !== undefined && item !== null)
+  if (
+    (suppliedAuditIds.length > 0 && suppliedAuditIds.length !== 4) ||
+    (suppliedAuditIds.length === 4 && suppliedAuditIds.some((item) => typeof item !== 'string' || !item))
+  ) {
+    return { result: 'unverified-implementation', receipt: null }
+  }
   const expectedTargets = new Set(targetFingerprints)
   const store = await lerAuditoriaAutocorrecao(casa)
   for (const turn of store.turns) {
-    const mutationIndex = turn.actions.findIndex((item) => item.id === mutationActionId)
-    const verificationIndex = turn.actions.findIndex((item) => item.id === verificationActionId)
-    if (mutationIndex < 0 || verificationIndex <= mutationIndex) continue
-    const mutation = turn.actions[mutationIndex]
-    const verification = turn.actions[verificationIndex]
-    const mutationEvidence = turn.evidence.find((item) =>
-      item.id === mutationEvidenceId &&
-      item.sourceActionId === mutation.id &&
-      item.kind === 'mutation-result'
+    const explicitIds = suppliedAuditIds.length === 4 && suppliedAuditIds.every((item) =>
+      typeof item === 'string' && item.length > 0
     )
-    const verificationEvidence = turn.evidence.find((item) =>
-      item.id === verificationEvidenceId &&
-      item.sourceActionId === verification.id &&
-      item.kind === 'state-readback'
-    )
-    const targetFingerprint = mutation.targetFingerprints.find((item) =>
-      expectedTargets.has(item) && verification.targetFingerprints.includes(item)
-    )
-    const valid =
-      mutation.effect === 'mutation' &&
-      mutation.state === 'succeeded' &&
-      verification.effect === 'verification' &&
-      verification.state === 'succeeded' &&
-      Boolean(mutationEvidence) &&
-      Boolean(verificationEvidence) &&
-      Boolean(targetFingerprint) &&
-      Date.parse(mutation.recordedAt) > Date.parse(notBefore) &&
-      Date.parse(mutationEvidence.recordedAt) >= Date.parse(mutation.recordedAt) &&
-      Date.parse(verification.recordedAt) > Date.parse(mutation.recordedAt) &&
-      Date.parse(verificationEvidence.recordedAt) >= Date.parse(verification.recordedAt) &&
-      compatibleAuditObject(mutation, verification)
-    if (!valid) continue
-    return {
-      result: 'verified',
-      receipt: {
-        sessionFingerprint: turn.sessionFingerprint,
-        mutationActionId: mutation.id,
-        mutationEvidenceId: mutationEvidence.id,
-        mutationActionFingerprint: mutation.toolUseFingerprint,
-        mutationEvidenceFingerprint: mutationEvidence.fingerprint,
-        verificationActionId: verification.id,
-        verificationEvidenceId: verificationEvidence.id,
-        verificationActionFingerprint: verification.toolUseFingerprint,
-        verificationEvidenceFingerprint: verificationEvidence.fingerprint,
-        targetFingerprint,
-        verifiedAt: verificationEvidence.recordedAt
+    const mutationIndexes = explicitIds
+      ? [turn.actions.findIndex((item) => item.id === mutationActionId)]
+      : turn.actions.map((_, index) => index).filter((index) => turn.actions[index].effect === 'mutation')
+    for (const mutationIndex of mutationIndexes) {
+      if (mutationIndex < 0) continue
+      const verificationIndexes = explicitIds
+        ? [turn.actions.findIndex((item) => item.id === verificationActionId)]
+        : turn.actions
+            .map((_, index) => index)
+            .filter((index) => index > mutationIndex && turn.actions[index].effect === 'verification')
+      for (const verificationIndex of verificationIndexes) {
+        if (verificationIndex <= mutationIndex) continue
+        const mutation = turn.actions[mutationIndex]
+        const verification = turn.actions[verificationIndex]
+        const mutationEvidence = turn.evidence.find((item) =>
+          (!explicitIds || item.id === mutationEvidenceId) &&
+          item.sourceActionId === mutation.id &&
+          item.kind === 'mutation-result'
+        )
+        const verificationEvidence = turn.evidence.find((item) =>
+          (!explicitIds || item.id === verificationEvidenceId) &&
+          item.sourceActionId === verification.id &&
+          item.kind === 'state-readback'
+        )
+        const targetFingerprint = mutation.targetFingerprints.find((item) =>
+          expectedTargets.has(item) && verification.targetFingerprints.includes(item)
+        )
+        const valid =
+          mutation.effect === 'mutation' &&
+          mutation.state === 'succeeded' &&
+          verification.effect === 'verification' &&
+          verification.state === 'succeeded' &&
+          Boolean(mutationEvidence) &&
+          Boolean(verificationEvidence) &&
+          Boolean(targetFingerprint) &&
+          Date.parse(mutation.recordedAt) > Date.parse(notBefore) &&
+          Date.parse(mutationEvidence.recordedAt) >= Date.parse(mutation.recordedAt) &&
+          Date.parse(verification.recordedAt) > Date.parse(mutation.recordedAt) &&
+          Date.parse(verificationEvidence.recordedAt) >= Date.parse(verification.recordedAt) &&
+          compatibleAuditObject(mutation, verification)
+        if (!valid) continue
+        return {
+          result: 'verified',
+          receipt: {
+            sessionFingerprint: turn.sessionFingerprint,
+            mutationActionId: mutation.id,
+            mutationEvidenceId: mutationEvidence.id,
+            mutationActionFingerprint: mutation.toolUseFingerprint,
+            mutationEvidenceFingerprint: mutationEvidence.fingerprint,
+            verificationActionId: verification.id,
+            verificationEvidenceId: verificationEvidence.id,
+            verificationActionFingerprint: verification.toolUseFingerprint,
+            verificationEvidenceFingerprint: verificationEvidence.fingerprint,
+            targetFingerprint,
+            verifiedAt: verificationEvidence.recordedAt
+          }
+        }
       }
     }
   }
   return { result: 'unverified-implementation', receipt: null }
 }
 
-function abandonTurn(turn, policy, timestamp) {
-  const fingerprint = hash(`${turn.id}:turn-abandoned:${turn.requestFingerprint}`)
+export async function resolverImplementacaoDelegadaAuditoria(casa, {
+  sessionFingerprint,
+  reportActionId,
+  reportEvidenceId,
+  mutationActionId,
+  mutationEvidenceId,
+  verificationActionId,
+  verificationEvidenceId,
+  targetFingerprints = [],
+  notBefore
+} = {}) {
+  const implementation = await resolverImplementacaoOperacionalAuditoria(casa, {
+    mutationActionId,
+    mutationEvidenceId,
+    verificationActionId,
+    verificationEvidenceId,
+    targetFingerprints,
+    notBefore
+  })
+  if (
+    implementation.result !== 'verified' ||
+    implementation.receipt?.sessionFingerprint !== sessionFingerprint
+  ) return { result: 'unverified-delegated-implementation', auditProof: null }
+
+  const store = await lerAuditoriaAutocorrecao(casa)
+  const turn = store.turns.find((item) => item.sessionFingerprint === sessionFingerprint &&
+    item.actions.some((action) => action.id === mutationActionId) &&
+    item.actions.some((action) => action.id === verificationActionId))
+  if (!turn) return { result: 'unverified-delegated-implementation', auditProof: null }
+  const reportAction = turn.actions.find((item) => item.id === reportActionId)
+  const reportEvidence = turn.evidence.find((item) =>
+    item.id === reportEvidenceId &&
+    item.sourceActionId === reportActionId &&
+    item.kind === 'delegation-report'
+  )
+  const verificationAction = turn.actions.find((item) => item.id === verificationActionId)
+  const verificationEvidence = turn.evidence.find((item) =>
+    item.id === verificationEvidenceId &&
+    item.sourceActionId === verificationActionId &&
+    item.kind === 'state-readback'
+  )
+  if (
+    reportAction?.effect !== 'delegation' ||
+    reportAction.state !== 'reported' ||
+    !reportEvidence ||
+    verificationAction?.effect !== 'verification' ||
+    verificationAction.state !== 'succeeded' ||
+    !verificationEvidence
+  ) return { result: 'unverified-delegated-implementation', auditProof: null }
+  return {
+    result: 'verified',
+    auditProof: {
+      result: 'verified',
+      reportAction,
+      reportEvidence,
+      verificationAction,
+      verificationEvidence,
+      implementationReceipt: implementation.receipt
+    }
+  }
+}
+
+function preserveTurnForRecovery(turn, policy, timestamp) {
+  const fingerprint = hash(`${turn.id}:turn-interrupted-recovery:${turn.requestFingerprint}`)
   let finding = turn.findings.find((item) => item.fingerprint === fingerprint)
   if (!finding) {
     finding = {
       id: `audit-finding-${randomUUID()}`,
-      code: 'turn-abandoned',
+      code: 'turn-interrupted-recovery',
       severity: 'error',
       fingerprint,
-      state: 'unresolved',
+      state: 'open',
       detectedAt: timestamp,
       updatedAt: timestamp
     }
     turn.findings.push(finding)
   } else {
-    finding.state = 'unresolved'
+    finding.state = 'open'
     finding.updatedAt = timestamp
   }
 
@@ -578,7 +699,7 @@ function abandonTurn(turn, policy, timestamp) {
       id: `audit-correction-${randomUUID()}`,
       findingFingerprint: fingerprint,
       kind: 'execute-request',
-      state: 'failed',
+      state: 'requested',
       mode: 'repair-directive',
       rollback: 'ledger-only',
       attempts: 1,
@@ -587,24 +708,16 @@ function abandonTurn(turn, policy, timestamp) {
     }
     turn.corrections.push(correction)
   } else {
-    correction.state = 'failed'
+    correction.state = 'requested'
     correction.updatedAt = timestamp
   }
 
-  for (const unresolved of turn.findings.filter((item) => item.state === 'open')) {
-    unresolved.state = 'unresolved'
-    unresolved.updatedAt = timestamp
-  }
-  for (const failed of turn.corrections.filter((item) => item.state === 'requested')) {
-    failed.state = 'failed'
-    failed.updatedAt = timestamp
-  }
   turn.findings = turn.findings.slice(-policy.retention.findingsPerTurn)
   turn.corrections = turn.corrections.slice(-policy.retention.correctionsPerTurn)
-  turn.state = 'blocked'
-  turn.closedAt = timestamp
+  turn.state = 'repairing'
+  turn.closedAt = null
   turn.updatedAt = timestamp
-  for (const commitment of turn.commitments.filter((item) => item.state === 'open')) commitment.state = 'blocked'
+  for (const commitment of turn.commitments.filter((item) => item.state === 'blocked')) commitment.state = 'open'
 }
 
 export async function abrirTurnoAuditoria(casa, input, { at } = {}) {
@@ -618,7 +731,7 @@ export async function abrirTurnoAuditoria(casa, input, { at } = {}) {
       ? store.turns.find((item) => item.id === session.activeTurnId)
       : null
     if (previous && !['verified', 'blocked'].includes(previous.state)) {
-      abandonTurn(previous, policy, timestamp)
+      preserveTurnForRecovery(previous, policy, timestamp)
     }
     const requestKind = classifyRequest(prompt)
     const turn = {
@@ -1208,16 +1321,12 @@ export async function auditarParada(casa, input, { at } = {}) {
       return { result: 'repair-required', decision: 'block', reason: repairReason(openFindings), turn }
     }
 
-    turn.state = 'blocked'
-    turn.closedAt = timestamp
-    for (const commitment of turn.commitments.filter((item) => item.state === 'open')) commitment.state = 'blocked'
-    for (const finding of openFindings) finding.state = 'unresolved'
-    for (const correction of turn.corrections.filter((item) => item.state === 'requested')) {
-      correction.state = 'failed'
-      correction.updatedAt = timestamp
-    }
-    if (session) session.activeTurnId = null
-    return { result: 'blocked', decision: null, reason: null, turn }
+    // A guarda de recursao impede outro bloqueio sincrono, nao transforma a
+    // falha em arquivo morto. O turno continua recuperavel e pode receber
+    // evidencia neste ciclo ou ser retomado automaticamente por outro.
+    turn.state = 'repairing'
+    turn.closedAt = null
+    return { result: 'repair-deferred', decision: null, reason: null, recoverable: true, turn }
   })
 }
 
@@ -1227,7 +1336,7 @@ export async function encerrarSessaoAuditoria(casa, input, { at } = {}) {
     const { session, turn } = activeTurn(store, input?.session_id)
     if (!session) return { result: 'ignored' }
     if (turn && !['verified', 'blocked'].includes(turn.state)) {
-      abandonTurn(turn, policy, timestamp)
+      preserveTurnForRecovery(turn, policy, timestamp)
     }
     session.activeTurnId = null
     session.state = 'closed'

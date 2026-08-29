@@ -50,19 +50,36 @@
   },
   "automaticCandidateValidation": {
     "enabled": true,
-    "executor": "background-subagent",
+    "executorCapability": "failure-validation",
+    "transport": "adapter-owned",
     "requiresOwnerPrompt": false,
-    "dispatchGuarantee": "request-only",
-    "hostExecutionRequired": true,
+    "dispatchGuarantee": "required-until-started-event",
+    "realStartEventRequired": true,
+    "startEvidence": "neutral-delegation-started",
+    "stopGateRequiresStart": true,
+    "retryableFailureDisposition": "requeue-different-strategy",
+    "terminalBlockedState": false,
+    "ownerDecisionOnlyForConcreteAuthorityExpansion": true,
+    "dispatchTimeoutMinutes": 15,
     "leaseMinutes": 60,
     "maximumConcurrentJobs": 1,
-    "excludedActions": ["executar Agent", "executar TaskStop"],
+    "excludedActions": [
+      "executar delegation-control",
+      "aplicar personalidade canonica na conversa"
+    ],
     "ownerAuthorizationRequiredFor": [
       "ação destrutiva",
       "escrita remota",
       "chamada paga",
       "nova permissão",
       "escalada de privilégio"
+    ],
+    "ownerAuthorityEffects": [
+      "destructive",
+      "remote-write",
+      "paid-call",
+      "new-permission",
+      "privilege-escalation"
     ]
   },
   "automaticGlobalRule": false,

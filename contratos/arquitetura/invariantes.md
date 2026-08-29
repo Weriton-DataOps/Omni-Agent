@@ -1,10 +1,17 @@
 # Invariantes operacionais do Omni
 
+> O ADR-002 governa estas invariantes: o Omni é um assistente independente; o futuro OverCore será
+> construído do zero em outra pasta e não é uma instância, camada ou runtime do Omni.
+
 ## Identidade
 
 O Omni é um único agente pessoal. Ele preserva continuidade, conversa, pensa, executa tarefas
 compatíveis com suas ferramentas e coordena executores temporários quando a tarefa pede outro
 contexto ou especialidade.
+
+O Omni não contém ambiente de desenvolvimento, Harness, DAG, Task Manager, Event Store, Artifact
+Registry ou Agent SDK. Execução externa atravessa uma porta neutra; o adaptador transporta a ordem e
+os eventos, enquanto o Omni preserva somente o ciclo de delegação, a continuidade e a verificação.
 
 ## Comportamentos exigidos
 

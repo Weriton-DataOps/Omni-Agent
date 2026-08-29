@@ -12,12 +12,15 @@ import {
   registrarDelegacaoAuditoria
 } from '../runtime/auditoria-autocorrecao.mjs'
 import {
-  observarDelegacao,
   prepararDelegacao,
   proporMelhoriaOperacional
 } from '../runtime/ciclo-operacional.mjs'
 import { materializarMelhoriaOperacional } from '../runtime/evolucao.mjs'
 import { vinculoVerificacaoAtalho } from '../runtime/atalhos.mjs'
+import {
+  confirmarInicioAutomacaoFalha,
+  prepararDespachoAutomaticoFalha
+} from '../runtime/automacao-falhas.mjs'
 
 const cli = fileURLToPath(new URL('../runtime/cli.mjs', import.meta.url))
 
@@ -265,7 +268,10 @@ test('operador observa, lista e valida atalho sem promove-lo', async () => {
     assert.equal(state.learning.automaticPortablePromotion, false)
     assert.equal(state.selfImprovement.approved, 1)
     assert.equal(state.selfImprovement.retracted, 0)
-    assert.equal(state.selfImprovement.automaticGitPush, false)
+    assert.equal(state.selfImprovement.scope, 'new-capability-admission-only')
+    assert.equal(state.selfImprovement.automaticCapabilityPromotion, false)
+    assert.equal(state.selfImprovement.automaticOperationalCorrection, true)
+    assert.equal(state.selfImprovement.automaticGitPushForCapability, false)
     assert.equal(state.operationalCycle.improvements.superseded, 0)
   } finally {
     await rm(raiz, { recursive: true, force: true })
@@ -298,10 +304,26 @@ test('operador aprende padrão de falha sem transformar ocorrência isolada em r
     assert.equal(analyzed.failure.status, 'analyzed')
 
     executar(['falhas'], env)
-    const claimed = executar([
+    const legacy = executar([
       'falha-automacao-reivindicar', '--executor', 'cli-test-failure-executor'
     ], env)
-    const jobId = claimed.automation.jobId
+    assert.equal(legacy.automation.result, 'start-event-required')
+    const dispatchSession = 'cli-real-failure-worker'
+    await abrirTurnoAuditoria(env.OMNI_HOME, {
+      session_id: dispatchSession,
+      prompt: 'Inicie o subagente real para validar a falha.'
+    })
+    const dispatch = await prepararDespachoAutomaticoFalha(env.OMNI_HOME, {
+      sessionId: dispatchSession,
+      executorId: 'cli-host-model'
+    })
+    const started = await confirmarInicioAutomacaoFalha(env.OMNI_HOME, {
+      sessionId: dispatchSession,
+      delegationId: dispatch.delegation.id,
+      agentId: 'cli-real-failure-agent'
+    })
+    assert.equal(started.result, 'started')
+    const jobId = started.job.id
 
     const binding = executar(['falha-evidencias', candidate.failure.id, '--job', jobId], env)
     assert.match(binding.bindingMarker, /^omni-failure-binding:[a-f0-9]{64}$/)
@@ -368,7 +390,7 @@ test('operador expõe evals, checkpoints e backlog sem executar melhoria sozinho
     assert.equal(after.resolvedDiscoveries.length, 1)
 
     const state = executar(['estado'], env)
-    assert.equal(state.evaluation.automaticExecution, false)
+    assert.equal(state.evaluation.automaticExecution, true)
     assert.equal(state.evaluation.realBehavior.recordedRuns, 0)
     assert.equal(state.evaluation.realBehavior.passedRuns, 0)
     assert.equal(state.evaluation.personality.feedback.totalVotes, 0)
@@ -416,12 +438,13 @@ test('operador publica briefing visivel com autoridade herdada sem persistir o p
     const raw = await readFile(join(home, 'runs', 'operational-cycle.json'), 'utf8')
     assert.doesNotMatch(raw, /Corrija o componente publico|editar|testar/)
 
-    const started = await observarDelegacao(home, {
-      state: 'running',
-      sessionId: 'sessao-publica-1',
-      agentId: 'executor-publico-1',
-      agentType: 'executor'
-    })
+    const started = executar([
+      'delegacao-estado', prepared.delegation.id, 'running',
+      '--executor', 'executor-publico-1',
+      '--evidencia', 'inicio-publico-1',
+      '--checkpoint', 'checkpoint-publico-1',
+      '--rollback', 'rollback-publico-1'
+    ], env)
     assert.equal(started.delegation.id, prepared.delegation.id)
     assert.equal(started.delegation.state, 'running')
 
@@ -432,16 +455,14 @@ test('operador publica briefing visivel com autoridade herdada sem persistir o p
       agent_transcript_path: 'artefato-publico-1',
       cwd: home
     }, 'reported')
-    await observarDelegacao(home, {
-      state: 'reported',
-      sessionId: 'sessao-publica-1',
-      agentId: 'executor-publico-1',
-      agentType: 'executor',
-      evidence: 'relato-publico-1',
-      summary: 'O executor entregou o relato.',
-      auditActionId: report.action.id,
-      auditEvidenceId: report.evidence.id
-    })
+    executar([
+      'delegacao-estado', prepared.delegation.id, 'reported',
+      '--executor', 'executor-publico-1',
+      '--evidencia', 'relato-publico-1',
+      '--resumo', 'O executor entregou o relato.',
+      '--acao-auditoria', report.action.id,
+      '--evidencia-auditoria', report.evidence.id
+    ], env)
     const readback = await registrarAcaoAuditoria(home, {
       hook_event_name: 'PostToolUse',
       session_id: 'sessao-publica-1',
@@ -510,6 +531,7 @@ test('operador encaminha fonte, pai, checkpoint e rollback pelo caminho publico'
 
     const running = executar([
       'delegacao-estado', prepared.delegation.id, 'running',
+      '--executor', 'executor-herdado-1',
       '--evidencia', 'subagent-start-public-2',
       '--checkpoint', 'snapshot-public-2',
       '--rollback', 'restore-snapshot-public-2'
@@ -521,6 +543,69 @@ test('operador encaminha fonte, pai, checkpoint e rollback pelo caminho publico'
 
     const raw = await readFile(join(home, 'runs', 'operational-cycle.json'), 'utf8')
     assert.doesNotMatch(raw, /snapshot-public-2|restore-snapshot-public-2|Continue a tarefa subordinada/)
+  } finally {
+    await rm(raiz, { recursive: true, force: true })
+  }
+})
+
+test('operador reage a falha tecnica sem muro e reserva needs-owner para expansao concreta', async () => {
+  const raiz = await mkdtemp(join(tmpdir(), 'omni-cli-proactive-failure-'))
+  const home = join(raiz, 'home')
+  const env = { ...process.env, OMNI_HOME: home }
+  try {
+    for (let index = 1; index <= 3; index += 1) {
+      executar([
+        'falha-registrar',
+        '--agente', 'omni',
+        '--acao', 'executar Bash',
+        '--classe', 'permission',
+        '--assinatura', 'permission denied na validacao local',
+        '--execucao', `cli-proactive-${index}`
+      ], env)
+    }
+    executar(['falhas'], env)
+    const sessionId = 'cli-proactive-session'
+    await abrirTurnoAuditoria(home, {
+      session_id: sessionId,
+      prompt: 'Valide e corrija a falha local.'
+    })
+    const firstDispatch = await prepararDespachoAutomaticoFalha(home, {
+      sessionId,
+      executorId: 'cli-proactive-host'
+    })
+    const firstStart = await confirmarInicioAutomacaoFalha(home, {
+      sessionId,
+      delegationId: firstDispatch.delegation.id,
+      agentId: 'cli-proactive-agent-1'
+    })
+
+    const retry = executar([
+      'falha-automacao-bloquear', firstStart.job.id,
+      '--tipo', 'retryable',
+      '--motivo', 'a busca inicial nao localizou a evidencia',
+      '--evidencia', 'cli-audit-evidence-1',
+      '--estrategia', 'buscar apenas pelo caminho antigo'
+    ], env)
+    assert.equal(retry.automation.result, 'retry-scheduled')
+
+    const secondDispatch = await prepararDespachoAutomaticoFalha(home, {
+      sessionId,
+      executorId: 'cli-proactive-host'
+    })
+    const secondStart = await confirmarInicioAutomacaoFalha(home, {
+      sessionId,
+      delegationId: secondDispatch.delegation.id,
+      agentId: 'cli-proactive-agent-2'
+    })
+    const owner = executar([
+      'falha-automacao-bloquear', secondStart.job.id,
+      '--tipo', 'owner-authority',
+      '--motivo', 'a proxima etapa escreve fora do escopo local',
+      '--efeito', 'remote-write',
+      '--alvo', 'servico remoto fora do envelope atual'
+    ], env)
+    assert.equal(owner.automation.result, 'needs-owner')
+    assert.equal(executar(['falhas'], env).automation.needsOwner, 1)
   } finally {
     await rm(raiz, { recursive: true, force: true })
   }

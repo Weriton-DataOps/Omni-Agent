@@ -188,6 +188,7 @@ async function lerPolitica() {
     policy.pipeline !== 'self-improvement-v1' ||
     !Array.isArray(policy.categories) ||
     !Array.isArray(policy.destinations) ||
+    policy.scope !== 'new-capability-admission-only' ||
     !policy.destinations.includes('discard') ||
     !policy.destinations.includes('memory') ||
     !policy.destinations.includes('capability') ||
@@ -195,14 +196,23 @@ async function lerPolitica() {
     policy.minimumSuccessfulRuns < 4 ||
     policy.requiresIndependentValidation !== true ||
     policy.requiresOwnerApproval !== true ||
+    policy.ownerApprovalScope !== 'new-capability-only' ||
     policy.requiresPortableConfirmation !== true ||
     policy.requiresRoleFitConfirmation !== true ||
+    policy.automaticOperationalCorrection !== true ||
+    policy.ordinaryCorrectionHandledBy !== 'omni-operational-improvement-automation-v1' ||
+    policy.ordinaryCorrectionOwnerApprovalRequired !== false ||
+    policy.ordinaryCorrectionAutomaticRelease !== true ||
+    policy.personalityHandledBy !== 'omni-controlled-personality-eval-v1' ||
+    policy.automaticPersonalityEvaluation !== true ||
     !Array.isArray(policy.skillAdmissionQuestions) ||
     policy.skillAdmissionQuestions.length !== 5 ||
     !policy.skillAdmissionQuestions.every((question) => typeof question === 'string' && question.length > 20) ||
     policy.automaticPromotion !== false ||
+    policy.automaticPromotionScope !== 'new-capability-disabled-until-owner-admission' ||
     policy.automaticGitCommit !== false ||
     policy.automaticGitPush !== false ||
+    policy.gitAutomationRestrictionScope !== 'new-capability-admission-only' ||
     policy.storeRawOutcome !== false
   ) {
     throw new Error('Política de autoaperfeiçoamento fora do contrato seguro v1.')
@@ -312,7 +322,7 @@ function criarRascunho(shortcut) {
     `Use esta skill somente quando o objetivo for: ${shortcut.goal}.`,
     'Execute a sequência validada, sem acrescentar etapas por hábito:',
     ...shortcut.shortcutSteps.map((step, index) => `${index + 1}. ${step}`),
-    'Verifique o resultado antes de declarar sucesso. Se a verificação falhar, pare e reporte a falha.',
+    'Verifique o resultado antes de declarar sucesso. Se a verificação falhar, diagnostique a causa, mude materialmente a estratégia e reteste; devolva ao proprietário somente uma expansão real de autoridade, alvo, efeito irreversível ou acesso ausente.',
     'Não exponha memória, evidência local ou implementação interna do Omni.'
   ]
   const allText = [name, description, ...instructions].join('\n')

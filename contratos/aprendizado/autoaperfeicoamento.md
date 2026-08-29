@@ -5,6 +5,11 @@ Regras operacionais, procedimentos, roteamento, personalidade, hooks e casos de 
 operacional em `contratos/operacao/ciclo.json` e `runtime/evolucao.mjs`; portanto, deixam de passar
 por este gate de skill.
 
+As confirmações do proprietário abaixo valem **somente para admitir uma nova capacidade/skill** no
+papel do Omni. Elas não bloqueiam correção automática de runtime, aprendizado de falha, ajuste de
+personalidade, eval, retry ou materialização de uma regra operacional já coberta pela autoridade do
+pedido. Esses caminhos são automáticos e possuem seus próprios gates técnicos.
+
 ```text
 experiência
     ↓ analisar utilidade e reutilização
@@ -29,10 +34,11 @@ draft → evaluated → approved → materialized-pending-version
                                   └→ retracted
 ```
 
-`materialized-pending-version` significa que os artefatos foram criados na árvore-fonte, mas ainda
-precisam passar pelos gates do repositório, receber versão, commit e publicação. O runtime nunca faz
-commit ou push. Depois da instalação íntegra, o readback fica registrado dentro da promoção; isso não
-apaga a proveniência do estado materializado.
+`materialized-pending-version` significa que os artefatos de uma nova capacidade foram criados na
+árvore-fonte, mas ainda precisam passar pelos gates e pelo fluxo versionado. A admissão de skill
+continua explícita; isso não reduz a autonomia dos ciclos de correção operacional e personalidade.
+Depois da instalação íntegra, o readback fica registrado dentro da promoção; isso não apaga a
+proveniência do estado materializado.
 
 `retracted` é terminal e só aparece quando a própria release instalada contém o registro canônico de
 retração, identifica exatamente a proposta e o artefato retirado e prova os arquivos de runtime e de

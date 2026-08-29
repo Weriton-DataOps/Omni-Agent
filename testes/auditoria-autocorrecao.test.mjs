@@ -139,7 +139,7 @@ test('produção textual e análise discursiva não exigem ferramenta, mas traba
   }
 })
 
-test('mutação sem leitura posterior bloqueia uma vez e não entra em loop', async () => {
+test('mutação sem leitura posterior bloqueia uma vez e permanece recuperavel sem loop', async () => {
   const casa = await home()
   const session = 'sessao-stop-once'
   try {
@@ -160,8 +160,13 @@ test('mutação sem leitura posterior bloqueia uma vez e não entra em loop', as
       stop_hook_active: true,
       last_assistant_message: 'Pronto, corrigi e está funcionando.'
     })
-    assert.equal(second.result, 'blocked')
+    assert.equal(second.result, 'repair-deferred')
     assert.equal(second.decision, null)
+    assert.equal(second.recoverable, true)
+    assert.equal(second.turn.state, 'repairing')
+    assert.equal(second.turn.closedAt, null)
+    assert.ok(second.turn.findings.every((item) => item.state === 'open'))
+    assert.ok(second.turn.corrections.every((item) => item.state === 'requested'))
     assert.equal(second.turn.stopBlocksIssued, 1)
     assert.equal(
       new Set(second.turn.findings.map((item) => item.fingerprint)).size,
@@ -322,7 +327,7 @@ test('mutacao indireta sem alvo recusa leitura arbitraria e aceita readback de e
   }
 })
 
-test('novo prompt e SessionEnd registram turno abandonado como unresolved', async () => {
+test('novo prompt e SessionEnd preservam turno interrompido como trabalho recuperavel', async () => {
   const casa = await home()
   const privateMarker = 'NAO-GRAVAR-CONVERSA-ABANDONADA-9182'
   try {
@@ -334,14 +339,15 @@ test('novo prompt e SessionEnd registram turno abandonado como unresolved', asyn
 
     const store = await lerAuditoriaAutocorrecao(casa)
     const abandoned = store.turns.filter((item) =>
-      item.findings.some((finding) => finding.code === 'turn-abandoned')
+      item.findings.some((finding) => finding.code === 'turn-interrupted-recovery')
     )
     assert.equal(abandoned.length, 2)
     for (const turn of abandoned) {
-      assert.equal(turn.state, 'blocked')
-      assert.ok(turn.findings.some((item) => item.code === 'turn-abandoned' && item.state === 'unresolved'))
-      assert.ok(turn.corrections.some((item) => item.state === 'failed'))
-      assert.ok(turn.commitments.every((item) => item.state === 'blocked'))
+      assert.equal(turn.state, 'repairing')
+      assert.equal(turn.closedAt, null)
+      assert.ok(turn.findings.some((item) => item.code === 'turn-interrupted-recovery' && item.state === 'open'))
+      assert.ok(turn.corrections.some((item) => item.state === 'requested'))
+      assert.ok(turn.commitments.every((item) => item.state === 'open'))
     }
     const stored = await readFile(caminhoDaAuditoriaAutocorrecao(casa), 'utf8')
     assert.equal(stored.includes(privateMarker), false)
@@ -476,7 +482,7 @@ test('hook injeta a auditoria e usa o gate de Stop sem segundo bloqueio', async 
     assert.equal(second.suppressOutput, true)
     const store = await lerAuditoriaAutocorrecao(env.OMNI_HOME)
     assert.equal(store.turns[0].stopBlocksIssued, 1)
-    assert.equal(store.turns[0].state, 'blocked')
+    assert.equal(store.turns[0].state, 'repairing')
   } finally {
     await rm(raiz, { recursive: true, force: true })
   }
@@ -492,6 +498,36 @@ test('schema futuro é recusado sem sobrescrever o estado', async () => {
     await writeFile(path, `${JSON.stringify(future, null, 2)}\n`, 'utf8')
     await assert.rejects(() => lerAuditoriaAutocorrecao(casa), /mais nova/)
     assert.equal(JSON.parse(await readFile(path, 'utf8')).schemaVersion, 2)
+  } finally {
+    await rm(casa, { recursive: true, force: true })
+  }
+})
+
+test('turno bloqueado legado com pendencia migra para reparo retomavel', async () => {
+  const casa = await home()
+  const session = 'sessao-migracao-reparo'
+  try {
+    await abrirTurnoAuditoria(casa, prompt(session, 'corrija o arquivo legado'))
+    await auditarParada(casa, {
+      session_id: session,
+      last_assistant_message: 'Ainda nao executei.'
+    })
+    const path = caminhoDaAuditoriaAutocorrecao(casa)
+    const legacy = JSON.parse(await readFile(path, 'utf8'))
+    const turn = legacy.turns[0]
+    turn.state = 'blocked'
+    turn.closedAt = '2026-08-28T18:00:00.000Z'
+    for (const commitment of turn.commitments) commitment.state = 'blocked'
+    for (const finding of turn.findings) finding.state = 'unresolved'
+    for (const correction of turn.corrections) correction.state = 'failed'
+    await writeFile(path, `${JSON.stringify(legacy, null, 2)}\n`, 'utf8')
+
+    const migrated = await lerAuditoriaAutocorrecao(casa)
+    assert.equal(migrated.turns[0].state, 'repairing')
+    assert.equal(migrated.turns[0].closedAt, null)
+    assert.ok(migrated.turns[0].commitments.every((item) => item.state === 'open'))
+    assert.ok(migrated.turns[0].findings.every((item) => item.state === 'open'))
+    assert.ok(migrated.turns[0].corrections.every((item) => item.state === 'requested'))
   } finally {
     await rm(casa, { recursive: true, force: true })
   }

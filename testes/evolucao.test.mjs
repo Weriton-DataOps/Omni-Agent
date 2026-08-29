@@ -134,6 +134,67 @@ test('melhoria de personalidade vira caso de eval pendente, nunca regra injetada
   }
 })
 
+test('feedback recorrente materializa caso aprendido coberto e preserva sourceRefs hash-only', async () => {
+  const base = await mkdtemp(join(tmpdir(), 'omni-personality-sourced-evolution-'))
+  const casa = join(base, 'home')
+  const repo = join(base, 'repo')
+  const sourceRef = (turn, vote) => ({
+    kind: 'personality-feedback',
+    candidateId: `personality-candidate-${'a'.repeat(24)}`,
+    voteFingerprint: vote.repeat(64),
+    turnFingerprint: turn.repeat(64),
+    answerFingerprint: 'b'.repeat(64),
+    personaId: 'omni-persona-v3-candidate',
+    releaseFingerprint: 'c'.repeat(64),
+    reasonCode: 'tone-too-dry',
+    canonicalCaseId: 'voz-perceptivel-sem-piada'
+  })
+  const input = {
+    category: 'owner-personality-feedback',
+    destination: 'personality',
+    statement: 'Dar mais calor e presenca ao tom seco sem aumentar cerimonia.'
+  }
+  try {
+    await mkdir(join(repo, '.git'), { recursive: true })
+    await mkdir(join(repo, 'contratos', 'eval'), { recursive: true })
+    await writeFile(join(repo, 'package.json'), JSON.stringify({ name: 'omni-agent' }), 'utf8')
+    await writeFile(join(repo, 'contratos', 'eval', 'casos-aprendidos.json'), JSON.stringify({
+      schemaVersion: 1, contract: 'omni-learned-eval-cases-v1', cases: []
+    }), 'utf8')
+    await writeFile(join(repo, 'contratos', 'eval', 'personalidade.json'), JSON.stringify({
+      schemaVersion: 1,
+      suite: 'personalidade',
+      expectedFormat: 'example-response-v1',
+      baseline: 'controle',
+      candidate: 'omni-persona-v3-candidate',
+      cases: [{
+        id: 'voz-perceptivel-sem-piada',
+        dimensao: 'identidade',
+        entrada: 'entrada de teste',
+        esperado: 'resposta de teste',
+        criterios: { automatico: {}, humano: ['voz reconhecivel'] },
+        peso: 1
+      }]
+    }), 'utf8')
+
+    await proporMelhoriaOperacional(casa, { ...input, sourceRef: sourceRef('1', 'd') })
+    const ready = await proporMelhoriaOperacional(casa, { ...input, sourceRef: sourceRef('2', 'e') })
+    const result = await materializarMelhoriaOperacional(casa, ready.candidate.id, repo)
+    assert.equal(result.result, 'materialized-pending-release')
+
+    const learned = JSON.parse(
+      await readFile(join(repo, 'contratos', 'eval', 'casos-aprendidos.json'), 'utf8')
+    ).cases[0]
+    assert.equal(learned.readiness, 'covered-by-canonical-case')
+    assert.equal(learned.scenario.caseId, 'voz-perceptivel-sem-piada')
+    assert.equal(learned.evidence.sourceRefs.length, 2)
+    assert.equal(learned.evidence.sourceRefs.every((item) => /^[a-f0-9]{64}$/.test(item.turnFingerprint)), true)
+    assert.equal(JSON.stringify(learned).includes('Resposta anterior'), false)
+  } finally {
+    await rm(base, { recursive: true, force: true })
+  }
+})
+
 test('hook, routing, runtime-fix e capability exigem implementacao real', async () => {
   for (const destination of ['hook', 'routing', 'runtime-fix', 'capability']) {
     const base = await mkdtemp(join(tmpdir(), `omni-source-change-${destination}-`))

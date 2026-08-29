@@ -3,12 +3,19 @@ import { mkdir, open, readFile, rename, stat, unlink, writeFile } from 'node:fs/
 import { isAbsolute, join } from 'node:path'
 
 import { pareceConterSegredo } from './memoria.mjs'
-import { resolverVerificacaoDelegacaoAuditoria } from './auditoria-autocorrecao.mjs'
+import {
+  resolverImplementacaoDelegadaAuditoria,
+  resolverVerificacaoDelegacaoAuditoria
+} from './auditoria-autocorrecao.mjs'
 
 export const OPERATIONAL_CYCLE_SCHEMA_VERSION = 1
 const CONTRACT_PATH = new URL('../contratos/operacao/ciclo.json', import.meta.url)
 const AUTHORITY_PATH = new URL('../contratos/operacao/autoridade.json', import.meta.url)
 const HASH_SHA256 = /^[a-f0-9]{64}$/
+const PERSONALITY_CANDIDATE_ID = /^personality-candidate-[a-f0-9]{24}$/
+const PERSONA_ID = /^omni-persona-v\d+-candidate$/
+const SAFE_CONTRACT_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
+const MAX_IMPROVEMENT_SOURCE_REFS = 500
 const DELEGATION_STATES = new Set([
   'prepared',
   'visible',
@@ -93,8 +100,14 @@ async function contrato() {
     !Array.isArray(value.delegation?.states) ||
     !value.delegation.states.every((state) => DELEGATION_STATES.has(state)) ||
     JSON.stringify(value.delegation.transitions) !== JSON.stringify(DELEGATION_TRANSITIONS) ||
-    value.delegation.subagentStopProduces !== 'reported' ||
+    value.delegation.executorReportProduces !== 'reported' ||
+    JSON.stringify(value.delegation.inboundCannotProduce) !== JSON.stringify(['verified', 'closed']) ||
+    value.delegation.externalCorrelation !== 'delegation-id' ||
     value.delegation.untrackedExecutorProduces !== 'failed' ||
+    value.delegation.adapterCorrelation?.requiresExplicitDelegationId !== true ||
+    value.delegation.adapterCorrelation?.uncorrelatedEvent !== 'rejected-no-state' ||
+    value.delegation.adapterCorrelation?.bindExecutorOnStarted !== true ||
+    value.delegation.adapterCorrelation?.duplicateRequiresSameExecutor !== true ||
     value.delegation.reportedIsNotSuccess !== true ||
     value.delegation.verificationPrecedesClosure !== true ||
     value.delegation.verifiedRequiresAuditActionAndEvidence !== true ||
@@ -121,6 +134,19 @@ async function contrato() {
     authority.authority?.delegationCarriesAuthority !== true ||
     authority.authority?.publicDelegationRequiresActiveAuditedTurn !== true ||
     authority.authority?.parentFingerprintMustResolveExistingAuthority !== true ||
+    authority.standingSelfCorrection?.contract !== 'omni-standing-self-correction-v1' ||
+    authority.standingSelfCorrection?.scope !== 'configured-canonical-omni-repository-only' ||
+    JSON.stringify(authority.standingSelfCorrection?.destinationCapabilities) !== JSON.stringify(['omni-self-correction']) ||
+    JSON.stringify(authority.standingSelfCorrection?.allowedEffectClasses) !== JSON.stringify(['read', 'execute', 'write']) ||
+    JSON.stringify(authority.standingSelfCorrection?.deniedEffectClasses) !== JSON.stringify(['destructive', 'financial', 'privilege']) ||
+    JSON.stringify(authority.standingSelfCorrection?.allowedRisk?.reversibility) !== JSON.stringify(['reversible']) ||
+    JSON.stringify(authority.standingSelfCorrection?.allowedRisk?.reach) !== JSON.stringify(['single-scoped-target']) ||
+    JSON.stringify(authority.standingSelfCorrection?.allowedRisk?.data) !== JSON.stringify(['project']) ||
+    JSON.stringify(authority.standingSelfCorrection?.allowedRisk?.mode) !== JSON.stringify(['proceed']) ||
+    authority.standingSelfCorrection?.requiresConfiguredCanonicalRepository !== true ||
+    authority.standingSelfCorrection?.requiresRegressionGates !== true ||
+    authority.standingSelfCorrection?.requiresInstalledReadbackForCompletion !== true ||
+    authority.standingSelfCorrection?.storeRawGrant !== false ||
     !Array.isArray(authority.risk?.dimensions?.reversibility) ||
     !Array.isArray(authority.risk?.dimensions?.reach) ||
     !Array.isArray(authority.risk?.dimensions?.data) ||
@@ -169,6 +195,58 @@ function textoNormalizado(value) {
     .toLowerCase()
     .replace(/\s+/g, ' ')
     .trim()
+}
+
+function sourceRefValida(value) {
+  if (!value || typeof value !== 'object') return false
+  const common = typeof value.reasonCode === 'string' && value.reasonCode.length > 0 &&
+    value.reasonCode.length <= 80 && SAFE_CONTRACT_ID.test(value.reasonCode) &&
+    typeof value.canonicalCaseId === 'string' && value.canonicalCaseId.length <= 120 &&
+    SAFE_CONTRACT_ID.test(value.canonicalCaseId)
+  if (!common) return false
+  if (value.kind === 'personality-eval') {
+    return HASH_SHA256.test(value.evalRoundFingerprint ?? '') &&
+      HASH_SHA256.test(value.triggerFingerprint ?? '') &&
+      HASH_SHA256.test(value.reasonCodeHash ?? '')
+  }
+  return value.kind === 'personality-feedback' &&
+    PERSONALITY_CANDIDATE_ID.test(value.candidateId ?? '') &&
+    HASH_SHA256.test(value.voteFingerprint ?? '') &&
+    HASH_SHA256.test(value.turnFingerprint ?? '') &&
+    HASH_SHA256.test(value.answerFingerprint ?? '') &&
+    PERSONA_ID.test(value.personaId ?? '') &&
+    HASH_SHA256.test(value.releaseFingerprint ?? '')
+}
+
+function normalizarSourceRef(value) {
+  if (!sourceRefValida(value)) return null
+  if (value.kind === 'personality-eval') {
+    return {
+      kind: value.kind,
+      evalRoundFingerprint: value.evalRoundFingerprint,
+      triggerFingerprint: value.triggerFingerprint,
+      reasonCodeHash: value.reasonCodeHash,
+      reasonCode: value.reasonCode,
+      canonicalCaseId: value.canonicalCaseId
+    }
+  }
+  return {
+    kind: value.kind,
+    candidateId: value.candidateId,
+    voteFingerprint: value.voteFingerprint,
+    turnFingerprint: value.turnFingerprint,
+    answerFingerprint: value.answerFingerprint,
+    personaId: value.personaId,
+    releaseFingerprint: value.releaseFingerprint,
+    reasonCode: value.reasonCode,
+    canonicalCaseId: value.canonicalCaseId
+  }
+}
+
+function chaveSourceRef(value) {
+  return value.kind === 'personality-eval'
+    ? `${value.kind}:${value.evalRoundFingerprint}:${value.canonicalCaseId}:${value.reasonCodeHash}`
+    : `${value.kind}:${value.turnFingerprint}`
 }
 
 export function fingerprintSemanticoMelhoria({ destination, statement } = {}) {
@@ -408,7 +486,9 @@ function referenciaPortatil(item) {
 }
 
 function migrarMelhoriaLegada(item) {
-  if (item?.lifecycleVersion === 2 && Object.hasOwn(item, 'supersededBy')) return item
+  if (item?.lifecycleVersion === 2 && Object.hasOwn(item, 'supersededBy')) {
+    return Object.hasOwn(item, 'sourceRefs') ? item : { ...item, sourceRefs: [] }
+  }
   const timestamp = dataValida(item?.updatedAt)
     ? item.updatedAt
     : dataValida(item?.createdAt) ? item.createdAt : agora()
@@ -467,6 +547,7 @@ function migrarMelhoriaLegada(item) {
       : null,
     installedReadback: status === 'installed-verified' ? item.installedReadback : null,
     supersededBy: status === 'superseded' ? item.supersededBy : null,
+    sourceRefs: Array.isArray(item?.sourceRefs) ? item.sourceRefs : [],
     transitionHistory
   }
 }
@@ -630,6 +711,10 @@ function melhoriaValida(item) {
     typeof item.category === 'string' && item.category.length > 0 && item.category.length <= 80 &&
     typeof item.destination === 'string' && item.destination.length > 0 && item.destination.length <= 80 &&
     typeof item.statement === 'string' && item.statement.length > 0 && item.statement.length <= 500 &&
+    Array.isArray(item.sourceRefs) &&
+    item.sourceRefs.length <= MAX_IMPROVEMENT_SOURCE_REFS &&
+    item.sourceRefs.every(sourceRefValida) &&
+    new Set(item.sourceRefs.map(chaveSourceRef)).size === item.sourceRefs.length &&
     IMPROVEMENT_STATES.has(item.status) &&
     Number.isInteger(item.occurrences) && item.occurrences >= 1 &&
     (item.artifact === null || (typeof item.artifact === 'string' && item.artifact.length <= 500)) &&
@@ -860,6 +945,14 @@ function aplicarTransicao(item, state, input, policy, timestamp) {
     item.visibilityEvidenceFingerprint = evidenceFingerprint
   }
   if (state === 'running') {
+    const executorRef = textoIntegralSeguro(input?.executorRef, 'Identificador do executor', 500)
+    if (executorRef) {
+      const executorFingerprint = hash(executorRef)
+      if (item.agentFingerprint !== null && item.agentFingerprint !== executorFingerprint) {
+        throw new Error('Delegacao ja esta vinculada a outro executor.')
+      }
+      item.agentFingerprint = executorFingerprint
+    }
     item.executionEvidenceFingerprint = evidenceFingerprint
     item.reasonFingerprint = null
   }
@@ -992,25 +1085,104 @@ function delegacaoNaoRastreada(input, agentFingerprint, evidence, timestamp) {
   }
 }
 
+function fingerprintAutoridadePermanente(policy) {
+  return hash(JSON.stringify(policy.authority.standingSelfCorrection))
+}
+
+export async function resolverAutoridadePermanenteAutocorrecao({
+  destinationCapability,
+  effectClasses,
+  risk
+} = {}) {
+  const policy = await contrato()
+  const grant = policy.authority.standingSelfCorrection
+  if (!grant.destinationCapabilities.includes(destinationCapability)) {
+    throw new Error('Capacidade fora da autoridade permanente de autocorrecao.')
+  }
+  if (!Array.isArray(effectClasses) || effectClasses.some((item) => !grant.allowedEffectClasses.includes(item))) {
+    throw new Error('Efeito fora da autoridade permanente de autocorrecao.')
+  }
+  for (const field of ['reversibility', 'reach', 'data', 'mode']) {
+    if (!grant.allowedRisk[field].includes(risk?.[field])) {
+      throw new Error('Risco fora da autoridade permanente de autocorrecao.')
+    }
+  }
+  return {
+    source: 'standing-authority',
+    parentFingerprint: fingerprintAutoridadePermanente(policy),
+    scope: grant.scope
+  }
+}
+
+function validarAutoridadePai(store, input, policy) {
+  const parentFingerprint = input?.authority?.parentFingerprint ?? null
+  if (parentFingerprint === null) return
+  if (input?.authority?.source === 'standing-authority') {
+    const grant = policy.authority.standingSelfCorrection
+    if (
+      parentFingerprint !== fingerprintAutoridadePermanente(policy) ||
+      !grant.destinationCapabilities.includes(input.target) ||
+      !Array.isArray(input.authority.effects) ||
+      input.authority.effects.some((item) => !grant.allowedEffectClasses.includes(item)) ||
+      !['reversibility', 'reach', 'data', 'mode'].every((field) =>
+        grant.allowedRisk[field].includes(input.authority.risk?.[field])
+      )
+    ) throw new Error('Envelope excede a autoridade permanente de autocorrecao.')
+    return
+  }
+  const parent = store.delegations.find((candidate) =>
+    candidate.authorityFingerprint === parentFingerprint &&
+    candidate.legacyUnverified !== true &&
+    candidate.authorityEnvelope?.inherited === true
+  )
+  if (!parent) {
+    throw new Error('Fingerprint pai nao resolve uma autoridade herdavel existente neste ciclo.')
+  }
+}
+
+function conflitoDeIdempotencia(item, proposed) {
+  return item.promptFingerprint !== proposed.promptFingerprint ||
+    item.target !== proposed.target ||
+    fingerprintAutoridadeMaterial(item.authorityEnvelope) !==
+      fingerprintAutoridadeMaterial(proposed.authorityEnvelope)
+}
+
 export async function prepararDelegacao(casa, input, { at } = {}) {
   const prompt = textoIntegralSeguro(input?.prompt, 'Prompt da delegacao', 12_000, { required: true })
   const target = textoIntegralSeguro(input?.target, 'Destino da delegacao', 500, { required: true })
   const timestamp = agora(at)
   return alterar(casa, (store, policy) => {
-    const parentFingerprint = input?.authority?.parentFingerprint ?? null
-    if (parentFingerprint !== null) {
-      const parent = store.delegations.find((candidate) =>
-        candidate.authorityFingerprint === parentFingerprint &&
-        candidate.legacyUnverified !== true &&
-        candidate.authorityEnvelope?.inherited === true
-      )
-      if (!parent) {
-        throw new Error('Fingerprint pai nao resolve uma autoridade herdavel existente neste ciclo.')
-      }
-    }
+    validarAutoridadePai(store, input, policy)
     const item = delegacaoPreparada(input, prompt, target, timestamp, policy)
     store.delegations = [...store.delegations, item].slice(-policy.delegationRetention)
     return { result: 'prepared', delegation: item }
+  })
+}
+
+export async function prepararDelegacaoIdempotente(casa, input, { at } = {}) {
+  const prompt = textoIntegralSeguro(input?.prompt, 'Prompt da delegacao', 12_000, { required: true })
+  const target = textoIntegralSeguro(input?.target, 'Destino da delegacao', 500, { required: true })
+  const idempotencyKey = textoIntegralSeguro(
+    input?.idempotencyKey,
+    'Chave de idempotencia',
+    500,
+    { required: true }
+  )
+  const timestamp = agora(at)
+  return alterar(casa, (store, policy) => {
+    validarAutoridadePai(store, input, policy)
+    const proposed = delegacaoPreparada({ ...input, idempotencyKey }, prompt, target, timestamp, policy)
+    const item = store.delegations.find((candidate) =>
+      candidate.sessionFingerprint === proposed.sessionFingerprint &&
+      candidate.correlationFingerprint === proposed.correlationFingerprint &&
+      candidate.legacyUnverified !== true
+    )
+    if (item && conflitoDeIdempotencia(item, proposed)) {
+      throw new Error('Chave de idempotencia conflita com briefing, alvo ou autoridade material diferente.')
+    }
+    if (item) return { result: 'duplicate', delegation: item, created: false }
+    store.delegations = [...store.delegations, proposed].slice(-policy.delegationRetention)
+    return { result: 'prepared', delegation: proposed, created: true }
   })
 }
 
@@ -1031,17 +1203,7 @@ export async function prepararDelegacaoVisivelIdempotente(casa, input, { at } = 
   )
   const timestamp = agora(at)
   return alterar(casa, (store, policy) => {
-    const parentFingerprint = input?.authority?.parentFingerprint ?? null
-    if (parentFingerprint !== null) {
-      const parent = store.delegations.find((candidate) =>
-        candidate.authorityFingerprint === parentFingerprint &&
-        candidate.legacyUnverified !== true &&
-        candidate.authorityEnvelope?.inherited === true
-      )
-      if (!parent) {
-        throw new Error('Fingerprint pai nao resolve uma autoridade herdavel existente neste ciclo.')
-      }
-    }
+    validarAutoridadePai(store, input, policy)
 
     const proposed = delegacaoPreparada({ ...input, idempotencyKey }, prompt, target, timestamp, policy)
     let item = store.delegations.find((candidate) =>
@@ -1051,15 +1213,7 @@ export async function prepararDelegacaoVisivelIdempotente(casa, input, { at } = 
       candidate.legacyUnverified !== true
     )
     let created = false
-    if (
-      item &&
-      (
-        item.promptFingerprint !== proposed.promptFingerprint ||
-        item.target !== proposed.target ||
-        fingerprintAutoridadeMaterial(item.authorityEnvelope) !==
-          fingerprintAutoridadeMaterial(proposed.authorityEnvelope)
-      )
-    ) {
+    if (item && conflitoDeIdempotencia(item, proposed)) {
       throw new Error('Chave de idempotencia conflita com briefing, alvo ou autoridade material diferente.')
     }
     if (!item) {
@@ -1109,6 +1263,46 @@ export async function atualizarDelegacao(casa, id, state, input = {}, { at } = {
       throw new Error('Verificacao da delegacao nao e posterior ao relato, independente e do mesmo objeto auditado.')
     }
     return aplicarTransicao(item, state, { ...input, auditProof }, policy, timestamp)
+  })
+}
+
+export async function verificarEFecharDelegacaoImplementacao(casa, id, {
+  implementationReceipt,
+  targetFingerprints,
+  notBefore
+} = {}, { at } = {}) {
+  const timestamp = agora(at)
+  return alterar(casa, async (store, policy) => {
+    const item = store.delegations.find((candidate) => candidate.id === id)
+    if (!item) throw new Error(`Delegacao inexistente: ${id}`)
+    if (item.state === 'closed' && item.finalOutcome === 'verified') {
+      return { result: 'duplicate', delegation: item }
+    }
+    if (item.state !== 'reported') {
+      throw new Error('Implementacao auditada so fecha delegacao depois do relato correlacionado.')
+    }
+    if (!implementationReceipt || !Array.isArray(targetFingerprints) || targetFingerprints.length < 1) {
+      throw new Error('Fechamento da implementacao exige recibo e alvo auditados.')
+    }
+    const proof = await resolverImplementacaoDelegadaAuditoria(casa, {
+      sessionFingerprint: item.sessionFingerprint,
+      reportActionId: item.reportAuditActionId,
+      reportEvidenceId: item.reportAuditEvidenceId,
+      mutationActionId: implementationReceipt.mutationActionId,
+      mutationEvidenceId: implementationReceipt.mutationEvidenceId,
+      verificationActionId: implementationReceipt.verificationActionId,
+      verificationEvidenceId: implementationReceipt.verificationEvidenceId,
+      targetFingerprints,
+      notBefore
+    })
+    if (proof.result !== 'verified') {
+      throw new Error('Delegacao nao possui implementacao e readback revalidados no mesmo turno auditado.')
+    }
+    aplicarTransicao(item, 'verified', {
+      auditProof: proof.auditProof,
+      summary: 'Implementacao operacional confirmada por mutacao e readback auditados.'
+    }, policy, timestamp)
+    return aplicarTransicao(item, 'closed', {}, policy, timestamp)
   })
 }
 
@@ -1179,11 +1373,21 @@ export async function proporMelhoriaOperacional(casa, input, { at } = {}) {
   const destination = textoSeguro(input?.destination, 80)
   const statement = textoSeguro(input?.statement, 500)
   if (!category || !destination || !statement) return { result: 'ignored', candidate: null }
+  const sourceRef = input?.sourceRef === undefined || input?.sourceRef === null
+    ? null
+    : normalizarSourceRef(input.sourceRef)
+  if (input?.sourceRef !== undefined && input?.sourceRef !== null && !sourceRef) {
+    throw new Error('Referencia de origem da melhoria fora do contrato.')
+  }
   const timestamp = agora(at)
   const fingerprint = hash(`${category}:${destination}:${statement.toLowerCase()}`)
   return alterar(casa, (store, policy) => {
     const existing = store.improvementCandidates.find((item) => item.fingerprint === fingerprint)
     if (existing) {
+      if (sourceRef && existing.sourceRefs.some((item) => chaveSourceRef(item) === chaveSourceRef(sourceRef))) {
+        return { result: 'duplicate-evidence', candidate: existing }
+      }
+      if (sourceRef) existing.sourceRefs = [...existing.sourceRefs, sourceRef].slice(-MAX_IMPROVEMENT_SOURCE_REFS)
       existing.occurrences += 1
       if (existing.status === 'observing' && existing.occurrences >= policy.improvement.minimumOccurrencesReady) {
         existing.transitionHistory.push({
@@ -1204,6 +1408,7 @@ export async function proporMelhoriaOperacional(casa, input, { at } = {}) {
       category,
       destination,
       statement,
+      sourceRefs: sourceRef ? [sourceRef] : [],
       status: 'observing',
       occurrences: 1,
       artifact: null,

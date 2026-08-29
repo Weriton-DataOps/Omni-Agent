@@ -8,10 +8,16 @@ import { abrirTurnoAuditoria, registrarAcaoAuditoria } from '../runtime/auditori
 import {
   bloquearAutomacaoFalha,
   caminhoDaAutomacaoFalhas,
+  confirmarInicioAutomacaoFalha,
   concluirAutomacaoFalha,
+  prepararDespachoAutomaticoFalha,
   reivindicarAutomacaoFalha,
   sincronizarAutomacaoFalhas
 } from '../runtime/automacao-falhas.mjs'
+import {
+  adaptarInicioSubagenteClaude,
+  registrarEntregaClaude
+} from '../runtime/adaptador-claude-delegacao.mjs'
 import {
   analisarPadraoFalha,
   avaliarPadraoFalha,
@@ -21,11 +27,43 @@ import {
   vinculoVerificacaoFalha
 } from '../runtime/falhas.mjs'
 
+let startSequence = 0
+
+async function iniciarTrabalhoReal(casa, id, { at } = {}) {
+  startSequence += 1
+  const sessionId = `failure-worker-${startSequence}-${id}`
+  await abrirTurnoAuditoria(casa, {
+    session_id: sessionId,
+    prompt: 'Inicie o executor real da validação de falha.'
+  }, { at })
+  const dispatch = await prepararDespachoAutomaticoFalha(casa, {
+    sessionId
+  }, { at })
+  assert.equal(dispatch.result, 'dispatch-required')
+  await registrarEntregaClaude(casa, dispatch.request, { at })
+  const adapter = await adaptarInicioSubagenteClaude(casa, {
+    hook_event_name: 'SubagentStart',
+    session_id: sessionId,
+    delegation_id: dispatch.request.delegationId,
+    agent_id: `subagent-${startSequence}`,
+    agent_type: 'background-subagent',
+    cwd: casa
+  }, { at })
+  const started = adapter.automation ?? await confirmarInicioAutomacaoFalha(casa, {
+    sessionId,
+    delegationId: dispatch.request.delegationId,
+    executorId: `subagent-${startSequence}`
+  }, { at })
+  assert.equal(started.result, 'started')
+  if (id) assert.equal(started.job.patternId, id)
+  return { ...started, prompt: dispatch.prompt, delegation: dispatch.delegation }
+}
+
 async function testarCorrecaoFalha(casa, id, input, options = {}) {
   const automation = await sincronizarAutomacaoFalhas(casa)
   let job = automation.jobs.find((item) => item.patternId === id && ['queued', 'running'].includes(item.state))
   if (job?.state === 'queued') {
-    job = (await reivindicarAutomacaoFalha(casa, { executorId: `executor-test-${id}` })).job
+    job = (await iniciarTrabalhoReal(casa, id, options)).job
   }
   const pattern = (await lerFalhas(casa)).patterns.find((item) => item.id === id)
   const bindingMarker = vinculoVerificacaoFalha(pattern, job?.id)
@@ -71,7 +109,7 @@ async function candidate(casa, suffix = 'base') {
   return registrarFalha(casa, { ...failure, evidenceId: `${suffix}-run-3` })
 }
 
-test('candidata cria um unico trabalho idempotente e reivindicavel', async () => {
+test('candidata cria um unico trabalho e somente evento started confirma inicio', async () => {
   const casa = await home()
   try {
     const failure = await candidate(casa)
@@ -82,29 +120,35 @@ test('candidata cria um unico trabalho idempotente e reivindicavel', async () =>
     assert.equal(second.jobs[0].patternId, failure.pattern.id)
     assert.equal(second.jobs[0].state, 'queued')
 
-    const claimed = await reivindicarAutomacaoFalha(casa, { executorId: 'executor-background-1' })
-    assert.equal(claimed.result, 'claimed')
-    assert.equal(claimed.job.state, 'running')
-    assert.equal(claimed.job.dispatchState, 'requested')
-    assert.ok(Number.isFinite(Date.parse(claimed.job.dispatchRequestedAt)))
-    assert.match(claimed.prompt, /subagente.*segundo plano/i)
-    assert.match(claimed.prompt, /duas vezes de verdade/i)
-    assert.match(claimed.prompt, /falha-evidencias/i)
-    assert.match(claimed.prompt, /--job/i)
-    assert.match(claimed.prompt, /bindingMarker/)
-    assert.match(claimed.prompt, /ação sem esse marcador não pertence/i)
-    assert.match(claimed.prompt, /--acao-auditoria.*--evidencia-auditoria/i)
-    assert.doesNotMatch(claimed.prompt, /--resultado|--falhou/i)
-    assert.match(claimed.prompt, /autoridade herdada da tarefa original/i)
-    assert.match(claimed.prompt, /envelope de autoridade.*objetivo.*alvo.*escopo material.*efeitos/i)
-    assert.match(claimed.prompt, /checkpoint verificável/i)
-    assert.match(claimed.prompt, /rollback proporcional/i)
-    assert.match(claimed.prompt, /verifique o resultado real.*evidência/i)
-    assert.doesNotMatch(claimed.prompt, /não faça commit|exigem autorização do proprietário/i)
-    assert.match(claimed.prompt, new RegExp(failure.pattern.id))
+    const legacy = await reivindicarAutomacaoFalha(casa, { executorId: 'executor-background-1' })
+    assert.equal(legacy.result, 'start-event-required')
+    assert.equal(legacy.job.state, 'queued')
+    assert.equal(legacy.job.attempts, 0)
 
-    const empty = await reivindicarAutomacaoFalha(casa, { executorId: 'executor-background-2' })
-    assert.equal(empty.result, 'busy')
+    const started = await iniciarTrabalhoReal(casa, failure.pattern.id)
+    assert.equal(started.job.state, 'running')
+    assert.equal(started.job.dispatchState, 'requested')
+    assert.equal(started.job.attempts, 1)
+    assert.ok(Number.isFinite(Date.parse(started.job.dispatchRequestedAt)))
+    assert.match(started.prompt, /executor temporário.*canal externo/i)
+    assert.match(started.prompt, /duas vezes de verdade/i)
+    assert.match(started.prompt, /falha-evidencias/i)
+    assert.match(started.prompt, /--job/i)
+    assert.match(started.prompt, /bindingMarker/)
+    assert.match(started.prompt, /ação sem esse marcador não pertence/i)
+    assert.match(started.prompt, /--acao-auditoria.*--evidencia-auditoria/i)
+    assert.doesNotMatch(started.prompt, /--resultado|--falhou/i)
+    assert.match(started.prompt, /autoridade herdada da tarefa original/i)
+    assert.match(started.prompt, /envelope de autoridade.*objetivo.*alvo.*escopo material.*efeitos/i)
+    assert.match(started.prompt, /checkpoint verificável/i)
+    assert.match(started.prompt, /rollback proporcional/i)
+    assert.match(started.prompt, /verifique o resultado real.*evidência/i)
+    assert.doesNotMatch(started.prompt, /não faça commit|exigem autorização do proprietário/i)
+    assert.match(started.prompt, new RegExp(failure.pattern.id))
+
+    const duplicate = await reivindicarAutomacaoFalha(casa, { executorId: 'executor-background-2' })
+    assert.equal(duplicate.result, 'already-started')
+    assert.equal(duplicate.job.attempts, 1)
   } finally {
     await rm(casa, { recursive: true, force: true })
   }
@@ -114,8 +158,8 @@ test('trabalho não pode concluir antes da análise, dois testes e eval', async 
   const casa = await home()
   try {
     await candidate(casa, 'sem-eval')
-    const claimed = await reivindicarAutomacaoFalha(casa, { executorId: 'executor-sem-eval' })
-    const result = await concluirAutomacaoFalha(casa, claimed.job.id, 'evidencia-inventada')
+    const started = await iniciarTrabalhoReal(casa, null)
+    const result = await concluirAutomacaoFalha(casa, started.job.id, 'evidencia-inventada')
     assert.equal(result.result, 'not-evaluated')
     assert.equal(result.job.state, 'running')
     assert.equal(result.job.evidenceFingerprint, null)
@@ -164,41 +208,43 @@ test('store de automacao v1 migra com backup sem perder trabalhos', async () => 
     await writeFile(path, raw, 'utf8')
 
     const migrated = await sincronizarAutomacaoFalhas(casa)
-    assert.equal(migrated.schemaVersion, 3)
+    assert.equal(migrated.schemaVersion, 4)
     assert.equal(migrated.jobs.length, 1)
+    assert.equal(migrated.jobs[0].legacyAttempts, 0)
     assert.equal(await readFile(`${path}.v1.backup`, 'utf8'), raw)
   } finally {
     await rm(casa, { recursive: true, force: true })
   }
 })
 
-test('lease expirado recoloca trabalho na fila e bloqueio impede repeticao da geracao', async () => {
+test('lease expirado e falha tecnica recolocam o mesmo trabalho na fila', async () => {
   const casa = await home()
   try {
     await candidate(casa, 'lease')
-    const claimed = await reivindicarAutomacaoFalha(
-      casa,
-      { executorId: 'executor-lease' },
-      { at: '2026-08-27T01:00:00.000Z' }
-    )
+    const started = await iniciarTrabalhoReal(casa, null, { at: '2026-08-27T01:00:00.000Z' })
+    assert.equal(started.job.attempts, 1)
     const expired = await sincronizarAutomacaoFalhas(casa, { at: '2026-08-27T02:01:00.000Z' })
     assert.equal(expired.jobs[0].state, 'queued')
+    assert.equal(expired.jobs[0].reasonClass, 'lease-expired')
 
-    const reclaimed = await reivindicarAutomacaoFalha(
+    const restarted = await iniciarTrabalhoReal(casa, null, { at: '2026-08-27T02:02:00.000Z' })
+    assert.equal(restarted.job.attempts, 2)
+    const retry = await bloquearAutomacaoFalha(
       casa,
-      { executorId: 'executor-reclaimed' },
-      { at: '2026-08-27T02:02:00.000Z' }
+      restarted.job.id,
+      'a primeira estratégia não encontrou a evidência',
+      {
+        kind: 'retryable',
+        evidenceId: 'audit-evidence-lease-retry',
+        strategy: 'buscar somente pelo caminho antigo',
+        at: '2026-08-27T02:03:00.000Z'
+      }
     )
-    const blocked = await bloquearAutomacaoFalha(
-      casa,
-      reclaimed.job.id,
-      'teste exige nova permissao do ambiente',
-      { at: '2026-08-27T02:03:00.000Z' }
-    )
-    assert.equal(blocked.result, 'blocked')
+    assert.equal(retry.result, 'retry-scheduled')
     const stable = await sincronizarAutomacaoFalhas(casa, { at: '2026-08-27T02:04:00.000Z' })
     assert.equal(stable.jobs.length, 1)
-    assert.equal(stable.jobs[0].state, 'blocked')
+    assert.equal(stable.jobs[0].state, 'queued')
+    assert.equal(stable.jobs[0].reasonClass, 'retryable')
     assert.equal(stable.jobs[0].reasonFingerprint.length, 64)
   } finally {
     await rm(casa, { recursive: true, force: true })
@@ -245,7 +291,7 @@ test('falhas do proprio executor ficam fora da fila automatica', async () => {
   try {
     const failure = {
       agent: 'omni',
-      action: 'executar Agent',
+      action: 'executar delegation-control',
       failureClass: 'tool-error',
       signature: 'executor em segundo plano falhou'
     }
@@ -263,8 +309,8 @@ test('eval concluido nao rouba do subagente o fechamento com evidencia', async (
   const casa = await home()
   try {
     const failure = await candidate(casa, 'closing-race')
-    const claimed = await reivindicarAutomacaoFalha(casa, { executorId: 'executor-closing-race' })
-    const generation = claimed.job.generationFingerprint
+    const started = await iniciarTrabalhoReal(casa, failure.pattern.id)
+    const generation = started.job.generationFingerprint
     await analisarPadraoFalha(casa, failure.pattern.id, {
       generation,
       rootCause: 'o comando escolhia uma pasta sem permissao de escrita',
@@ -286,7 +332,7 @@ test('eval concluido nao rouba do subagente o fechamento com evidencia', async (
 
     const completed = await concluirAutomacaoFalha(
       casa,
-      claimed.job.id,
+      started.job.id,
       'closing-race-evidence-id'
     )
     assert.equal(completed.result, 'completed')
@@ -301,8 +347,8 @@ test('fechamento tardio só repara job avaliado sem fingerprint', async () => {
   const casa = await home()
   try {
     const failure = await candidate(casa, 'late-close')
-    const claimed = await reivindicarAutomacaoFalha(casa, { executorId: 'executor-late-close' })
-    const generation = claimed.job.generationFingerprint
+    const started = await iniciarTrabalhoReal(casa, failure.pattern.id)
+    const generation = started.job.generationFingerprint
     await analisarPadraoFalha(casa, failure.pattern.id, {
       generation,
       rootCause: 'o executor usava um alvo sem a permissão necessária',
@@ -327,7 +373,7 @@ test('fechamento tardio só repara job avaliado sem fingerprint', async () => {
 
     const repaired = await concluirAutomacaoFalha(
       casa,
-      claimed.job.id,
+      started.job.id,
       'late-closing-evidence-id'
     )
     assert.equal(repaired.result, 'completed')

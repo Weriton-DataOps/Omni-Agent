@@ -176,7 +176,9 @@ silenciosamente para a ferramenta.
 
 ## Regra de evolução
 
-Alterações aprendidas entram como preferências ou candidatas. Uma candidata recebe versão e é ativada
-para teste com aprovação explícita do proprietário. A promoção de `candidate` para `approved` depende
-do eval comportamental comparativo — cujos casos devem trazer o `esperado` como EXEMPLO real (não
-descrição), semeados pela galeria acima — e ainda não foi executada.
+Alterações aprendidas entram como preferências ou candidatas. Uma candidata dispara automaticamente
+o eval comparativo controlado quando reúne evidência suficiente. Se todos os gates passarem, o ciclo
+promove, versiona, publica, instala e confirma por readback sem pedir uma nova autorização; qualquer
+divergência volta ao eval ou à autocorreção. Os casos trazem o `esperado` como EXEMPLO real (não mera
+descrição), semeados pela galeria acima. O proprietário continua sendo a fonte dos votos e pode rever
+ou reverter uma promoção, mas não é transformado em pedágio operacional a cada ajuste.

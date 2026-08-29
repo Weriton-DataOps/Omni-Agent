@@ -10,7 +10,7 @@ import { lerFalhas } from './falhas.mjs'
 import { lerMemoria, pareceConterSegredo, registrarMemoriaAnalisada } from './memoria.mjs'
 import { assinaturaDiagnosticaFalha, observarFerramenta, observarPrompt } from './observador.mjs'
 import { analisarExperiencias } from './pipeline-memoria.mjs'
-import { materializarMelhoriaConfigurada } from './evolucao.mjs'
+import { materializarMelhoriaComBaselineConfigurada } from './automacao-melhorias.mjs'
 import { fingerprintObjetivo } from './passe.mjs'
 
 export const DAILY_SCAN_SCHEMA_VERSION = 2
@@ -780,7 +780,7 @@ async function processarAtividade(casa, activity, cobertura) {
       })
       if (improvement.candidate) results.improvements += 1
       if (improvement.candidate?.status === 'ready') {
-        const materialization = await materializarMelhoriaConfigurada(casa, improvement.candidate.id)
+        const materialization = await materializarMelhoriaComBaselineConfigurada(casa, improvement.candidate.id)
         recordMaterialization({
           candidateId: improvement.candidate.id,
           destination: improvement.candidate.destination,

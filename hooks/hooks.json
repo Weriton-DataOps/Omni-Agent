@@ -9,7 +9,7 @@
             "type": "command",
             "command": "node",
             "args": ["${CLAUDE_PLUGIN_ROOT}/runtime/hook-varredura.mjs"],
-            "timeout": 120,
+            "timeout": 900,
             "async": true
           }
         ]
@@ -131,7 +131,7 @@
             "type": "command",
             "command": "node",
             "args": ["${CLAUDE_PLUGIN_ROOT}/runtime/hook-varredura.mjs"],
-            "timeout": 120,
+            "timeout": 900,
             "async": true
           }
         ]

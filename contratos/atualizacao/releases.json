@@ -168,6 +168,18 @@
         "Fixou que resumir muda comprimento, nao identidade, e tornou o exemplo trivial e o eval curto reconheciveis como Omni.",
         "Separou achado novo, que continua bloqueando a release, de falha comprovadamente anterior ao marco explicito da 0.21.2, que permanece auditavel sem condenar correcoes futuras."
       ]
+    },
+    {
+      "version": "0.22.0",
+      "changes": [
+        "Cravou o Omni como assistente pessoal independente e separou integralmente seu nucleo de iniciativas externas futuras.",
+        "Ligou falhas e melhorias a uma unica porta neutra, com inicio real, arbitragem, retry diferente e verificacao antes do fechamento.",
+        "Fechou o ciclo autonomo de correcao operacional ate commit, push, instalacao e readback do plugin realmente carregado.",
+        "Automatizou o eval de personalidade, a correcao limitada, o reteste e a release, vinculando a aprovacao ao payload canonico exato.",
+        "Recuperou locks orfaos, baselines legados comprovaveis e filas concorrentes sem fabricar sucesso nem perder a trilha auditavel.",
+        "Corrigiu a montagem do contexto e compactou os invariantes para manter papel, personalidade, delegacao e autocorrecao no caminho rapido.",
+        "Restringiu aprovacao manual somente a admissao de uma capacidade realmente nova; correcoes ja autorizadas seguem automaticamente."
+      ]
     }
   ]
 }

@@ -189,17 +189,20 @@
     },
     {
       "name": "self-improvement-pipeline",
-      "description": "Classificar aprendizado, avaliar proposta reutilizável e materializar artefatos somente após aprovação explícita.",
+      "description": "Admitir uma capacidade ou skill realmente nova no papel do Omni; correções operacionais, personalidade, procedimentos e regras já cobertas seguem seus ciclos autônomos.",
       "when_to_use": [
-        "atalho validado",
-        "aprendizado reutilizável comprovado",
-        "decisão explícita do proprietário"
+        "proposta de nova capacidade ou skill",
+        "evidência repetível de que a capacidade pertence ao papel do Omni",
+        "decisão explícita do proprietário sobre a admissão"
       ],
       "when_not_to_use": [
         "experiência transitória",
         "memória pessoal",
         "evidência incompleta",
-        "promoção automática"
+        "correção de falha ou runtime",
+        "ajuste de personalidade ou eval",
+        "regra operacional ou procedimento já aderente ao papel",
+        "atalho que não cria capacidade nova"
       ],
       "inputs": [
         "validatedSource",
@@ -216,7 +219,7 @@
       "permissions": [
         "read-local-runtime",
         "write-local-runtime",
-        "write-source-tree-on-explicit-approval"
+        "admit-new-capability-to-source-tree-on-explicit-approval"
       ],
       "latency": "local",
       "cost": "none",

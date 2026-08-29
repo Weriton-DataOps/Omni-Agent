@@ -255,6 +255,8 @@ export async function atualizarPlugin({
     loadedVersion,
     previousInstalledVersion: before.version,
     installedVersion: after.version,
+    installedFingerprint: installedIntegrity.fingerprint,
+    installedRoot: updatedRoot,
     latestVersion: remote.latestVersion,
     changes,
     verifiedBy: remote.latestVersion

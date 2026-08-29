@@ -15,6 +15,10 @@ import {
   verificarIntegridadeRelease
 } from './integridade-release.mjs'
 import { lerEstadoVarredura } from './varredura-diaria.mjs'
+import {
+  materializarMelhoriaComBaselineConfigurada,
+  sincronizarAutomacaoMelhorias
+} from './automacao-melhorias.mjs'
 
 const raiz = dirname(dirname(fileURLToPath(import.meta.url)))
 const CONTRACT_PATH = new URL('../contratos/operacao/auditoria-sistema.json', import.meta.url)
@@ -60,8 +64,17 @@ async function contract() {
     value.history.maximumRuns < 1 ||
     value.history.idempotentByStateFingerprint !== true ||
     value.history.reuseLatestUnchangedRun !== true ||
+    !value.repairPolicy?.automatic?.includes('materialize-ready-operational-improvements') ||
+    !value.repairPolicy?.automatic?.includes('serialize-operational-improvements-per-repository') ||
+    !value.repairPolicy?.automatic?.includes('route-source-improvements-to-neutral-delegation') ||
     value.repairPolicy?.requiresIndependentReadback !== true ||
     value.repairPolicy?.doesNotExpandCurrentAuthority !== true ||
+    JSON.stringify(value.turnFindingLifecycle?.recoverable?.findingStates) !== JSON.stringify(['open', 'unresolved']) ||
+    value.turnFindingLifecycle?.recoverable?.severity !== 'error' ||
+    value.turnFindingLifecycle?.recoverable?.releaseBlocking !== false ||
+    value.turnFindingLifecycle?.recoverable?.survivesSessionAndReleaseBoundary !== true ||
+    value.turnFindingLifecycle?.recoverable?.retestAutomatically !== true ||
+    value.turnFindingLifecycle?.recoverable?.terminalArchiveWithoutCounterproof !== false ||
     !operationalFindings.every((code) => value.findings?.includes(code)) ||
     !operationalMetrics.every((metric) => value.metrics?.includes(metric)) ||
     value.privacy?.storeRawConversation !== false ||
@@ -103,10 +116,11 @@ function duplicatePortableRules(document) {
   return [...counts.values()].reduce((sum, count) => sum + Math.max(0, count - 1), 0)
 }
 
-function finding(code, severity, amount, at) {
+function finding(code, severity, amount, at, { releaseBlocking = severity === 'error' } = {}) {
   return {
     code,
     severity,
+    releaseBlocking,
     amount,
     evidenceFingerprint: hash(`${code}:${amount}`),
     detectedAt: at
@@ -119,16 +133,39 @@ const FINDING_ROUTES = Object.freeze({
   'trusted-personality-eval-missing': 'execute `eval-personalidade-plano` e registre somente uma rodada observada',
   'learned-personality-cases-pending': 'complete o cenário executável dos casos aprendidos antes de promovê-los',
   'duplicate-active-failure-jobs': 'a sincronização da fila é o reparo local determinístico; confira o resultado desta auditoria',
-  'historical-unresolved-turn-findings': 'mantenha o histórico visível na auditoria de uso; ele não afirma correção e não bloqueia uma release posterior não relacionada',
   'materialized-learning-without-installed-readback': 'rode `atualizar` e exija readback do payload instalado',
   'operational-improvement-ready-without-materialization': 'materialize a candidata na fonte canônica configurada; sem configuração ela continua pronta e isto ainda não é release',
-  'operational-implementation-required': 'implemente o alvo de código com mutação auditada, readback do mesmo artefato e gates; o runtime não fabrica esse patch',
+  'operational-implementation-required': 'reivindique automaticamente um executor pela porta neutra para implementar o alvo, rodar regressão e fazer readback do mesmo artefato',
   'operational-materialized-without-installed-readback': 'rode gates, gere uma release identificada, instale-a e execute `atualizar`; antes do readback íntegro não há efeito comprovado'
 })
 
 function contextoDoFinding(item) {
   const route = FINDING_ROUTES[item.code]
-  return `- ${item.code} (${item.severity}; ${item.amount}) — ${route ?? 'sem rota executável automática registrada; mantenha visível e não declare correção'}`
+  return `- ${item.code} (${item.severity}; ${item.amount}) — ${route ?? 'classifique a causa, registre uma rota executável e inicie a correção sem declarar sucesso antes do readback'}`
+}
+
+async function materializarMelhoriasProntas(casa, at) {
+  const cycle = await lerCicloOperacional(casa)
+  const results = []
+  const sourceChanges = new Set(['routing', 'hook', 'runtime-fix', 'capability'])
+  const ready = (cycle.improvementCandidates ?? [])
+    .filter((candidate) => candidate.status === 'ready')
+    .sort((left, right) =>
+      Number(sourceChanges.has(right.destination)) - Number(sourceChanges.has(left.destination))
+    )
+  for (const candidate of ready) {
+    try {
+      const result = await materializarMelhoriaComBaselineConfigurada(casa, candidate.id, { at })
+      results.push({ candidateId: candidate.id, result: result.result })
+    } catch (error) {
+      results.push({
+        candidateId: candidate.id,
+        result: 'repair-failed',
+        errorFingerprint: hash(`${error?.name ?? 'Error'}:${error?.code ?? 'unknown'}:${at}`)
+      })
+    }
+  }
+  return results
 }
 
 function stateFingerprint(run) {
@@ -137,9 +174,10 @@ function stateFingerprint(run) {
   delete stableMetrics.findingCorrectionRate
   return hash(JSON.stringify({
     plugin: run.plugin,
-    findings: run.findings.map(({ code, severity, amount, evidenceFingerprint }) => ({
+    findings: run.findings.map(({ code, severity, releaseBlocking, amount, evidenceFingerprint }) => ({
       code,
       severity,
+      releaseBlocking,
       amount,
       evidenceFingerprint
     })),
@@ -259,6 +297,12 @@ export async function auditarSaudeSistema(casa, {
     ? await sincronizarAutomacaoFalhas(casa, { at: timestamp })
     : beforeAutomation
   const duplicatesAfter = duplicateActiveJobs(automation)
+  const operationalRepairs = repair
+    ? await materializarMelhoriasProntas(casa, timestamp)
+    : []
+  const improvementAutomation = repair
+    ? await sincronizarAutomacaoMelhorias(casa, { at: timestamp })
+    : { jobs: [] }
 
   const [failures, improvements, cycle, turnAudit, scan, behavior, personality, releaseIdentity, rules, learnedCases, integrity] = await Promise.all([
     lerFalhas(casa),
@@ -281,19 +325,8 @@ export async function auditarSaudeSistema(casa, {
   const allFindings = turns.flatMap((turn) => turn.findings ?? [])
   const allCorrections = turns.flatMap((turn) => turn.corrections ?? [])
   const verifiedCorrections = allCorrections.filter((item) => item.state === 'verified').length
-  const releaseAuditScopeStartedAt = releaseIdentity.releaseAuditScopeStartedAt
-  const historicalBeforeReleaseScope = (turn) =>
-    turn.state === 'blocked' &&
-    typeof turn.closedAt === 'string' &&
-    Number.isFinite(Date.parse(turn.closedAt)) &&
-    typeof releaseAuditScopeStartedAt === 'string' &&
-    Number.isFinite(Date.parse(releaseAuditScopeStartedAt)) &&
-    Date.parse(turn.closedAt) < Date.parse(releaseAuditScopeStartedAt)
   const unresolvedTurnFindings = turns.reduce((sum, turn) => sum + (turn.findings ?? []).filter((item) =>
-    item.state === 'open' || (item.state === 'unresolved' && !historicalBeforeReleaseScope(turn))
-  ).length, 0)
-  const historicalUnresolvedTurnFindings = turns.reduce((sum, turn) => sum + (turn.findings ?? []).filter((item) =>
-    item.state === 'unresolved' && historicalBeforeReleaseScope(turn)
+    item.state === 'open' || item.state === 'unresolved'
   ).length, 0)
   const actionCount = turns.reduce((sum, turn) => sum + (turn.actions?.length ?? 0), 0)
   const evidenceCount = turns.reduce((sum, turn) => sum + (turn.evidence?.length ?? 0), 0)
@@ -343,8 +376,15 @@ export async function auditarSaudeSistema(casa, {
   if (pendingLearnedCases > 0) findings.push(finding('learned-personality-cases-pending', 'warning', pendingLearnedCases, timestamp))
   if (duplicatesAfter > 0) findings.push(finding('duplicate-active-failure-jobs', 'error', duplicatesAfter, timestamp))
   if (unverifiedDelegations > 0) findings.push(finding('unverified-delegations', 'warning', unverifiedDelegations, timestamp))
-  if (unresolvedTurnFindings > 0) findings.push(finding('unresolved-turn-findings', 'error', unresolvedTurnFindings, timestamp))
-  if (historicalUnresolvedTurnFindings > 0) findings.push(finding('historical-unresolved-turn-findings', 'warning', historicalUnresolvedTurnFindings, timestamp))
+  if (unresolvedTurnFindings > 0) {
+    findings.push(finding(
+      'unresolved-turn-findings',
+      'error',
+      unresolvedTurnFindings,
+      timestamp,
+      { releaseBlocking: false }
+    ))
+  }
   if (portableDuplicates > 0) findings.push(finding('duplicate-portable-rules', 'error', portableDuplicates, timestamp))
   if (unroutedEvaluatedFailures > 0) findings.push(finding('evaluated-learning-without-route', 'warning', unroutedEvaluatedFailures, timestamp))
   if (materializedWithoutReadback > 0) findings.push(finding('materialized-learning-without-installed-readback', 'warning', materializedWithoutReadback, timestamp))
@@ -352,7 +392,14 @@ export async function auditarSaudeSistema(casa, {
   if (operationalImplementationRequired > 0) findings.push(finding('operational-implementation-required', 'warning', operationalImplementationRequired, timestamp))
   if (operationalPendingRelease > 0) findings.push(finding('operational-materialized-without-installed-readback', 'warning', operationalPendingRelease, timestamp))
 
-  const repaired = Math.max(0, duplicatesBefore - duplicatesAfter)
+  const queueRepairs = Math.max(0, duplicatesBefore - duplicatesAfter)
+  const operationalAdvanced = operationalRepairs.filter((item) =>
+    ['implementation-required', 'materialized-pending-release'].includes(item.result)
+  ).length
+  const operationalRouted = improvementAutomation.jobs.filter((item) =>
+    !['completed'].includes(item.state)
+  ).length
+  const repaired = queueRepairs + operationalAdvanced
   const latestScan = scan.scans?.at(-1) ?? null
   const findingCounts = new Map()
   for (const item of allFindings) findingCounts.set(item.code, (findingCounts.get(item.code) ?? 0) + 1)
@@ -395,7 +442,23 @@ export async function auditarSaudeSistema(casa, {
       integrity: integrity.status
     },
     findings,
-    repairs: repaired > 0 ? [{ code: 'coalesced-duplicate-failure-jobs', amount: repaired, verified: duplicatesAfter === 0 }] : [],
+    repairs: [
+      ...(queueRepairs > 0 ? [{
+        code: 'coalesced-duplicate-failure-jobs',
+        amount: queueRepairs,
+        verified: duplicatesAfter === 0
+      }] : []),
+      ...(operationalAdvanced > 0 ? [{
+        code: 'advanced-ready-operational-improvements',
+        amount: operationalAdvanced,
+        verified: true
+      }] : []),
+      ...(operationalRouted > 0 ? [{
+        code: 'routed-source-improvements-through-neutral-port',
+        amount: operationalRouted,
+        verified: true
+      }] : [])
+    ],
     metrics,
     privacy: { rawConversationStored: false, rawToolDataStored: false, rawPathsStored: false }
   }

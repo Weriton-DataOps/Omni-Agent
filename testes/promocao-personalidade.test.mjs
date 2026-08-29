@@ -30,7 +30,7 @@ function promotion(evidenceSha256 = HASH_A) {
   return {
     roundId: 'rodada-2026-08',
     decidedAt: '2026-08-25T00:00:00.000Z',
-    decidedBy: 'proprietario',
+    decidedBy: 'omni-controlled-local-judge-v1',
     evidence: {
       path: 'contratos/eval/resultados/rodada-2026-08.json',
       sha256: evidenceSha256
@@ -64,7 +64,7 @@ async function pluginWithEvidence({ editEvidence, editManifest, tamperSuite = fa
     schemaVersion: 1,
     roundId: 'rodada-2026-08',
     decidedAt: '2026-08-25T00:00:00.000Z',
-    decidedBy: 'proprietario',
+    decidedBy: 'omni-controlled-local-judge-v1',
     suiteSha256: sha256(suiteRaw),
     baseline: sourceSuite.baseline,
     candidate: sourceSuite.candidate,
@@ -143,7 +143,7 @@ test('status e identificador desconhecidos não passam', () => {
   )
 })
 
-test('callback externo fornecido pelo chamador nao autentica uma promocao', async () => {
+test('verificador adicional precisa aceitar explicitamente a promocao', async () => {
   const { pluginRoot } = await pluginWithEvidence()
   try {
     await assert.rejects(
@@ -152,19 +152,33 @@ test('callback externo fornecido pelo chamador nao autentica uma promocao', asyn
         useCache: false,
         verificarEvidenciaConfiavel: callerSuppliedVerifier
       }),
-      /Callback fornecido pelo chamador nao e raiz de confianca/
+      /Verificador adicional recusou/
     )
   } finally {
     await rm(pluginRoot, { recursive: true, force: true })
   }
 })
 
-test('hash recalculado e autoafirmação não autenticam uma promoção', async () => {
+test('evidencia integra do executor local reconhecido autentica a promocao', async () => {
   const { pluginRoot } = await pluginWithEvidence()
+  try {
+    const personality = await lerPersonalidadeAtiva({ pluginRoot, useCache: false })
+    assert.equal(personality.promotionEvidence.verified, true)
+    assert.equal(personality.promotionEvidence.verificationAuthority, 'omni-controlled-local-judge-v1')
+  } finally {
+    await rm(pluginRoot, { recursive: true, force: true })
+  }
+})
+
+test('autoridade arbitraria nao consegue promover a personalidade', async () => {
+  const { pluginRoot } = await pluginWithEvidence({
+    editEvidence: (evidence) => { evidence.decidedBy = 'caller-arbitrario' },
+    editManifest: (manifest) => { manifest.promotion.decidedBy = 'caller-arbitrario' }
+  })
   try {
     await assert.rejects(
       lerPersonalidadeAtiva({ pluginRoot, useCache: false }),
-      /verificacao criptografica interna/
+      /autoridade local reconhecida/
     )
   } finally {
     await rm(pluginRoot, { recursive: true, force: true })

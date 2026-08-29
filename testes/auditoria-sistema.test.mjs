@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -22,6 +23,7 @@ import {
 } from '../runtime/auditoria-autocorrecao.mjs'
 import {
   fingerprintSemanticoMelhoria,
+  lerCicloOperacional,
   marcarMelhoriaOperacional,
   observarDelegacao,
   proporMelhoriaOperacional
@@ -29,6 +31,7 @@ import {
 import { registrarFalha } from '../runtime/falhas.mjs'
 import { calcularFingerprintPayload } from '../runtime/integridade-release.mjs'
 import { auditarAntesDaRelease } from '../runtime/release-gate.mjs'
+import { configurarRepositorioCanonico } from '../runtime/evolucao.mjs'
 
 async function temporary(prefix) {
   return mkdtemp(join(tmpdir(), prefix))
@@ -51,6 +54,7 @@ async function pluginFixture({
     'utf8'
   )
   await mkdir(join(root, '.claude-plugin'), { recursive: true })
+  await writeFile(join(root, 'package.json'), `${JSON.stringify({ name: 'omni-agent', version })}\n`, 'utf8')
   const integrity = await calcularFingerprintPayload(root)
   await writeFile(
     join(root, '.claude-plugin', 'plugin.json'),
@@ -71,6 +75,17 @@ async function pluginFixture({
     }, null, 2)}\n`,
     'utf8'
   )
+  for (const args of [
+    ['init'],
+    ['config', 'user.email', 'omni-tests@example.invalid'],
+    ['config', 'user.name', 'Omni Tests'],
+    ['config', 'core.autocrlf', 'false'],
+    ['add', '.'],
+    ['commit', '-m', 'fixture baseline']
+  ]) {
+    const result = spawnSync('git', args, { cwd: root, encoding: 'utf8', windowsHide: true })
+    assert.equal(result.status, 0, result.stderr || result.stdout)
+  }
   return root
 }
 
@@ -167,7 +182,7 @@ test('leitura do histórico vazio é neutra e não cria aprovação', async () =
   }
 })
 
-test('achados entram uma vez no contexto e não fabricam rota de reparo', async () => {
+test('achados entram uma vez no contexto com rota executavel sem fabricar sucesso', async () => {
   const casa = await temporary('omni-system-audit-surface-home-')
   const pluginRoot = await pluginFixture()
   try {
@@ -188,8 +203,8 @@ test('achados entram uma vez no contexto e não fabricam rota de reparo', async 
     })
     assert.match(first, /AUDITORIA SISTÊMICA/)
     assert.match(first, /unverified-delegations/)
-    assert.match(first, /sem rota executável automática registrada/i)
-    assert.match(first, /não declare correção/i)
+    assert.match(first, /registre uma rota executável e inicie a correção/i)
+    assert.match(first, /sem declarar sucesso/i)
     assert.equal(await consumirContextoAuditoriaSistema(casa), null)
   } finally {
     await rm(casa, { recursive: true, force: true })
@@ -259,12 +274,18 @@ test('gate before-release bloqueia erro e permite somente avisos', async () => {
     const observing = await auditarAntesDaRelease({ casa, pluginRoot })
     assert.equal(observing.ok, true)
     assert.equal(observing.trigger, 'before-release')
+    assert.deepEqual(observing.blockingErrors, [])
+    assert.deepEqual(observing.recoverableErrors, [])
     assert.ok(observing.warnings.length >= 1)
 
     await writeFile(join(pluginRoot, 'runtime', 'fixture.txt'), 'drift depois da identidade\n', 'utf8')
     const blocked = await auditarAntesDaRelease({ casa, pluginRoot })
     assert.equal(blocked.ok, false)
     assert.ok(blocked.errors.some((item) => item.code === 'release-integrity-drift'))
+    assert.ok(blocked.blockingErrors.some((item) =>
+      item.code === 'release-integrity-drift' && item.releaseBlocking === true
+    ))
+    assert.deepEqual(blocked.recoverableErrors, [])
   } finally {
     await rm(casa, { recursive: true, force: true })
     await rm(pluginRoot, { recursive: true, force: true })
@@ -349,7 +370,7 @@ test('detecta lacunas a partir dos stores e do payload reais, sem flags sintéti
   }
 })
 
-test('somente achado comprovadamente anterior ao marco da release vira histórico', async () => {
+test('achado não corrigido atravessa release como trabalho recuperavel', async () => {
   const casa = await temporary('omni-system-audit-historical-home-')
   const pluginRoot = await pluginFixture()
   const historicalSession = 'sessao-achado-historico'
@@ -372,21 +393,29 @@ test('somente achado comprovadamente anterior ao marco da release vira históric
     }, { at: '2026-08-28T10:02:00.000Z' })
     const storeBefore = await lerAuditoriaAutocorrecao(casa)
     const terminalTurn = storeBefore.turns.at(-1)
-    assert.equal(terminalTurn.state, 'blocked')
-    assert.ok(Number.isFinite(Date.parse(terminalTurn.closedAt)))
-    assert.ok(terminalTurn.findings.some((item) => item.state === 'unresolved'))
+    assert.equal(terminalTurn.state, 'repairing')
+    assert.equal(terminalTurn.closedAt, null)
+    assert.ok(terminalTurn.findings.some((item) => item.state === 'open'))
 
     const historicalAudit = await auditarSaudeSistema(casa, { pluginRoot, repair: false })
-    assert.equal(
-      historicalAudit.run.findings.some((item) => item.code === 'unresolved-turn-findings'),
-      false
-    )
     assert.ok(historicalAudit.run.findings.some((item) =>
-      item.code === 'historical-unresolved-turn-findings' && item.severity === 'warning'
+      item.code === 'unresolved-turn-findings' &&
+      item.severity === 'error' &&
+      item.releaseBlocking === false
     ))
-    assert.notEqual(historicalAudit.run.status, 'repair-required')
+    assert.equal(historicalAudit.run.findings.some((item) =>
+      item.code === 'historical-unresolved-turn-findings'
+    ), false)
+    assert.equal(historicalAudit.run.status, 'repair-required')
+    const releaseGate = await auditarAntesDaRelease({ casa, pluginRoot })
+    assert.equal(releaseGate.ok, true)
+    assert.ok(releaseGate.errors.some((item) => item.code === 'unresolved-turn-findings'))
+    assert.ok(releaseGate.recoverableErrors.some((item) =>
+      item.code === 'unresolved-turn-findings' && item.releaseBlocking === false
+    ))
+    assert.deepEqual(releaseGate.blockingErrors, [])
     const storeAfter = await lerAuditoriaAutocorrecao(casa)
-    assert.ok(storeAfter.turns.at(-1).findings.some((item) => item.state === 'unresolved'))
+    assert.ok(storeAfter.turns.at(-1).findings.some((item) => item.state === 'open'))
 
     await abrirTurnoAuditoria(casa, {
       session_id: currentSession,
@@ -447,8 +476,48 @@ test('audita cada fronteira operacional e conta efeito somente após installed-v
 
     const context = await consumirContextoAuditoriaSistema(casa)
     assert.match(context, /sem configuração ela continua pronta/i)
-    assert.match(context, /runtime não fabrica esse patch/i)
+    assert.match(context, /reivindique automaticamente um executor pela porta neutra/i)
     assert.match(context, /antes do readback íntegro não há efeito comprovado/i)
+  } finally {
+    await rm(casa, { recursive: true, force: true })
+    await rm(pluginRoot, { recursive: true, force: true })
+  }
+})
+
+test('auditoria materializa candidatas deterministicas e encaminha mudanca de fonte sem pedir nova aprovacao', async () => {
+  const casa = await temporary('omni-system-audit-auto-repair-home-')
+  const pluginRoot = await pluginFixture()
+  try {
+    await configurarRepositorioCanonico(casa, pluginRoot)
+    await operationalCandidate(casa, 1, 'ready')
+    const sourceInput = {
+      category: 'system-audit-source-change',
+      destination: 'runtime-fix',
+      statement: 'Corrigir automaticamente uma falha reversivel no runtime do Omni.'
+    }
+    await proporMelhoriaOperacional(casa, sourceInput)
+    await proporMelhoriaOperacional(casa, sourceInput)
+
+    const result = await auditarSaudeSistema(casa, {
+      pluginRoot,
+      repair: true,
+      at: '2026-08-28T13:00:00.000Z'
+    })
+    const cycle = await lerCicloOperacional(casa)
+    assert.equal(cycle.improvementCandidates.filter((item) => item.status === 'ready').length, 1)
+    assert.equal(cycle.improvementCandidates.filter((item) => item.status === 'materialized-pending-release').length, 0)
+    assert.equal(cycle.improvementCandidates.filter((item) => item.status === 'implementation-required').length, 1)
+    assert.ok(result.run.repairs.some((item) =>
+      item.code === 'advanced-ready-operational-improvements' && item.amount === 1 && item.verified === true
+    ))
+    assert.equal(result.run.metrics.operationalImprovementReady, 1)
+    assert.equal(result.run.metrics.operationalImplementationRequired, 1)
+    assert.equal(result.run.metrics.operationalMaterializedPendingRelease, 0)
+    const rules = JSON.parse(await readFile(
+      join(pluginRoot, 'contratos', 'operacao', 'regras-aprendidas.json'),
+      'utf8'
+    ))
+    assert.equal(rules.rules.length, 0)
   } finally {
     await rm(casa, { recursive: true, force: true })
     await rm(pluginRoot, { recursive: true, force: true })

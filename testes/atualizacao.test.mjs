@@ -102,6 +102,8 @@ test('atualiza, valida e orienta a aplicação conforme a interface', async () =
   assert.equal(result.status, 'updated')
   assert.equal(result.previousInstalledVersion, '0.19.0')
   assert.equal(result.installedVersion, '0.20.0')
+  assert.equal(result.installedFingerprint, 'a'.repeat(64))
+  assert.equal(result.installedRoot, 'C:\\installed\\omni-0.20.0')
   assert.equal(result.reloadRequired, true)
   assert.equal(result.applyInstructions.vscode.command, '/plugin')
   assert.equal(result.applyInstructions.vscode.action, 'Clique em Restart.')

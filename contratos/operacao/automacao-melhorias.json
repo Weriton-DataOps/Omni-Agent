@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "contract": "omni-operational-improvement-automation-v1",
+  "states": [
+    "baseline-captured",
+    "queued",
+    "dispatch-required",
+    "running",
+    "reported-unverified",
+    "awaiting-release",
+    "completed"
+  ],
+  "retry": {
+    "baseSeconds": 600,
+    "maximumSeconds": 3600,
+    "neverTerminalForTransientFailure": true,
+    "requiresDifferentDelegationGeneration": true
+  },
+  "execution": {
+    "authorityMode": "standing-self-correction",
+    "destinationCapability": "omni-self-correction",
+    "sourceRepository": "configured-canonical-omni-repository-only",
+    "dispatchThrough": "omni-neutral-delegation-v1",
+    "requiresRealStartedEvent": true,
+    "requiresCleanGitBaselineBeforeDispatch": true,
+    "baselineContract": "omni-operational-release-baseline-v1",
+    "repositorySerialization": "one-candidate-until-installed-or-superseded",
+    "legacyBaselineRecovery": {
+      "installedReadbackFirst": true,
+      "recoverOnlySingleAuditedArtifact": true,
+      "unprovableDisposition": "legacy-unrecoverable-without-blind-release-retry"
+    },
+    "baselineDivergence": "recapture-only-when-single-audited-artifact-remains",
+    "implementationReceiptMarker": "OMNI_IMPLEMENTATION_RECEIPT",
+    "requiresAuditedMutationAndReadback": true,
+    "requiresRegressionGates": true,
+    "releaseThrough": "omni-autonomous-operational-release",
+    "releaseRetryForward": true,
+    "completionState": "installed-verified"
+  },
+  "privacy": {
+    "storeRawConversation": false,
+    "storeRawCandidateStatement": false,
+    "storeRawPaths": false,
+    "storeRawToolData": false,
+    "storeSecrets": false
+  }
+}

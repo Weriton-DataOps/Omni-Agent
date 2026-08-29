@@ -41,6 +41,26 @@ const REASON_DIMENSIONS = {
   'intelligence-flat': 'intelligence'
 }
 const REASON_CODES = new Set(Object.keys(REASON_DIMENSIONS))
+const DIRECTIVE_BY_REASON = Object.freeze({
+  'overall-approved': 'preserve-overall-voice',
+  'overall-rejected': 'change-overall-voice',
+  'tone-approved': 'preserve-tone',
+  'tone-too-dry': 'increase-tone-presence',
+  'presence-effective': 'preserve-presence',
+  'presence-too-cold': 'increase-human-presence',
+  'voice-distinct': 'preserve-distinctive-voice',
+  'voice-generic': 'increase-distinctive-voice',
+  'personality-present': 'preserve-personality-intensity',
+  'personality-absent': 'increase-personality-intensity',
+  'humor-effective': 'preserve-humor-level',
+  'humor-missing': 'increase-contextual-humor',
+  'sarcasm-effective': 'preserve-sarcasm-level',
+  'sarcasm-missing': 'increase-contextual-sarcasm',
+  'analogy-effective': 'preserve-analogy-level',
+  'analogy-missing': 'increase-useful-analogies',
+  'intelligence-perceived': 'preserve-reasoning-density',
+  'intelligence-flat': 'increase-reasoning-density'
+})
 const MAX_LAST_RESPONSES = 100
 const MAX_VOTES = 500
 const MAX_CANDIDATES = 100
@@ -421,6 +441,33 @@ function candidateKey(vote, reasonCode) {
   }
 }
 
+function candidateId(vote, reasonCode) {
+  return `personality-candidate-${hash(candidateKey(vote, reasonCode).key).slice(0, 24)}`
+}
+
+function candidateSignals(vote, candidates) {
+  const byId = new Map(candidates.map((item) => [item.id, item]))
+  return vote.reasonCodes.map((reasonCode) => {
+    const descriptor = candidateKey(vote, reasonCode)
+    const id = candidateId(vote, reasonCode)
+    const current = byId.get(id)
+    return {
+      candidateId: id,
+      state: current?.status ?? 'observing',
+      occurrences: current?.occurrences ?? 1,
+      polarity: descriptor.polarity,
+      dimension: descriptor.dimension,
+      reasonCode,
+      directiveId: DIRECTIVE_BY_REASON[reasonCode],
+      voteFingerprint: hash(vote.id),
+      turnFingerprint: vote.turnFingerprint,
+      answerFingerprint: vote.answerFingerprint,
+      personaId: vote.personaId,
+      releaseFingerprint: vote.releaseFingerprint
+    }
+  })
+}
+
 function rebuildCandidates(store) {
   const groups = new Map()
   for (const vote of store.votes) {
@@ -477,29 +524,38 @@ function summarize(store) {
   }
 }
 
+function persistentAdjustment(store) {
+  const active = store.candidates
+    .filter((candidate) => !store.candidates.some((counterEvidence) =>
+      counterEvidence.personaId === candidate.personaId &&
+      counterEvidence.polarity !== candidate.polarity &&
+      counterEvidence.dimension === candidate.dimension &&
+      counterEvidence.updatedAt >= candidate.updatedAt
+    ))
+    .sort((left, right) => left.updatedAt.localeCompare(right.updatedAt))
+  const directives = [...new Set(
+    active.map((item) => DIRECTIVE_BY_REASON[item.reasonCode]).filter(Boolean)
+  )]
+  if (directives.length === 0) return null
+  return {
+    scope: 'until-recurring-opposite-counterevidence',
+    reversible: true,
+    candidateIds: active.map((item) => item.id),
+    directives
+  }
+}
+
+function snapshot(store) {
+  return {
+    counts: summarize(store),
+    candidates: store.candidates,
+    persistentAdjustment: persistentAdjustment(store)
+  }
+}
+
 function immediateAdjustment(vote) {
   const directives = new Set()
-  const directiveByReason = {
-    'overall-approved': 'preserve-overall-voice',
-    'overall-rejected': 'change-overall-voice',
-    'tone-approved': 'preserve-tone',
-    'tone-too-dry': 'increase-tone-presence',
-    'presence-effective': 'preserve-presence',
-    'presence-too-cold': 'increase-human-presence',
-    'voice-distinct': 'preserve-distinctive-voice',
-    'voice-generic': 'increase-distinctive-voice',
-    'personality-present': 'preserve-personality-intensity',
-    'personality-absent': 'increase-personality-intensity',
-    'humor-effective': 'preserve-humor-level',
-    'humor-missing': 'increase-contextual-humor',
-    'sarcasm-effective': 'preserve-sarcasm-level',
-    'sarcasm-missing': 'increase-contextual-sarcasm',
-    'analogy-effective': 'preserve-analogy-level',
-    'analogy-missing': 'increase-useful-analogies',
-    'intelligence-perceived': 'preserve-reasoning-density',
-    'intelligence-flat': 'increase-reasoning-density'
-  }
-  for (const reason of vote.reasonCodes) directives.add(directiveByReason[reason])
+  for (const reason of vote.reasonCodes) directives.add(DIRECTIVE_BY_REASON[reason])
   return {
     scope: 'next-response',
     reversible: true,
@@ -517,7 +573,7 @@ export async function lerFeedbackPersonalidade(casa) {
 
 export async function resumirFeedbackPersonalidade(casa) {
   const store = await load(casa)
-  return { counts: summarize(store), candidates: store.candidates }
+  return snapshot(store)
 }
 
 export async function registrarUltimaRespostaPersonalidade(casa, input, options = {}) {
@@ -562,18 +618,18 @@ export async function observarVotoPersonalidade(casa, input, options = {}) {
   const origin = input?.origin ?? 'owner-live'
   if (!OWNER_ORIGINS.has(origin)) {
     const summary = await resumirFeedbackPersonalidade(casa)
-    return { result: 'ignored-origin', vote: null, adjustment: null, ...summary }
+    return { result: 'ignored-origin', vote: null, adjustment: null, candidateSignals: [], ...summary }
   }
   const sessionId = typeof input?.sessionId === 'string' ? input.sessionId : ''
   const feedback = typeof input?.feedback === 'string' ? input.feedback : ''
   if (!nonEmptyText(sessionId, 10_000) || !nonEmptyText(feedback, 100_000)) {
     const summary = await resumirFeedbackPersonalidade(casa)
-    return { result: 'neutral', vote: null, adjustment: null, ...summary }
+    return { result: 'neutral', vote: null, adjustment: null, candidateSignals: [], ...summary }
   }
   const classification = classificarFeedbackPersonalidade(feedback)
   if (!classification) {
     const summary = await resumirFeedbackPersonalidade(casa)
-    return { result: 'neutral', vote: null, adjustment: null, ...summary }
+    return { result: 'neutral', vote: null, adjustment: null, candidateSignals: [], ...summary }
   }
 
   const release = await acquireLock(casa)
@@ -586,8 +642,8 @@ export async function observarVotoPersonalidade(casa, input, options = {}) {
         result: 'unbound',
         vote: null,
         adjustment: null,
-        counts: summarize(store),
-        candidates: store.candidates
+        candidateSignals: [],
+        ...snapshot(store)
       }
     }
     const feedbackFingerprint = hash(normalize(feedback))
@@ -601,8 +657,8 @@ export async function observarVotoPersonalidade(casa, input, options = {}) {
         result: 'duplicate',
         vote: duplicate,
         adjustment: immediateAdjustment(duplicate),
-        counts: summarize(store),
-        candidates: store.candidates
+        candidateSignals: candidateSignals(duplicate, store.candidates),
+        ...snapshot(store)
       }
     }
     const at = now(options.at)
@@ -629,8 +685,8 @@ export async function observarVotoPersonalidade(casa, input, options = {}) {
       result: 'recorded',
       vote,
       adjustment: immediateAdjustment(vote),
-      counts: summarize(store),
-      candidates: store.candidates
+      candidateSignals: candidateSignals(vote, store.candidates),
+      ...snapshot(store)
     }
   } finally {
     await release()

@@ -99,9 +99,11 @@ O operador técnico também expõe `delegacao-preparar`, `delegacao-estado`,
 .\scripts\omni.ps1 delegacao-estado delegation-UUID running --evidencia agent-start-123 --checkpoint snapshot-123 --rollback restore-123
 ```
 
-Por padrão, `delegacao-preparar` emite autoridade `owner-intent` herdada, publica o briefing já no
-estado `visible` e o deixa apto a casar com o próximo `SubagentStart` da mesma sessão. A sessão precisa
-ter um turno ativo aberto pelo hook; o envelope guarda apenas o fingerprint desse vínculo. `--fonte` e
+Por padrão, `delegacao-preparar` emite autoridade `owner-intent` herdada e publica o briefing no
+estado `visible`. O retorno traz o `delegationId`; todo evento posterior precisa repetir esse ID, e o
+adaptador recusa início sem correlação em vez de escolher uma delegação por proximidade. A automação
+de falhas preserva o mesmo ID no binding do trabalho para que o hook nativo possa traduzi-lo. A sessão
+precisa ter um turno ativo aberto pelo hook; o envelope guarda apenas o fingerprint desse vínculo. `--fonte` e
 `--pai` permitem continuar uma autoridade realmente existente no ciclo — um hash inventado é recusado.
 Risco altera o preparo, não retira silenciosamente a liberdade de executar dentro do objetivo autorizado.
 
@@ -116,12 +118,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\omni.ps1 varredura
 A varredura roda também na abertura da sessão e, no máximo uma vez por hora, após uma resposta. Ela
 é uma rede de conferência; o aprendizado por hooks continua sendo o caminho principal.
 
-O comando de varredura coleta, deduplica e classifica evidências locais; ele não executa Git nem
-publica sozinho. Quando a varredura é solicitada pelo proprietário, a instrução operacional do Omni
+O comando de varredura coleta, deduplica e classifica evidências locais; ele não publica arbitrariamente
+toda candidata encontrada. Quando a varredura é solicitada pelo proprietário, a instrução operacional do Omni
 manda o agente continuar, no mesmo fluxo autorizado, com avaliação, materialização portátil, gates,
 commit, push e confirmação do `origin/main`. O relatório final precisa separar o que foi encontrado,
 o que valeu publicar e o que possui comprovação remota. A manutenção automática em segundo plano
-permanece silenciosa e não publica por conta própria.
+permanece silenciosa. Ela pode acionar o fluxo autônomo estritamente controlado de personalidade;
+nesse fluxo, publicação só ocorre depois de eval aprovado, gates, commit versionado, push confirmado,
+instalação e readback do mesmo fingerprint.
 
 Uma única configuração local liga o aprendizado ao repositório fonte:
 
@@ -138,8 +142,9 @@ readback encerra o registro como `retracted`, preservando a prova da troca sem f
 instalada. Se uma entrada declarativa antiga for explicitamente incorporada por uma candidata
 canônica instalada, ela termina como `superseded`; não conta como efeito e não fica presa para sempre
 na fila de release.
-Mudanças de runtime, hook, roteamento ou capacidade ficam em `implementation-required` até que um
-arquivo executável real seja vinculado ao candidato. Esse vínculo exige recibo hash-only da
+Mudanças de runtime, hook, roteamento ou capacidade entram em `implementation-required` e são
+encaminhadas automaticamente à fila de implementação pela porta neutra. O estado só avança quando um
+arquivo executável real é vinculado ao candidato. Esse vínculo exige recibo hash-only da
 auditoria: mutação no próprio artefato e readback posterior do mesmo alvo, ambos posteriores ao
 estado `implementation-required`. Um arquivo que já existia, sozinho, não prova implementação.
 

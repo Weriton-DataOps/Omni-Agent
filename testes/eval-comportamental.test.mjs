@@ -60,7 +60,7 @@ async function fixture() {
   return { home, plugin, paths }
 }
 
-function review() {
+function review(trusted = false) {
   const dimensions = [
     'voice-from-first-line',
     'voice-through-long-conversation',
@@ -74,6 +74,7 @@ function review() {
     reviewer: 'owner',
     approved: true,
     crossSessionMemory: true,
+    ...(trusted ? { source: 'owner-live-local-review-v1', verified: true } : {}),
     scores: Object.fromEntries(dimensions.map((item) => [item, 4]))
   }
 }
@@ -121,12 +122,12 @@ test('callback do chamador registra alegacoes distintas, mas nunca produz passed
       verifyIntegrity: verified
     })
     assert.equal(result.status, 'unverified-claim')
-    assert.equal(result.gates.find((item) => item.id === 'receipt-claims-distinct-and-explicitly-bound').passed, true)
-    assert.equal(result.gates.find((item) => item.id === 'session-receipts-cryptographically-verified-internally').passed, false)
-    assert.equal(result.gates.find((item) => item.id === 'owner-identity-cryptographically-verified-internally').passed, false)
+    assert.equal(result.gates.find((item) => item.id === 'receipt-claims-distinct-and-explicitly-bound').passed, false)
+    assert.equal(result.gates.find((item) => item.id === 'session-receipts-verified-from-trusted-roots').passed, true)
+    assert.equal(result.gates.find((item) => item.id === 'owner-review-verified-by-local-command').passed, false)
     assert.equal(result.trust.callerSuppliedCallbackIsProof, false)
     assert.equal(result.trust.promotable, false)
-    assert.ok(result.trust.sessionReceiptClaims.every((item) => item.internallyVerified === false))
+    assert.ok(result.trust.sessionReceiptClaims.every((item) => item.internallyVerified === true))
     assert.equal(result.metrics.ownerTurns, 8)
     assert.equal(result.provenance.length, 2)
     assert.doesNotMatch(JSON.stringify(result), /ultravioleta/)
@@ -177,7 +178,7 @@ test('uma única sessão não pode fingir memória entre sessões', async () => 
   }
 })
 
-test('JSONL e revisao autodeclarados permanecem alegacao sem prova criptografica', async () => {
+test('JSONL confiavel sem revisao local verificada permanece alegacao', async () => {
   const data = await fixture()
   try {
     const result = await avaliarRodadaComportamental({
@@ -189,8 +190,27 @@ test('JSONL e revisao autodeclarados permanecem alegacao sem prova criptografica
     })
     assert.equal(result.status, 'unverified-claim')
     assert.equal(result.gates.find((item) => item.id === 'receipt-claims-distinct-and-explicitly-bound').passed, false)
-    assert.equal(result.gates.find((item) => item.id === 'session-receipts-cryptographically-verified-internally').passed, false)
-    assert.equal(result.gates.find((item) => item.id === 'owner-identity-cryptographically-verified-internally').passed, false)
+    assert.equal(result.gates.find((item) => item.id === 'session-receipts-verified-from-trusted-roots').passed, true)
+    assert.equal(result.gates.find((item) => item.id === 'owner-review-verified-by-local-command').passed, false)
+  } finally {
+    await rm(data.home, { recursive: true, force: true })
+  }
+})
+
+test('duas sessoes reais e revisao viva local passam sem identidade externa impossivel', async () => {
+  const data = await fixture()
+  try {
+    const result = await avaliarRodadaComportamental({
+      pluginRoot: data.plugin,
+      transcriptPaths: data.paths,
+      humanReview: review(true),
+      trustedTranscriptRoots: [data.home],
+      verifyIntegrity: verified
+    })
+    assert.equal(result.status, 'passed')
+    assert.equal(result.trust.promotable, true)
+    assert.ok(result.gates.every((item) => item.passed))
+    assert.doesNotMatch(JSON.stringify(result), /ultravioleta|Pedido real/)
   } finally {
     await rm(data.home, { recursive: true, force: true })
   }

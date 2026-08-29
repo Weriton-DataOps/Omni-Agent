@@ -6,8 +6,8 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 
-import { caminhoDaAutomacaoFalhas, reivindicarAutomacaoFalha } from '../runtime/automacao-falhas.mjs'
-import { tratarHook } from '../runtime/hook-contexto.mjs'
+import { caminhoDaAutomacaoFalhas } from '../runtime/automacao-falhas.mjs'
+import { contextoAdicional, tratarHook } from '../runtime/hook-contexto.mjs'
 import { lembrarExplicitamente, lerMemoria } from '../runtime/memoria.mjs'
 import { caminhoDaCoberturaAoVivo } from '../runtime/varredura-diaria.mjs'
 import { registrarFalha } from '../runtime/falhas.mjs'
@@ -19,6 +19,38 @@ import {
 } from '../runtime/ciclo-operacional.mjs'
 
 const hookCli = fileURLToPath(new URL('../runtime/hook-contexto.mjs', import.meta.url))
+
+test('contexto adicional preserva todos os blocos nomeados na ordem sem coercao de objeto', () => {
+  const sentinels = {
+    persona: 'SENTINEL_PERSONA',
+    projection: 'SENTINEL_PROJECTION',
+    persistentDirection: 'SENTINEL_PERSISTENT_DIRECTION',
+    turnAdjustment: 'SENTINEL_TURN_ADJUSTMENT',
+    automation: 'SENTINEL_AUTOMATION',
+    audit: 'SENTINEL_AUDIT',
+    systemAudit: 'SENTINEL_SYSTEM_AUDIT',
+    degradation: 'SENTINEL_DEGRADATION'
+  }
+  const context = contextoAdicional(sentinels)
+  const expectedOrder = [
+    sentinels.persona,
+    sentinels.persistentDirection,
+    sentinels.turnAdjustment,
+    sentinels.degradation,
+    sentinels.automation,
+    sentinels.audit,
+    sentinels.systemAudit,
+    sentinels.projection
+  ]
+  let previous = -1
+  for (const sentinel of expectedOrder) {
+    const index = context.indexOf(sentinel)
+    assert.ok(index > previous, `${sentinel} precisa preservar a ordem do contrato`)
+    assert.equal(context.indexOf(sentinel, index + 1), -1)
+    previous = index
+  }
+  assert.doesNotMatch(context, /\[object Object\]/)
+})
 
 function executarCli(input, env) {
   const execucao = spawnSync(process.execPath, [hookCli], {
@@ -452,6 +484,71 @@ test('feedback explícito do proprietário ajusta a resposta seguinte sem reescr
   }
 })
 
+test('feedback recorrente injeta direcao persistente em turnos e ativacoes ate contraprova recorrente', async () => {
+  const { raiz, env } = await ambiente()
+  const session_id = 'sessao-direcao-persistente'
+  try {
+    await tratarHook(
+      { hook_event_name: 'UserPromptSubmit', session_id, prompt: '/omni:omni' },
+      env
+    )
+    for (let index = 1; index <= 2; index += 1) {
+      await registrarUltimaRespostaPersonalidade(env.OMNI_HOME, {
+        sessionId: session_id,
+        answer: `Resposta seca ${index}`
+      })
+      await tratarHook({
+        hook_event_name: 'UserPromptSubmit',
+        session_id,
+        origin: 'owner-live',
+        prompt: 'A resposta ficou seca.'
+      }, env)
+    }
+
+    const neutral = await tratarHook({
+      hook_event_name: 'UserPromptSubmit',
+      session_id,
+      origin: 'owner-live',
+      prompt: 'Continue a tarefa.'
+    }, env)
+    assert.match(neutral.hookSpecificOutput?.additionalContext, /DIRECAO PERSISTENTE APRENDIDA/)
+    assert.match(neutral.hookSpecificOutput?.additionalContext, /aumente presença e calor/i)
+
+    const newSession = await tratarHook({
+      hook_event_name: 'UserPromptSubmit',
+      session_id: 'sessao-nova-com-direcao',
+      prompt: '/omni:omni'
+    }, env)
+    assert.match(newSession.hookSpecificOutput?.additionalContext, /DIRECAO PERSISTENTE APRENDIDA/)
+
+    for (let index = 1; index <= 2; index += 1) {
+      await registrarUltimaRespostaPersonalidade(env.OMNI_HOME, {
+        sessionId: session_id,
+        answer: `Resposta aprovada ${index}`
+      })
+      await tratarHook({
+        hook_event_name: 'UserPromptSubmit',
+        session_id,
+        origin: 'owner-live',
+        prompt: 'Agora a resposta nao esta seca; esse tom ficou otimo.'
+      }, env)
+    }
+
+    const afterCounterEvidence = await tratarHook({
+      hook_event_name: 'UserPromptSubmit',
+      session_id,
+      origin: 'owner-live',
+      prompt: 'Continue de onde parou.'
+    }, env)
+    const positiveDirection = afterCounterEvidence.hookSpecificOutput?.additionalContext
+    assert.match(positiveDirection, /DIRECAO PERSISTENTE APRENDIDA/)
+    assert.match(positiveDirection, /preserve o tom aprovado/i)
+    assert.doesNotMatch(positiveDirection, /aumente presenÃ§a e calor/i)
+  } finally {
+    await rm(raiz, { recursive: true, force: true })
+  }
+})
+
 test('falha de contexto mantém a personalidade com fallback explícito e observável', async () => {
   const { raiz, env } = await ambiente()
   const session_id = 'sessao-contexto-degradado'
@@ -593,7 +690,7 @@ test('hook aplica a rota fast ou deep escolhida pelo contexto', async () => {
   }
 })
 
-test('candidata de falha entra no turno como despacho solicitado e nao como spawn alegado', async () => {
+test('candidata exige despacho ate SubagentStart confirmar o inicio real', async () => {
   const { raiz, env } = await ambiente()
   const session_id = 'sessao-automacao-falhas'
   try {
@@ -617,10 +714,12 @@ test('candidata de falha entra no turno como despacho solicitado e nao como spaw
     const context = turn.hookSpecificOutput.additionalContext
     assert.match(context, /AUTOMAÇÃO DE FALHAS/)
     assert.match(context, /subagente.*segundo plano/i)
-    assert.match(context, /dispatch-requested/i)
-    assert.match(context, /preparada e marcada como `visible`/i)
-    assert.match(context, /não prova que o host iniciou o subagente/i)
+    assert.match(context, /failure-dispatch-required/i)
+    assert.match(context, /delegação .* está visível/i)
+    assert.match(context, /attempts continua em zero.*não alega execução/i)
     assert.match(context, /não peça nova autorização ao proprietário/i)
+    assert.match(context, /Entregue ao Omni: causa comprovada.*expansão concreta de autoridade/i)
+    assert.match(context, /<\/failure-dispatch-briefing>/)
     const automation = JSON.parse(await readFile(caminhoDaAutomacaoFalhas(env.OMNI_HOME), 'utf8'))
     assert.equal(automation.jobs.length, 1)
     assert.equal(automation.jobs[0].state, 'queued')
@@ -639,14 +738,36 @@ test('candidata de falha entra no turno como despacho solicitado e nao como spaw
     )
     assert.doesNotMatch(JSON.stringify(cycle), /Objetivo obrigatório|permissao negada ao executar teste local/i)
 
-    const workerClaim = await reivindicarAutomacaoFalha(env.OMNI_HOME, {
-      executorId: 'subagent-hook-test',
-      jobId: automation.jobs[0].id
-    })
-    assert.equal(workerClaim.result, 'claimed')
-    assert.equal(workerClaim.job.state, 'running')
-    assert.equal(workerClaim.job.attempts, 1)
-    assert.ok(workerClaim.job.executorFingerprint)
+    const blocked = await tratarHook({
+      hook_event_name: 'Stop',
+      session_id
+    }, env)
+    assert.equal(blocked.decision, 'block')
+    assert.match(blocked.reason, /failure-dispatch-not-started/)
+    assert.match(blocked.reason, new RegExp(automation.jobs[0].id))
+
+    await tratarHook({
+      hook_event_name: 'SubagentStart',
+      session_id,
+      agent_id: 'subagent-hook-test',
+      agent_type: 'background-subagent',
+      cwd: raiz
+    }, env)
+    const started = JSON.parse(await readFile(caminhoDaAutomacaoFalhas(env.OMNI_HOME), 'utf8')).jobs[0]
+    assert.equal(started.state, 'running')
+    assert.equal(started.attempts, 1)
+    assert.ok(started.executorFingerprint)
+
+    const duplicateStart = await tratarHook({
+      hook_event_name: 'SubagentStart',
+      session_id,
+      agent_id: 'subagent-hook-test',
+      agent_type: 'background-subagent',
+      cwd: raiz
+    }, env)
+    assert.equal(duplicateStart.hookSpecificOutput.hookEventName, 'SubagentStart')
+    const afterDuplicate = JSON.parse(await readFile(caminhoDaAutomacaoFalhas(env.OMNI_HOME), 'utf8')).jobs[0]
+    assert.equal(afterDuplicate.attempts, 1)
 
     await tratarHook(
       { hook_event_name: 'UserPromptSubmit', session_id, prompt: 'agora trate outro assunto' },
@@ -685,9 +806,10 @@ test('terceira falha de ferramenta dispara o despacho sem esperar outro pedido',
     assert.match(result.hookSpecificOutput.additionalContext, /<omni-ancora-compacta>/)
     assert.match(result.hookSpecificOutput.additionalContext, /Inventor Cúmplice/)
     assert.match(result.hookSpecificOutput.additionalContext, /AUTOMAÇÃO DE FALHAS/)
-    assert.match(result.hookSpecificOutput.additionalContext, /dispatch-requested/i)
-    assert.match(result.hookSpecificOutput.additionalContext, /preparada e marcada como `visible`/i)
-    assert.match(result.hookSpecificOutput.additionalContext, /não prova que o host iniciou o subagente/i)
+    assert.match(result.hookSpecificOutput.additionalContext, /failure-dispatch-required/i)
+    assert.match(result.hookSpecificOutput.additionalContext, /delegação .* está visível/i)
+    assert.match(result.hookSpecificOutput.additionalContext, /attempts continua em zero.*não alega execução/i)
+    assert.match(result.hookSpecificOutput.additionalContext, /<\/failure-dispatch-briefing>/)
     const cycle = await lerCicloOperacional(env.OMNI_HOME)
     assert.equal(cycle.delegations.length, 1)
     assert.equal(cycle.delegations[0].state, 'visible')
@@ -771,6 +893,7 @@ test('SubagentStop liga o relato do ciclo à ação e evidência da auditoria', 
     await tratarHook({
       hook_event_name: 'SubagentStart',
       session_id,
+      delegation_id: prepared.delegation.id,
       agent_id: 'agent-hook-auditado',
       agent_type: 'executor',
       cwd: raiz
@@ -778,6 +901,7 @@ test('SubagentStop liga o relato do ciclo à ação e evidência da auditoria', 
     await tratarHook({
       hook_event_name: 'SubagentStop',
       session_id,
+      delegation_id: prepared.delegation.id,
       agent_id: 'agent-hook-auditado',
       agent_type: 'executor',
       agent_transcript_path: join(raiz, 'agent-hook-auditado.jsonl'),

@@ -10,6 +10,7 @@ import {
 import { verificarIntegridadeRelease } from './integridade-release.mjs'
 import { pareceConterSegredo } from './memoria.mjs'
 import { resolverImplementacaoOperacionalAuditoria } from './auditoria-autocorrecao.mjs'
+import { validarSuite } from './eval-personalidade.mjs'
 
 const CONFIG_SCHEMA_VERSION = 1
 
@@ -116,8 +117,47 @@ export async function lerRepositorioCanonico(casa) {
   }
 }
 
-function artefato(candidate) {
+function sourceRefs(candidate) {
+  return Array.isArray(candidate?.sourceRefs) ? candidate.sourceRefs : []
+}
+
+function coverageFromSources(candidate, canonicalCaseIds) {
+  const caseIds = [...new Set(
+    sourceRefs(candidate).map((item) => item.canonicalCaseId).filter(Boolean)
+  )]
+  if (caseIds.length === 1 && canonicalCaseIds.has(caseIds[0])) {
+    return {
+      readiness: 'covered-by-canonical-case',
+      scenario: { caseId: caseIds[0] }
+    }
+  }
+  return { readiness: 'pending-scenario', scenario: null }
+}
+
+function mergeSourceRefs(...collections) {
+  const merged = new Map()
+  for (const item of collections.flat()) {
+    if (!item || item.kind !== 'personality-feedback' || typeof item.turnFingerprint !== 'string') continue
+    merged.set(`${item.kind}:${item.turnFingerprint}`, item)
+  }
+  return [...merged.values()]
+}
+
+async function canonicalPersonalityCaseIds(root) {
+  try {
+    const document = validarSuite(JSON.parse(
+      await readFile(join(root, 'contratos', 'eval', 'personalidade.json'), 'utf8')
+    ))
+    return new Set(document.cases.map((item) => item?.id).filter((id) => typeof id === 'string'))
+  } catch (error) {
+    if (error?.code === 'ENOENT') return new Set()
+    throw error
+  }
+}
+
+function artefato(candidate, canonicalCaseIds = new Set()) {
   const precisaDeCenario = candidate.destination === 'personality' || candidate.destination === 'eval'
+  const references = sourceRefs(candidate)
   return {
     id: candidate.id,
     category: candidate.category,
@@ -125,10 +165,11 @@ function artefato(candidate) {
     text: candidate.statement,
     evidence: {
       occurrences: candidate.occurrences,
-      fingerprint: candidate.fingerprint
+      fingerprint: candidate.fingerprint,
+      ...(references.length > 0 ? { sourceRefs: references } : {})
     },
     status: precisaDeCenario ? 'candidate' : 'active',
-    ...(precisaDeCenario ? { readiness: 'pending-scenario', scenario: null } : {}),
+    ...(precisaDeCenario ? coverageFromSources(candidate, canonicalCaseIds) : {}),
     learnedAt: candidate.updatedAt
   }
 }
@@ -203,25 +244,39 @@ export async function materializarMelhoriaOperacional(casa, id, repoRoot) {
     const path = join(root, directory, area, file)
     const document = JSON.parse(await readFile(path, 'utf8'))
     if (!Array.isArray(document[collection])) throw new Error(`Artefato de destino invalido: ${path}`)
+    const canonicalCaseIds = candidate.destination === 'personality' || candidate.destination === 'eval'
+      ? await canonicalPersonalityCaseIds(root)
+      : new Set()
     const existing = document[collection].find((item) =>
       item.id === candidate.id || mesmoArtefato(item, candidate)
     )
     let materialized = existing
     if (!existing) {
-      materialized = artefato(candidate)
+      materialized = artefato(candidate, canonicalCaseIds)
       document[collection].push(materialized)
       const temporary = `${path}.${process.pid}.${id}.novo`
       await writeFile(temporary, `${JSON.stringify(document, null, 2)}\n`, 'utf8')
       await rename(temporary, path)
     } else if (existing.id !== candidate.id) {
+      const references = mergeSourceRefs(existing.evidence?.sourceRefs ?? [], candidate.sourceRefs ?? [])
       existing.evidence = {
         ...existing.evidence,
         occurrences: Math.max(existing.evidence?.occurrences ?? 0, candidate.occurrences),
         fingerprint: existing.evidence?.fingerprint ?? candidate.fingerprint,
+        ...(references.length > 0 ? { sourceRefs: references } : {}),
         mergedCandidateIds: [...new Set([
           ...(existing.evidence?.mergedCandidateIds ?? []),
           candidate.id
         ])]
+      }
+      if (
+        references.length > 0 &&
+        existing.status === 'candidate' &&
+        existing.readiness !== 'executable'
+      ) {
+        const coverage = coverageFromSources({ sourceRefs: references }, canonicalCaseIds)
+        existing.readiness = coverage.readiness
+        existing.scenario = coverage.scenario
       }
       const temporary = `${path}.${process.pid}.${id}.novo`
       await writeFile(temporary, `${JSON.stringify(document, null, 2)}\n`, 'utf8')

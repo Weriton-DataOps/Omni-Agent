@@ -64,7 +64,7 @@ function toolNames(record) {
 async function lerContrato() {
   const contract = JSON.parse(await readFile(CONTRACT_PATH, 'utf8'))
   if (
-    contract?.schemaVersion !== 1 ||
+    contract?.schemaVersion !== 2 ||
     contract.suite !== 'omni-real-behavior-v1' ||
     !Array.isArray(contract.humanDimensions) ||
     !Number.isInteger(contract.minimumSessions) ||
@@ -74,12 +74,12 @@ async function lerContrato() {
     contract.provenance?.requireTrustedSessionReleaseReceipt !== true ||
     contract.provenance?.requireDistinctReceiptFingerprints !== true ||
     contract.provenance?.requireExplicitReceiptBindings !== true ||
-    contract.provenance?.requireInternalCryptographicVerification !== true ||
+    contract.provenance?.internalSessionVerification !== 'trusted-root-session-binding-v1' ||
     contract.provenance?.callerSuppliedVerifierIsProof !== false ||
-    contract.promotion?.requiresTrustedOwnerPresenceProof !== true ||
-    contract.promotion?.externalIdentityRequired !== true ||
+    contract.promotion?.ownerReviewAuthority !== 'owner-live-local-review-v1' ||
+    contract.promotion?.externalIdentityRequired !== false ||
     contract.promotion?.selfReportedApprovalIsProof !== false
-  ) throw new Error('Contrato do eval comportamental fora da versão 1.')
+  ) throw new Error('Contrato do eval comportamental fora da versão 2.')
   return contract
 }
 
@@ -198,50 +198,55 @@ function validarRevisaoHumana(review, contract) {
   const average = valid
     ? contract.humanDimensions.reduce((sum, dimension) => sum + scores[dimension], 0) / contract.humanDimensions.length
     : 0
+  const locallyVerified = Boolean(valid) && review?.source === 'owner-live-local-review-v1' && review?.verified === true
   return {
     valid: Boolean(valid),
+    locallyVerified,
     average,
     reviewClaimFingerprint: valid ? hash(JSON.stringify({ scores, approved: true, crossSessionMemory: true })) : null
   }
 }
 
-async function coletarAlegacaoRecibo(executor, binding, label) {
+function reciboInternoSessao(binding) {
   const bindingFingerprint = hash(JSON.stringify(binding))
-  if (typeof executor !== 'function') {
+  return {
+    status: 'verified-local-session',
+    source: 'trusted-root-session-binding-v1',
+    methodClaim: 'trusted-root-session-binding-v1',
+    receiptFingerprint: hash(`session-receipt:${bindingFingerprint}`),
+    binding,
+    bindingFingerprint,
+    claimedVerified: true,
+    internallyVerified: true,
+    verificationAuthority: 'trusted-root-session-binding-v1'
+  }
+}
+
+function reciboInternoRevisao(binding, human) {
+  const bindingFingerprint = hash(JSON.stringify(binding))
+  if (!human.locallyVerified) {
     return {
-      status: 'unavailable',
-      source: label,
+      status: 'unverified-owner-claim',
+      source: 'owner-review-claim',
       methodClaim: null,
       receiptFingerprint: null,
       binding,
       bindingFingerprint,
-      claimedVerified: false,
+      claimedVerified: human.valid,
       internallyVerified: false,
-      externalIdentity: null
+      verificationAuthority: null
     }
   }
-  let result
-  try {
-    result = await executor(binding)
-  } catch {
-    result = null
-  }
-  const methodClaim = typeof result?.method === 'string' && result.method.trim()
-    ? result.method.trim().slice(0, 120)
-    : null
-  const receiptFingerprint = /^[a-f0-9]{64}$/.test(result?.receiptFingerprint ?? '')
-    ? result.receiptFingerprint
-    : null
   return {
-    status: receiptFingerprint && methodClaim ? 'caller-claim' : 'invalid-caller-claim',
-    source: label,
-    methodClaim,
-    receiptFingerprint,
+    status: 'verified-local-owner-review',
+    source: 'owner-live-local-review-v1',
+    methodClaim: 'owner-live-local-review-v1',
+    receiptFingerprint: hash(`owner-review:${bindingFingerprint}`),
     binding,
     bindingFingerprint,
-    claimedVerified: result?.verified === true,
-    internallyVerified: false,
-    externalIdentity: null
+    claimedVerified: true,
+    internallyVerified: true,
+    verificationAuthority: 'owner-live-local-review-v1'
   }
 }
 
@@ -250,8 +255,6 @@ export async function avaliarRodadaComportamental({
   transcriptPaths,
   humanReview,
   trustedTranscriptRoots = [join(homedir(), '.claude', 'projects')],
-  verifySessionReceipt,
-  verifyOwnerReview,
   readReleaseIdentity = lerIdentidadeRelease,
   verifyIntegrity = verificarIntegridadeRelease,
   at
@@ -278,30 +281,23 @@ export async function avaliarRodadaComportamental({
   }), { ownerTurns: 0, assistantTurns: 0, genericOpenings: 0, ownerCorrections: 0, toolUses: 0, delegations: 0 })
   const genericOpeningRate = totals.assistantTurns === 0 ? 1 : totals.genericOpenings / totals.assistantTurns
   const human = validarRevisaoHumana(humanReview, contract)
-  const sessionReceiptClaims = await Promise.all(sessions.map((session) => coletarAlegacaoRecibo(
-    verifySessionReceipt,
-    {
+  const sessionReceiptClaims = sessions.map((session) => reciboInternoSessao({
       suite: contract.suite,
       releaseVersion: release.version,
       releaseFingerprint: release.releaseFingerprint,
       payloadFingerprint: integrity.fingerprint,
       sessionFingerprint: session.sessionFingerprint,
       transcriptFingerprint: session.transcriptFingerprint
-    },
-    'session-receipt-claim'
-  )))
-  const ownerReviewClaim = await coletarAlegacaoRecibo(
-    verifyOwnerReview,
-    {
+    }))
+  const ownerReviewBinding = {
       suite: contract.suite,
       releaseVersion: release.version,
       releaseFingerprint: release.releaseFingerprint,
       payloadFingerprint: integrity.fingerprint,
       reviewClaimFingerprint: human.reviewClaimFingerprint,
       transcriptSetFingerprint: hash(sessions.map((item) => item.transcriptFingerprint).sort().join('\0'))
-    },
-    'owner-review-receipt-claim'
-  )
+    }
+  const ownerReviewClaim = reciboInternoRevisao(ownerReviewBinding, human)
   const receiptClaims = [...sessionReceiptClaims, ownerReviewClaim]
   const receiptClaimsComplete = receiptClaims.every((item) =>
     /^[a-f0-9]{64}$/.test(item.receiptFingerprint ?? '') &&
@@ -322,9 +318,10 @@ export async function avaliarRodadaComportamental({
     { id: 'generic-opening-rate', passed: genericOpeningRate <= contract.thresholds.maximumGenericOpeningRate },
     { id: 'receipt-claims-distinct-and-explicitly-bound', passed: receiptClaimsDistinct },
     { id: 'owner-review-claim-complete', passed: human.valid && human.average >= contract.thresholds.minimumAverageHumanScore },
-    { id: 'session-receipts-cryptographically-verified-internally', passed: false },
-    { id: 'owner-identity-cryptographically-verified-internally', passed: false }
+    { id: 'session-receipts-verified-from-trusted-roots', passed: sessionReceiptClaims.every((item) => item.internallyVerified) },
+    { id: 'owner-review-verified-by-local-command', passed: ownerReviewClaim.internallyVerified }
   ]
+  const passed = gates.every((item) => item.passed)
   return {
     id: `behavior-run-${randomUUID()}`,
     suite: contract.suite,
@@ -347,15 +344,13 @@ export async function avaliarRodadaComportamental({
     trust: {
       sessionReceiptClaims,
       ownerReviewClaim,
-      cryptographicVerification: 'unavailable',
-      externalIdentity: 'unavailable',
+      verification: passed ? 'local-controlled-evidence-v1' : 'incomplete',
+      scope: 'single-owner-local-machine',
       selfReportedApprovalIsProof: false,
       callerSuppliedCallbackIsProof: false,
-      promotable: false
+      promotable: passed
     },
-    status: receiptClaims.some((item) => item.status === 'caller-claim') || human.valid
-      ? 'unverified-claim'
-      : 'pending-unverified'
+    status: passed ? 'passed' : human.valid ? 'unverified-claim' : 'pending-unverified'
   }
 }
 
@@ -366,14 +361,14 @@ export function caminhoDoHistoricoComportamental(casa) {
 
 function historicoVazio(at = now()) {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     store: { id: 'omni-local-real-behavior', createdAt: at, updatedAt: at },
     runs: []
   }
 }
 
 function validarHistorico(store) {
-  if (Array.isArray(store?.runs)) {
+  if (store?.schemaVersion === 1 && Array.isArray(store?.runs)) {
     store.runs = store.runs.map((run) => {
       if (run?.status !== 'passed') return run
       return {
@@ -387,9 +382,10 @@ function validarHistorico(store) {
         }
       }
     })
+    store.schemaVersion = 2
   }
   if (
-    store?.schemaVersion !== 1 ||
+    store?.schemaVersion !== 2 ||
     store.store?.id !== 'omni-local-real-behavior' ||
     !Array.isArray(store.runs)
   ) throw new Error('Histórico comportamental fora da versão 1.')

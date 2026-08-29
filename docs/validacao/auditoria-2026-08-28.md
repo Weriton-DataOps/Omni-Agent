@@ -1,5 +1,8 @@
 # Auditoria do Omni — 28/08/2026
 
+> Registro histórico. As conclusões sobre identidade externa e ausência de raiz local foram
+> substituídas pelo protocolo controlado de 29/08/2026; este documento não governa o runtime atual.
+
 Esta rodada transforma as falhas observadas nas conversas reais em circuitos executáveis. Ela não
 promove antecipadamente a personalidade e não confunde diagnóstico, correção, teste e observação em
 uso.

@@ -7,7 +7,7 @@ import { avaliarResposta, validarSuite } from './eval-personalidade.mjs'
 
 const raiz = dirname(dirname(fileURLToPath(import.meta.url)))
 const HASH_SHA256 = /^[a-f0-9]{64}$/i
-const STORE_SCHEMA_VERSION = 1
+const STORE_SCHEMA_VERSION = 2
 
 function agora(value) {
   return value ? new Date(value).toISOString() : new Date().toISOString()
@@ -130,13 +130,19 @@ export async function criarPlanoRodadaPersonalidade({ pluginRoot = raiz } = {}) 
     pendingLearnedCandidates: unresolved.map((item) => item.id),
     gates,
     performsModelCalls: false,
+    automaticExecutor: {
+      contract: 'omni-controlled-personality-eval-v1',
+      available: true,
+      trigger: 'reviewable-personality-candidate',
+      persistsRawResponses: false
+    },
     execution: [
       'Use o mesmo provedor, modelo, versao, configuracao e entradas nos dois conjuntos.',
       'Capture a baseline sem ativacao, personalidade, contexto ou memoria do Omni.',
       `Capture a candidata com ${manifest.id} ativa e o plugin da release sob teste carregado.`,
-      'Avalie automaticamente todos os casos e submeta todos os criterios humanos ao proprietario.',
+      'Avalie automaticamente todos os casos, inclusive os criterios semanticos, com um juiz local controlado.',
       'Forneca as respostas somente em memoria para a rodada; o registro local guarda apenas hashes e resultados.',
-      'A captura e a revisao atuais sao alegacoes locais: sem verificacao criptografica interna de recibos vinculados e identidade externa, a rodada nao promove a personalidade.'
+      'Promova somente uma rodada produzida pelo executor local controlado, com recibos vinculados e todos os gates verdes.'
     ]
   }
 }
@@ -168,6 +174,7 @@ function normalizarProveniencia(value) {
   const candidateInjected = value?.candidateOmniInjected
   const baselineSessionFingerprint = fingerprint(value?.baselineSessionFingerprint, 'Fingerprint da sessao baseline')
   const candidateSessionFingerprint = fingerprint(value?.candidateSessionFingerprint, 'Fingerprint da sessao candidata')
+  const captureVerified = value?.trustMode === 'local-controlled-runner-v1' && value?.captureVerified === true
   return {
     source: texto(source, 'Fonte da proveniencia'),
     provider: texto(value?.provider, 'Provedor'),
@@ -186,6 +193,13 @@ function normalizarProveniencia(value) {
     ),
     baselineOmniInjected: baselineInjected === true,
     candidateOmniInjected: candidateInjected === true,
+    trustMode: captureVerified ? 'local-controlled-runner-v1' : 'caller-claim',
+    captureVerified,
+    triggerFingerprint: fingerprintOpcional(value?.triggerFingerprint, 'Fingerprint do gatilho'),
+    evaluatedPayloadFingerprint: fingerprintOpcional(
+      value?.evaluatedPayloadFingerprint,
+      'Fingerprint do payload avaliado'
+    ),
     controlled:
       baselineInjected === false &&
       candidateInjected === true &&
@@ -206,16 +220,33 @@ function normalizarRevisao(value, cases) {
   const ids = new Set(cases.map((item) => item.id))
   const extras = Object.keys(decisions).filter((id) => !ids.has(id))
   const reviewed = cases.filter((item) => typeof decisions[item.id] === 'boolean')
-  const claimed = reviewer === 'owner' && attestationFingerprint !== null && attestedAt !== null
+  const claimed = ['owner', 'automatic-judge'].includes(reviewer) &&
+    attestationFingerprint !== null && attestedAt !== null
+  const trustedAutomaticJudge = reviewer === 'automatic-judge' &&
+    value?.source === 'omni-controlled-local-judge-v1' && value?.verified === true
+  const trustedOwnerEvent = reviewer === 'owner' &&
+    value?.source === 'owner-live-hook-v1' && value?.verified === true
+  const verified = claimed && (trustedAutomaticJudge || trustedOwnerEvent)
   const decisionFingerprint = sha256(JSON.stringify(
     cases.map((item) => [item.id, typeof decisions[item.id] === 'boolean' ? decisions[item.id] : null])
   ))
   return {
-    reviewer: claimed ? 'owner-self-claim' : 'invalid',
+    reviewer: verified
+      ? trustedAutomaticJudge ? 'automatic-judge' : 'owner-live'
+      : claimed ? 'unverified-claim' : 'invalid',
     claim: claimed
-      ? { fingerprint: attestationFingerprint, attestedAt, decisionFingerprint, authenticated: false }
+      ? {
+          fingerprint: attestationFingerprint,
+          attestedAt,
+          decisionFingerprint,
+          authenticated: verified,
+          internallyVerified: verified,
+          authority: trustedAutomaticJudge ? 'omni-controlled-local-judge-v1' :
+            trustedOwnerEvent ? 'owner-live-hook-v1' : 'caller-claim'
+        }
       : null,
     decisions: new Map(cases.map((item) => [item.id, decisions[item.id] === true])),
+    verified,
     complete: claimed && extras.length === 0 && reviewed.length === cases.length,
     approved: claimed && extras.length === 0 && reviewed.length === cases.length &&
       cases.every((item) => decisions[item.id] === true)
@@ -242,12 +273,14 @@ function alegacaoCaptura(kind, plan, provenance, responseSetFingerprint) {
     responseSetFingerprint
   }
   return {
-    status: receiptFingerprint ? 'caller-claim' : 'unavailable',
+    status: receiptFingerprint
+      ? provenance.captureVerified ? 'verified-local-capture' : 'caller-claim'
+      : 'unavailable',
     receiptFingerprint,
     binding,
     bindingFingerprint: sha256(JSON.stringify(binding)),
-    internallyVerified: false,
-    externalIdentity: null
+    internallyVerified: provenance.captureVerified,
+    verificationAuthority: provenance.captureVerified ? 'omni-controlled-local-runner-v1' : null
   }
 }
 
@@ -257,6 +290,39 @@ function score(results) {
   return total === 0 ? 0 : Number((approved / total).toFixed(4))
 }
 
+function normalizarAjustes(value) {
+  const directiveIds = Array.isArray(value?.directiveIds)
+    ? [...new Set(value.directiveIds.filter((item) => typeof item === 'string' && /^[a-z0-9-]{3,80}$/.test(item)))]
+    : []
+  const candidateIds = Array.isArray(value?.candidateIds)
+    ? [...new Set(value.candidateIds.filter((item) => typeof item === 'string' && /^personality-candidate-/.test(item)))]
+    : []
+  return {
+    directiveIds,
+    candidateIds,
+    fingerprint: sha256(JSON.stringify({ directiveIds: [...directiveIds].sort(), candidateIds: [...candidateIds].sort() }))
+  }
+}
+
+function normalizarDiagnosticosDoJuiz(value, cases) {
+  if (!Array.isArray(value)) return []
+  const expected = new Set(cases.map((item) => item.id))
+  const byId = new Map()
+  for (const item of value) {
+    if (!expected.has(item?.id) || byId.has(item.id)) continue
+    if (typeof item?.passed !== 'boolean' ||
+      typeof item?.reasonCode !== 'string' || !/^[a-z0-9][a-z0-9-]{0,79}$/.test(item.reasonCode) ||
+      typeof item?.reasonCodeHash !== 'string' || !HASH_SHA256.test(item.reasonCodeHash)) continue
+    byId.set(item.id, {
+      id: item.id,
+      passed: item.passed,
+      reasonCode: item.reasonCode,
+      reasonCodeHash: item.reasonCodeHash
+    })
+  }
+  return cases.map((item) => byId.get(item.id)).filter(Boolean)
+}
+
 export async function avaliarRodadaPersonalidade({
   pluginRoot = raiz,
   roundId = `personality-run-${randomUUID()}`,
@@ -264,6 +330,8 @@ export async function avaliarRodadaPersonalidade({
   candidateResponses,
   humanReview,
   provenance,
+  adjustments,
+  judgeDiagnostics,
   at
 } = {}) {
   const plan = await criarPlanoRodadaPersonalidade({ pluginRoot })
@@ -271,6 +339,8 @@ export async function avaliarRodadaPersonalidade({
   const candidateMap = mapaDeRespostas(candidateResponses, 'Candidata')
   const review = normalizarRevisao(humanReview, plan.cases)
   const normalizedProvenance = normalizarProveniencia(provenance)
+  const normalizedAdjustments = normalizarAjustes(adjustments)
+  const normalizedJudgeDiagnostics = normalizarDiagnosticosDoJuiz(judgeDiagnostics, plan.cases)
   const baselineResults = plan.cases.map((item) => avaliarResposta(item, baselineMap.get(item.id)))
   const candidateResults = plan.cases.map((item) => avaliarResposta(item, candidateMap.get(item.id)))
   const baselineComplete = plan.cases.every((item) => baselineMap.has(item.id) && baselineMap.get(item.id).trim())
@@ -288,10 +358,10 @@ export async function avaliarRodadaPersonalidade({
   const ownerReviewClaim = review.claim
     ? {
         ...review.claim,
-        status: 'caller-claim',
+        status: review.verified ? 'verified-local-decision' : 'caller-claim',
         receiptFingerprint: review.claim.fingerprint,
-        internallyVerified: false,
-        externalIdentity: null,
+        internallyVerified: review.verified,
+        authority: review.claim.authority,
         binding: {
           suite: plan.suite,
           suiteSha256: plan.suiteSha256,
@@ -326,11 +396,16 @@ export async function avaliarRodadaPersonalidade({
     { id: 'owner-review-claim-complete', passed: review.complete },
     { id: 'owner-claimed-approval-for-all-cases', passed: review.approved },
     { id: 'receipt-claims-distinct-and-explicitly-bound', passed: receiptClaimsDistinctAndBound },
-    { id: 'capture-receipts-cryptographically-verified-internally', passed: false },
-    { id: 'owner-presence-cryptographically-verified', passed: false }
+    {
+      id: 'capture-receipts-produced-by-controlled-local-runner',
+      passed: captureReceiptClaims.every((item) => item.internallyVerified === true)
+    },
+    { id: 'review-produced-by-verifiable-local-authority', passed: review.verified }
   ]
   const evaluatedAt = agora(at)
-  const status = 'unverified-claim'
+  const gatesPassed = gates.every((gate) => gate.passed)
+  const trustedCapture = captureReceiptClaims.every((item) => item.internallyVerified === true)
+  const status = gatesPassed ? 'passed' : trustedCapture && review.verified ? 'failed' : 'unverified-claim'
   return {
     schemaVersion: 1,
     id: texto(roundId, 'ID da rodada'),
@@ -350,14 +425,19 @@ export async function avaliarRodadaPersonalidade({
       pendingLearnedCandidates: plan.pendingLearnedCandidates.length
     },
     learnedCandidates: plan.learnedCandidates,
+    adjustments: normalizedAdjustments,
+    judgeDiagnostics: normalizedJudgeDiagnostics,
     ownerReviewClaim,
     trust: {
       captureReceiptClaims,
-      cryptographicVerification: 'unavailable',
-      externalIdentity: 'unavailable',
+      verification: gatesPassed ? 'local-controlled-runner-v1' : 'incomplete',
+      scope: 'single-owner-local-machine',
       callerSuppliedClaimsAreProof: false,
-      promotable: false,
-      reason: 'O runtime local nao possui verificacao criptografica interna nem identidade externa do proprietario.'
+      decisionAuthority: review.claim?.authority ?? null,
+      promotable: gatesPassed,
+      reason: gatesPassed
+        ? 'Capturas e decisao foram produzidas pelo executor local controlado e vinculadas por fingerprint.'
+        : 'Um ou mais gates da rodada nao foram comprovados.'
     },
     caseResults,
     gates,
@@ -370,9 +450,21 @@ export function criarEvidenciaPromocao(run) {
   if (run?.rawResponsesStored !== false) {
     throw new Error('Promocao nao aceita respostas brutas no registro.')
   }
-  throw new Error(
-    'Promocao bloqueada: hash e autoafirmacao nao provam captura autentica nem presenca do proprietario.'
-  )
+  if (run?.status !== 'passed' || run?.trust?.promotable !== true ||
+    !Array.isArray(run?.gates) || run.gates.some((gate) => gate.passed !== true)) {
+    throw new Error('Promocao bloqueada: a rodada nao passou por todos os gates confiaveis.')
+  }
+  return {
+    schemaVersion: 1,
+    roundId: run.id,
+    decidedAt: run.evaluatedAt,
+    decidedBy: run.trust.decisionAuthority,
+    suiteSha256: run.suiteSha256,
+    baseline: run.baseline,
+    candidate: run.candidate,
+    responseSets: run.responseSets,
+    caseResults: run.caseResults
+  }
 }
 
 export function caminhoDoHistoricoPersonalidade(casa) {
@@ -389,7 +481,7 @@ function historicoVazio(at = agora()) {
 }
 
 function validarHistorico(store) {
-  if (Array.isArray(store?.runs)) {
+  if (store?.schemaVersion === 1 && Array.isArray(store?.runs)) {
     store.runs = store.runs.map((run) => run?.status === 'passed'
       ? {
           ...run,
@@ -404,6 +496,7 @@ function validarHistorico(store) {
           }
         }
       : run)
+    store.schemaVersion = STORE_SCHEMA_VERSION
   }
   if (
     store?.schemaVersion !== STORE_SCHEMA_VERSION ||

@@ -20,6 +20,24 @@
     "blockedExecutorReturnsTo": "omni",
     "ownerDecisionUpdatesRemainingCycle": true
   },
+  "standingSelfCorrection": {
+    "contract": "omni-standing-self-correction-v1",
+    "grantId": "owner-authorized-omni-self-correction",
+    "destinationCapabilities": ["omni-self-correction"],
+    "scope": "configured-canonical-omni-repository-only",
+    "allowedEffectClasses": ["read", "execute", "write"],
+    "deniedEffectClasses": ["destructive", "financial", "privilege"],
+    "allowedRisk": {
+      "reversibility": ["reversible"],
+      "reach": ["single-scoped-target"],
+      "data": ["project"],
+      "mode": ["proceed"]
+    },
+    "requiresConfiguredCanonicalRepository": true,
+    "requiresRegressionGates": true,
+    "requiresInstalledReadbackForCompletion": true,
+    "storeRawGrant": false
+  },
   "risk": {
     "principle": "Risco muda o metodo de execucao por meio de checkpoint, isolamento, rollback, compensacao e verificacao.",
     "dimensions": {

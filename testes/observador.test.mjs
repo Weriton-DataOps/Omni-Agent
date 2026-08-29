@@ -18,6 +18,8 @@ import {
   observarPrompt
 } from '../runtime/observador.mjs'
 import { lerAtalhos } from '../runtime/atalhos.mjs'
+import { registrarUltimaRespostaPersonalidade } from '../runtime/feedback-personalidade.mjs'
+import { abrirTurnoAuditoria } from '../runtime/auditoria-autocorrecao.mjs'
 
 async function home() {
   return mkdtemp(join(tmpdir(), 'omni-observer-'))
@@ -93,7 +95,7 @@ test('detector de fidelidade ignora estado factual e aceita somente correcao dir
   }
 })
 
-test('detector de personalidade exige feedback negativo inequívoco do proprietário', async () => {
+test('feedback de personalidade exige vinculo com resposta e usa sourceRefs sem virar falha generica', async () => {
   const casa = await home()
   try {
     const neutralOrPositive = [
@@ -113,28 +115,87 @@ test('detector de personalidade exige feedback negativo inequívoco do propriet�
       assert.equal(observed.corrections.some((item) => item.id === 'dry-personality'), false)
     }
 
-    const negative = [
-      'O diálogo ainda está frio e com poucas analogias.',
-      'Você está muito seco e genérico nesta conversa.',
-      'Não está seca, mas a resposta continua genérica.',
-      'A personalidade não apareceu nesta resposta.',
-      'Quero mais humor, sarcasmo e analogias no seu jeito de conversar.'
-    ]
-    for (const [index, prompt] of negative.entries()) {
-      const observed = await observarPrompt(casa, {
-        session_id: `personality-negative-${index}`,
-        origin: 'owner-transcript',
-        prompt
+    const unbound = await observarPrompt(casa, {
+      session_id: 'personality-unbound',
+      origin: 'owner-transcript',
+      prompt: 'A resposta ficou seca.'
+    })
+    assert.equal(unbound.personalityFeedback.result, 'unbound')
+    assert.equal(unbound.corrections.some((item) => item.source === 'personality-feedback'), false)
+
+    for (const sessionId of ['personality-negative-1', 'personality-negative-2']) {
+      await registrarUltimaRespostaPersonalidade(casa, {
+        sessionId,
+        answer: `Resposta anterior ${sessionId}`
       })
-      assert.equal(observed.corrections.some((item) => item.id === 'dry-personality'), true)
+      const observed = await observarPrompt(casa, {
+        session_id: sessionId,
+        origin: 'owner-transcript',
+        prompt: 'A resposta ficou seca.'
+      })
+      assert.equal(
+        observed.corrections.some((item) => item.id === 'personality-feedback:tone-too-dry'),
+        true
+      )
     }
+
+    const cycle = await lerCicloOperacional(casa)
+    const candidate = cycle.improvementCandidates.find(
+      (item) => item.category === 'owner-personality-feedback'
+    )
+    assert.ok(candidate)
+    assert.equal(candidate.status, 'ready')
+    assert.equal(candidate.occurrences, 2)
+    assert.equal(candidate.sourceRefs.length, 2)
+    assert.equal(new Set(candidate.sourceRefs.map((item) => item.turnFingerprint)).size, 2)
+    assert.equal((await lerFalhas(casa)).patterns.length, 0)
+
+    const replay = await observarPrompt(casa, {
+      session_id: 'personality-negative-2',
+      origin: 'owner-transcript',
+      prompt: 'A resposta ficou seca.'
+    })
+    assert.equal(replay.corrections[0].improvement, 'duplicate-evidence')
+    assert.equal(
+      (await lerCicloOperacional(casa)).improvementCandidates.find(
+        (item) => item.category === 'owner-personality-feedback'
+      ).occurrences,
+      2
+    )
 
     const foreign = await observarPrompt(casa, {
       session_id: 'personality-system',
       origin: 'system',
       prompt: 'O diálogo ainda está frio e sem vida.'
     })
-    assert.equal(foreign.corrections.some((item) => item.id === 'dry-personality'), false)
+    assert.equal(foreign.corrections.some((item) => item.source === 'personality-feedback'), false)
+  } finally {
+    await rm(casa, { recursive: true, force: true })
+  }
+})
+
+test('elogio recorrente tambem vira caso rastreavel sem entrar no failure-learning', async () => {
+  const casa = await home()
+  try {
+    for (const sessionId of ['personality-positive-1', 'personality-positive-2']) {
+      await registrarUltimaRespostaPersonalidade(casa, {
+        sessionId,
+        answer: `Resposta aprovada ${sessionId}`
+      })
+      await observarPrompt(casa, {
+        session_id: sessionId,
+        origin: 'owner-live',
+        prompt: 'Essa resposta ficou excelente; gostei do humor e ele funcionou.'
+      })
+    }
+    const cycle = await lerCicloOperacional(casa)
+    const humor = cycle.improvementCandidates.find((item) =>
+      item.sourceRefs.some((source) => source.reasonCode === 'humor-effective')
+    )
+    assert.ok(humor)
+    assert.equal(humor.status, 'ready')
+    assert.equal(humor.sourceRefs.length, 2)
+    assert.equal((await lerFalhas(casa)).patterns.length, 0)
   } finally {
     await rm(casa, { recursive: true, force: true })
   }
@@ -238,7 +299,7 @@ test('assinatura v2 distingue contexto e ferramenta de mensageria', () => {
   assert.equal(message.includes('conteúdo privado'), false)
 })
 
-test('SubagentStop sem delegação preparada não fabrica sucesso nem atalho', async () => {
+test('SubagentStop sem delegação preparada é recusado sem fabricar sucesso nem atalho', async () => {
   const casa = await home()
   try {
     await observarFimSubagente(casa, {
@@ -250,8 +311,8 @@ test('SubagentStop sem delegação preparada não fabrica sucesso nem atalho', a
     })
     const cycle = await lerCicloOperacional(casa)
     const shortcuts = await lerAtalhos(casa)
-    assert.equal(cycle.delegations[0].state, 'failed')
-    assert.equal(cycle.delegations[0].verificationEvidenceFingerprint, null)
+    assert.equal(cycle.delegations.length, 0)
+    assert.equal(cycle.events.at(-1).status, 'rejected')
     assert.equal(shortcuts.shortcuts.length, 0)
   } finally {
     await rm(casa, { recursive: true, force: true })
@@ -269,8 +330,13 @@ test('observador preserva o FSM: início rastreado executa e parada apenas relat
     await atualizarDelegacao(casa, delegation.id, 'visible', {
       evidence: 'prompt-visible-tracked'
     })
+    await abrirTurnoAuditoria(casa, {
+      session_id: 's-tracked',
+      prompt: 'Delegue a validação e acompanhe o resultado.'
+    })
     const started = await observarInicioSubagente(casa, {
       session_id: 's-tracked',
+      delegation_id: delegation.id,
       agent_id: 'agent-tracked',
       agent_type: 'executor',
       cwd: 'C:\\projeto'
@@ -278,6 +344,7 @@ test('observador preserva o FSM: início rastreado executa e parada apenas relat
     assert.equal(started.result, 'running')
     const reported = await observarFimSubagente(casa, {
       session_id: 's-tracked',
+      delegation_id: delegation.id,
       agent_id: 'agent-tracked',
       agent_type: 'executor',
       agent_transcript_path: 'tracked-transcript.jsonl',
@@ -302,7 +369,7 @@ test('observador preserva o FSM: início rastreado executa e parada apenas relat
   }
 })
 
-test('início sem preparação aparece como falha de governança, não como running', async () => {
+test('início sem delegationId aparece como rejeição de governança, não como running', async () => {
   const casa = await home()
   try {
     const observed = await observarInicioSubagente(casa, {
@@ -311,10 +378,10 @@ test('início sem preparação aparece como falha de governança, não como runn
       agent_type: 'executor',
       cwd: 'C:\\projeto'
     })
-    assert.equal(observed.result, 'failed')
+    assert.equal(observed.result, 'uncorrelated')
     const cycle = await lerCicloOperacional(casa)
-    assert.equal(cycle.delegations[0].state, 'failed')
-    assert.equal(cycle.events.at(-1).status, 'failed')
+    assert.equal(cycle.delegations.length, 0)
+    assert.equal(cycle.events.at(-1).status, 'rejected')
   } finally {
     await rm(casa, { recursive: true, force: true })
   }

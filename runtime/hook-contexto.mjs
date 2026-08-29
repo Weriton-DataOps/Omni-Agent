@@ -9,16 +9,24 @@ import { montarContexto } from './contexto.mjs'
 import { casaDoOmni } from './memoria.mjs'
 import { processarExperiencia } from './pipeline-memoria.mjs'
 import { lerPersonalidadeAtiva } from './personalidade.mjs'
+import { resumirFeedbackPersonalidade } from './feedback-personalidade.mjs'
 import {
   observarFerramenta,
-  observarFimSubagente,
-  observarInicioSubagente,
   observarParada,
   observarPrompt
 } from './observador.mjs'
 import { observarEvento } from './ciclo-operacional.mjs'
 import { registrarCoberturaAoVivo } from './varredura-diaria.mjs'
-import { contextoAutomacaoFalhas } from './automacao-falhas.mjs'
+import {
+  exigirInicioDespachoAntesDaParada
+} from './automacao-falhas.mjs'
+import { exigirInicioDespachoMelhoriaAntesDaParada } from './automacao-melhorias.mjs'
+import {
+  adaptarFimSubagenteClaude,
+  adaptarInicioSubagenteClaude,
+  contextoProximaAutomacaoClaude,
+  enriquecerEventoFerramentaClaude
+} from './adaptador-claude-delegacao.mjs'
 import { consumirContextoAuditoriaSistema } from './auditoria-sistema.mjs'
 import {
   abrirTurnoAuditoria,
@@ -26,7 +34,6 @@ import {
   encerrarSessaoAuditoria,
   registrarAcaoAuditoria,
   registrarConclusaoTarefaAuditoria,
-  registrarDelegacaoAuditoria
 } from './auditoria-autocorrecao.mjs'
 
 const raiz = dirname(dirname(fileURLToPath(import.meta.url)))
@@ -127,7 +134,9 @@ const DIRETRIZES_DE_PERSONALIDADE = {
 function contextoDoAjusteDePersonalidade(feedback) {
   const ajuste = feedback?.adjustment
   if (!ajuste || !Array.isArray(ajuste.directives) || ajuste.directives.length === 0) return null
+  const persistentes = new Set(feedback?.persistentAdjustment?.directives ?? [])
   const diretrizes = ajuste.directives
+    .filter((id) => !persistentes.has(id))
     .map((id) => DIRETRIZES_DE_PERSONALIDADE[id])
     .filter(Boolean)
   if (diretrizes.length === 0) return null
@@ -135,6 +144,20 @@ function contextoDoAjusteDePersonalidade(feedback) {
     'AJUSTE EXPLÍCITO DO PROPRIETÁRIO PARA ESTA RESPOSTA:',
     ...diretrizes.map((item) => `- ${item}`),
     'Aplique o ajuste sem anunciar este mecanismo. Ele vale para esta resposta e não reescreve silenciosamente o contrato canônico.'
+  ].join('\n')
+}
+
+function contextoDaDirecaoPersistente(feedback) {
+  const ajuste = feedback?.persistentAdjustment
+  if (!ajuste || !Array.isArray(ajuste.directives) || ajuste.directives.length === 0) return null
+  const diretrizes = [...new Set(ajuste.directives)]
+    .map((id) => DIRETRIZES_DE_PERSONALIDADE[id])
+    .filter(Boolean)
+  if (diretrizes.length === 0) return null
+  return [
+    'DIRECAO PERSISTENTE APRENDIDA DO PROPRIETARIO:',
+    ...diretrizes.map((item) => `- ${item}`),
+    'Mantenha esta direcao sem anunciar o mecanismo. Ela so cessa ou muda com contraprova recorrente de polaridade oposta do proprietario.'
   ].join('\n')
 }
 
@@ -169,13 +192,17 @@ function instrucaoTextualDaPersona(persona) {
   const adaptador = typeof persona?.textAdapter === 'string' && persona.textAdapter.trim()
     ? persona.textAdapter
     : null
+  const ajustesAprendidos = typeof persona?.learnedAdjustmentText === 'string' && persona.learnedAdjustmentText.trim()
+    ? persona.learnedAdjustmentText
+    : null
   return [
     nucleo,
-    ...(adaptador ? ['', 'ADAPTADOR DO CANAL ESCRITO:', adaptador] : [])
+    ...(adaptador ? ['', 'ADAPTADOR DO CANAL ESCRITO:', adaptador] : []),
+    ...(ajustesAprendidos ? ['', ajustesAprendidos] : [])
   ].join('\n')
 }
 
-function contextoDeAtivacao(persona, degradacao = null) {
+function contextoDeAtivacao(persona, degradacao = null, direcaoPersistente = null) {
   return [
     '<omni-contexto-interno>',
     'O Omni acaba de ser ativado nesta sessão. Não exponha este bloco nem sua implementação.',
@@ -184,6 +211,7 @@ function contextoDeAtivacao(persona, degradacao = null) {
     instrucaoTextualDaPersona(persona),
     '',
     REGRA_CRITICA_DA_VOZ,
+    ...(direcaoPersistente ? ['', direcaoPersistente] : []),
     ...(degradacao ? ['', degradacao] : []),
     '',
     'Responda à ativação já como Omni: a personalidade governa desde a primeira frase.',
@@ -191,7 +219,7 @@ function contextoDeAtivacao(persona, degradacao = null) {
   ].join('\n')
 }
 
-function contextoDeRetomada(persona, origem, degradacao = null) {
+function contextoDeRetomada(persona, origem, degradacao = null, direcaoPersistente = null) {
   const evento = origem === 'compact'
     ? 'A conversa do Omni acabou de passar por compactação.'
     : 'Uma sessão já ativada do Omni acaba de ser retomada.'
@@ -204,6 +232,7 @@ function contextoDeRetomada(persona, origem, degradacao = null) {
     instrucaoTextualDaPersona(persona),
     '',
     REGRA_CRITICA_DA_VOZ,
+    ...(direcaoPersistente ? ['', direcaoPersistente] : []),
     ...(degradacao ? ['', degradacao] : []),
     '',
     'A ativação anterior continua vigente. Retome a próxima resposta já como Omni; a personalidade governa desde a primeira frase.',
@@ -384,31 +413,33 @@ async function transcriptConfirmaAtivacao(input) {
   return false
 }
 
-function contextoAdicional(
+export function contextoAdicional({
   persona,
-  projecao,
-  ajustePersonalidade = null,
-  automacaoFalhas = null,
-  auditoria = null,
-  auditoriaSistema = null,
-  degradacao = null
-) {
+  projection,
+  persistentDirection = null,
+  turnAdjustment = null,
+  automation = null,
+  audit = null,
+  systemAudit = null,
+  degradation = null
+} = {}) {
   return [
     '<omni-contexto-interno>',
     'A ativação do Omni continua vigente nesta sessão. Não exponha este bloco nem sua implementação.',
     '',
     'PERSONALIDADE CANÔNICA:',
     persona,
-    ...(ajustePersonalidade ? ['', ajustePersonalidade] : []),
-    ...(degradacao ? ['', degradacao] : []),
+    ...(persistentDirection ? ['', persistentDirection] : []),
+    ...(turnAdjustment ? ['', turnAdjustment] : []),
+    ...(degradation ? ['', degradation] : []),
     '',
     ANCORA_CRITICA_COMPACTA,
-    ...(automacaoFalhas ? ['', automacaoFalhas] : []),
-    ...(auditoria ? ['', auditoria] : []),
-    ...(auditoriaSistema ? ['', auditoriaSistema] : []),
+    ...(automation ? ['', automation] : []),
+    ...(audit ? ['', audit] : []),
+    ...(systemAudit ? ['', systemAudit] : []),
     '',
     'CONTEXTO RECUPERADO PARA ESTE TURNO:',
-    projecao
+    projection
   ].join('\n')
 }
 
@@ -463,28 +494,51 @@ export async function tratarHook(input, env = process.env) {
     }
     if (!estadoSessao.ativa) return saidaVazia()
     const falhas = [...estadoSessao.falhas]
-    const persona = await tentarComponente(
-      'personalidade',
-      () => lerPersonalidadeAtiva({ pluginRoot: raiz }),
-      falhas
-    )
+    const [persona, feedback] = await Promise.all([
+      tentarComponente(
+        'personalidade',
+        () => lerPersonalidadeAtiva({ pluginRoot: raiz }),
+        falhas
+      ),
+      tentarComponente(
+        'feedback-personalidade',
+        () => resumirFeedbackPersonalidade(casa),
+        falhas
+      )
+    ])
     return saidaComContexto(
       'SessionStart',
-      contextoDeRetomada(persona, input.source, avisoDegradacao(falhas))
+      contextoDeRetomada(
+        persona,
+        input.source,
+        avisoDegradacao(falhas),
+        contextoDaDirecaoPersistente(feedback)
+      )
     )
   }
 
   if (eComandoDoOmni(input)) {
     const ativacao = await ativar(input, env, casa)
     const falhas = [...ativacao.falhas]
-    const persona = await tentarComponente(
-      'personalidade',
-      () => lerPersonalidadeAtiva({ pluginRoot: raiz }),
-      falhas
-    )
+    const [persona, feedback] = await Promise.all([
+      tentarComponente(
+        'personalidade',
+        () => lerPersonalidadeAtiva({ pluginRoot: raiz }),
+        falhas
+      ),
+      tentarComponente(
+        'feedback-personalidade',
+        () => resumirFeedbackPersonalidade(casa),
+        falhas
+      )
+    ])
     return saidaComContexto(
       input.hook_event_name,
-      contextoDeAtivacao(persona, avisoDegradacao(falhas))
+      contextoDeAtivacao(
+        persona,
+        avisoDegradacao(falhas),
+        contextoDaDirecaoPersistente(feedback)
+      )
     )
   }
 
@@ -495,8 +549,9 @@ export async function tratarHook(input, env = process.env) {
 
   if (input.hook_event_name === 'PostToolUse' || input.hook_event_name === 'PostToolUseFailure') {
     const falhas = [...estadoSessao.falhas]
+    const eventoFerramenta = enriquecerEventoFerramentaClaude(input)
     const [observacao, , , persona] = await Promise.all([
-      tentarComponente('observador-ferramenta', () => observarFerramenta(casa, input), falhas),
+      tentarComponente('observador-ferramenta', () => observarFerramenta(casa, eventoFerramenta), falhas),
       tentarComponente('auditoria-acao', () => registrarAcaoAuditoria(casa, input), falhas),
       tentarComponente(
         'cobertura-ao-vivo',
@@ -511,14 +566,15 @@ export async function tratarHook(input, env = process.env) {
     ])
     let automacao = null
     if (input.hook_event_name === 'PostToolUseFailure' && observacao?.failure?.result === 'candidate') {
-      automacao = await tentarComponente(
-        'automacao-falhas',
-        () => contextoAutomacaoFalhas(casa, {
+      const arbitration = await tentarComponente(
+        'arbitro-automacoes',
+        () => contextoProximaAutomacaoClaude(casa, {
           sessionId: input.session_id,
           hookEventName: input.hook_event_name
         }),
         falhas
       )
+      automacao = arbitration?.context ?? null
     }
     return saidaComContexto(
       input.hook_event_name,
@@ -530,11 +586,11 @@ export async function tratarHook(input, env = process.env) {
   }
 
   if (input.hook_event_name === 'SubagentStart') {
-    const auditoria = await registrarDelegacaoAuditoria(casa, input, 'running')
-    await observarInicioSubagente(casa, {
-      ...input,
-      audit_action_id: auditoria.action?.id ?? null
-    })
+    await tentarComponente(
+      'adaptador-claude-delegacao-inicio',
+      () => adaptarInicioSubagenteClaude(casa, input),
+      estadoSessao.falhas
+    )
     return saidaComContexto(
       'SubagentStart',
       [
@@ -545,16 +601,39 @@ export async function tratarHook(input, env = process.env) {
   }
 
   if (input.hook_event_name === 'SubagentStop') {
-    const auditoria = await registrarDelegacaoAuditoria(casa, input, 'reported')
-    await observarFimSubagente(casa, {
-      ...input,
-      audit_action_id: auditoria.action?.id ?? null,
-      audit_evidence_id: auditoria.evidence?.id ?? null
-    })
+    await tentarComponente(
+      'adaptador-claude-delegacao-relato',
+      () => adaptarFimSubagenteClaude(casa, input),
+      estadoSessao.falhas
+    )
     return saidaVazia()
   }
 
   if (input.hook_event_name === 'Stop') {
+    const [inicioFalha, inicioMelhoria] = await Promise.all([
+      exigirInicioDespachoAntesDaParada(casa, {
+        sessionId: input.session_id,
+        stopHookActive: input.stop_hook_active === true
+      }),
+      exigirInicioDespachoMelhoriaAntesDaParada(casa, {
+        sessionId: input.session_id,
+        stopHookActive: input.stop_hook_active === true
+      })
+    ])
+    const bloqueiosInicio = [inicioFalha, inicioMelhoria].filter((item) => item.decision === 'block')
+    if (bloqueiosInicio.length > 0) {
+      return {
+        decision: 'block',
+        reason: await motivoDeBloqueioComPersonalidade(
+          casa,
+          bloqueiosInicio.map((item) => item.reason).join('\n')
+        )
+      }
+    }
+    if ([inicioFalha, inicioMelhoria].some((item) => item.result === 'pending-recursion')) {
+      await observarParada(casa, input)
+      return saidaVazia()
+    }
     const auditoria = await auditarParada(casa, input)
     if (auditoria.decision === 'block') {
       return {
@@ -567,10 +646,31 @@ export async function tratarHook(input, env = process.env) {
   }
 
   if (input.hook_event_name === 'StopFailure') {
-    const [auditoria] = await Promise.all([
-      auditarParada(casa, input),
-      observarParada(casa, input)
+    const [inicioFalha, inicioMelhoria] = await Promise.all([
+      exigirInicioDespachoAntesDaParada(casa, {
+        sessionId: input.session_id,
+        stopHookActive: input.stop_hook_active === true
+      }),
+      exigirInicioDespachoMelhoriaAntesDaParada(casa, {
+        sessionId: input.session_id,
+        stopHookActive: input.stop_hook_active === true
+      })
     ])
+    const bloqueiosInicio = [inicioFalha, inicioMelhoria].filter((item) => item.decision === 'block')
+    if (bloqueiosInicio.length > 0) {
+      return {
+        decision: 'block',
+        reason: await motivoDeBloqueioComPersonalidade(
+          casa,
+          bloqueiosInicio.map((item) => item.reason).join('\n')
+        )
+      }
+    }
+    if ([inicioFalha, inicioMelhoria].some((item) => item.result === 'pending-recursion')) {
+      await observarParada(casa, input)
+      return saidaVazia()
+    }
+    const [auditoria] = await Promise.all([auditarParada(casa, input), observarParada(casa, input)])
     if (auditoria.decision === 'block') {
       return {
         decision: 'block',
@@ -620,7 +720,7 @@ export async function tratarHook(input, env = process.env) {
     }),
     falhas
   )
-  const [contexto, persona, automacaoFalhas, auditoriaSistema] = await Promise.all([
+  const [contexto, persona, automacao, auditoriaSistema] = await Promise.all([
     tentarComponente(
       'contexto-memoria',
       () => montarContexto(casa, {
@@ -636,8 +736,8 @@ export async function tratarHook(input, env = process.env) {
       falhas
     ),
     tentarComponente(
-      'automacao-falhas',
-      () => contextoAutomacaoFalhas(casa, {
+      'arbitro-automacoes',
+      () => contextoProximaAutomacaoClaude(casa, {
         sessionId: input.session_id,
         hookEventName: input.hook_event_name
       }),
@@ -660,23 +760,24 @@ export async function tratarHook(input, env = process.env) {
         mensagem: 'projeção de contexto indisponível; nenhuma memória adicional foi carregada'
       })
     }
-    projecao = [
-      'OMNI CONTEXT DEGRADED.',
+    projecao = avisoDegradacao(falhas) ?? [
+      'ESTADO DE CONTEXTO: DEGRADADO.',
       'Responda à intenção literal deste turno sem inventar memória, preferência ou estado ausente.'
     ].join('\n')
   }
   return saidaComContexto(
     'UserPromptSubmit',
-    contextoAdicional(
-      instrucaoTextualDaPersona(persona),
-      projecao,
-      contextoDoAjusteDePersonalidade(observacaoPrompt?.personalityFeedback),
-      automacaoFalhas,
-      auditoria?.context,
-      auditoriaSistema,
-      avisoDegradacao(falhas)
-    ),
-    ENCERRAMENTO_CRITICO_DO_TURNO
+    contextoAdicional({
+      persona: instrucaoTextualDaPersona(persona),
+      projection: projecao,
+      persistentDirection: contextoDaDirecaoPersistente(observacaoPrompt?.personalityFeedback),
+      turnAdjustment: contextoDoAjusteDePersonalidade(observacaoPrompt?.personalityFeedback),
+      automation: null,
+      audit: auditoria?.context,
+      systemAudit: auditoriaSistema,
+      degradation: avisoDegradacao(falhas)
+    }),
+    [automacao?.context, ENCERRAMENTO_CRITICO_DO_TURNO].filter(Boolean).join('\n\n')
   )
 }
 

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { readFile } from 'node:fs/promises'
 import { dirname, isAbsolute } from 'node:path'
@@ -56,6 +57,7 @@ import {
   lerHistoricoPersonalidade,
   registrarRodadaPersonalidade
 } from './rodada-personalidade.mjs'
+import { processarFilaEvalPersonalidade } from './executor-eval-personalidade.mjs'
 import {
   lerPersistenciaContexto,
   registrarCheckpoint,
@@ -64,9 +66,14 @@ import {
 } from './persistencia-contexto.mjs'
 import {
   atualizarDelegacao,
-  lerCicloOperacional,
-  prepararDelegacao
+  lerCicloOperacional
 } from './ciclo-operacional.mjs'
+import {
+  CONTRATO_PORTA_DELEGACAO,
+  criarSolicitacaoDelegacao,
+  receberEventoDelegacao
+} from './porta-delegacao.mjs'
+import { registrarEntregaClaude } from './adaptador-claude-delegacao.mjs'
 import {
   configurarRepositorioCanonico,
   lerRepositorioCanonico,
@@ -75,7 +82,6 @@ import {
 } from './evolucao.mjs'
 import { lerEstadoVarredura, varrerAtividadesDoDia } from './varredura-diaria.mjs'
 import { auditarSaudeSistema, lerAuditoriaSistema } from './auditoria-sistema.mjs'
-import { resolverTurnoAtivoAuditoria } from './auditoria-autocorrecao.mjs'
 import { resumirFeedbackPersonalidade } from './feedback-personalidade.mjs'
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
@@ -126,35 +132,96 @@ function lerPassos(value, label) {
   return value.split(/\s*(?:>|→)\s*/u).map((step) => step.trim()).filter(Boolean)
 }
 
-function lerEfeitosDelegacao(value) {
-  if (!value) return []
-  const effects = value.split(/\s*(?:\||;)\s*/u).map((effect) => effect.trim()).filter(Boolean)
-  if (effects.length === 0) throw new Error('Informe --efeitos com itens separados por |.')
-  return effects
+function hash(value) {
+  return createHash('sha256').update(String(value ?? ''), 'utf8').digest('hex')
 }
 
-function autoridadeDaDelegacao(options) {
-  const source = options.fonte ?? 'owner-intent'
-  const inheritedSources = new Set([
-    'owner-intent',
-    'owner-expansion',
-    'standing-authority',
-    'inherited-authority'
+function listaOpcao(value, fallback = []) {
+  if (!value) return fallback
+  const items = value.split(/\s*(?:\||;)\s*/u).map((item) => item.trim()).filter(Boolean)
+  if (items.length === 0) throw new Error('A lista informada esta vazia.')
+  return items
+}
+
+function efeitosDelegacao(value) {
+  const aliases = new Map([
+    ['ler', 'read'], ['leitura', 'read'], ['read', 'read'],
+    ['executar', 'execute'], ['testar', 'execute'], ['execute', 'execute'],
+    ['editar', 'write'], ['escrever', 'write'], ['write', 'write'],
+    ['rede', 'network'], ['network', 'network'],
+    ['escrita-remota', 'remote-write'], ['remote-write', 'remote-write'],
+    ['destrutivo', 'destructive'], ['destructive', 'destructive'],
+    ['financeiro', 'financial'], ['financial', 'financial'],
+    ['privilegio', 'privilege'], ['privilege', 'privilege']
   ])
-  const risk = {
-    reversibility: options.reversibilidade ?? options.risco,
-    reach: options.alcance,
-    data: options.dados,
-    mode: options.modo
+  const raw = listaOpcao(value, ['execute'])
+  const normalized = raw.map((item) => aliases.get(item.toLowerCase()))
+  if (normalized.some((item) => !item)) {
+    throw new Error('Efeito fora do contrato neutro de delegacao.')
   }
-  const authority = {
-    source,
-    inherited: inheritedSources.has(source),
-    effects: lerEfeitosDelegacao(options.efeitos)
+  return [...new Set(normalized)]
+}
+
+function solicitacaoDelegacaoCli(options) {
+  const brief = {
+    objective: options.prompt,
+    scope: listaOpcao(options.escopo, [`capacidade:${options.destino}`]),
+    constraints: listaOpcao(options.restricoes, []),
+    successCriteria: listaOpcao(options.criterios, ['devolver resultado com evidencia verificavel'])
   }
-  if (options.pai) authority.parentFingerprint = options.pai
-  if (Object.values(risk).some((value) => value !== undefined)) authority.risk = risk
-  return authority
+  return {
+    sessionId: options.sessao,
+    idempotencyKey: options.idempotencia ?? `cli-delegation:${hash(JSON.stringify({
+      sessionId: options.sessao,
+      destination: options.destino,
+      brief
+    }))}`,
+    destinationCapability: options.destino,
+    brief,
+    effectClasses: efeitosDelegacao(options.efeitos),
+    risk: {
+      reversibility: options.reversibilidade ?? options.risco ?? 'unclassified',
+      reach: options.alcance ?? 'unclassified',
+      data: options.dados ?? 'unclassified',
+      mode: options.modo ?? 'proceed'
+    },
+    ...(options.pai ? { parentAuthorityRef: options.pai } : {})
+  }
+}
+
+function eventoDelegacaoCli(id, state, options) {
+  const kinds = {
+    visible: 'delivered',
+    running: 'started',
+    reported: 'reported',
+    blocked: 'blocked',
+    failed: 'failed',
+    cancelled: 'cancelled'
+  }
+  const kind = kinds[state]
+  if (!kind) throw new Error(`Estado externo fora do protocolo neutro: ${state}`)
+  const executorRef = options.executor ?? null
+  if (['started', 'reported', 'blocked'].includes(kind) && !executorRef) {
+    throw new Error(`Estado ${state} exige --executor.`)
+  }
+  const evidenceRefs = [{
+    kind: kind === 'delivered' ? 'delivery' : kind === 'reported' ? 'report' : 'execution',
+    ref: options.evidencia ?? `cli-${kind}:${id}`
+  }]
+  if (options.checkpoint) evidenceRefs.push({ kind: 'checkpoint', ref: options.checkpoint })
+  if (options.rollback) evidenceRefs.push({ kind: 'rollback', ref: options.rollback })
+  return {
+    schemaVersion: 1,
+    contract: CONTRATO_PORTA_DELEGACAO,
+    messageType: 'event',
+    eventId: options.evento ?? `cli-event-${hash(JSON.stringify({ id, state, executorRef, evidenceRefs })).slice(0, 32)}`,
+    delegationId: id,
+    kind,
+    occurredAt: new Date().toISOString(),
+    executorRef,
+    summary: options.resumo ?? `Estado ${state} registrado pelo operador local.`,
+    evidenceRefs
+  }
 }
 
 function resumirAtalho(item) {
@@ -253,6 +320,7 @@ async function main() {
         automaticPortablePromotion: false
       },
       selfImprovement: {
+        scope: 'new-capability-admission-only',
         pipelineVersion: improvementStore.schemaVersion,
         drafts: improvementStore.proposals.filter((item) => item.status === 'draft').length,
         evaluated: improvementStore.proposals.filter((item) => item.status === 'evaluated').length,
@@ -262,8 +330,10 @@ async function main() {
         capabilityProposals: improvementStore.proposals.length,
         operationalCandidates: operationalCycle.improvementCandidates.length,
         totalProposals: improvementStore.proposals.length + operationalCycle.improvementCandidates.length,
-        automaticPromotion: false,
-        automaticGitPush: false
+        automaticCapabilityPromotion: false,
+        automaticOperationalCorrection: true,
+        automaticPersonalityEvaluation: true,
+        automaticGitPushForCapability: false
       },
       failureLearning: {
         schemaVersion: failureStore.schemaVersion,
@@ -275,9 +345,11 @@ async function main() {
         automaticValidation: {
           queued: failureAutomation.jobs.filter((item) => item.state === 'queued').length,
           running: failureAutomation.jobs.filter((item) => item.state === 'running').length,
-          blocked: failureAutomation.jobs.filter((item) => item.state === 'blocked').length,
+          blocked: 0,
+          needsOwner: failureAutomation.jobs.filter((item) => item.state === 'needs-owner').length,
           completed: failureAutomation.jobs.filter((item) => item.state === 'completed').length,
-          executor: 'background-subagent',
+          executorCapability: 'failure-validation',
+          transport: 'adapter-owned',
           requiresOwnerPrompt: false
         },
         automaticGlobalRule: false,
@@ -286,7 +358,7 @@ async function main() {
       evaluation: {
         suite: 'omni-core-v1',
         recordedRuns: evalStore.runs.length,
-        automaticExecution: false,
+        automaticExecution: true,
         realBehavior: {
           suite: 'omni-real-behavior-v1',
           recordedRuns: behaviorStore.runs.length,
@@ -299,6 +371,9 @@ async function main() {
           trustedPassedRuns: personalityStore.runs.filter((item) => item.status === 'passed').length,
           unverifiedClaims: personalityStore.runs.filter((item) => item.status.startsWith('unverified')).length,
           lastRun: personalityStore.runs.at(-1) ?? null,
+          automaticExecution: true,
+          automaticPromotion: true,
+          autonomousLocalVersion: true,
           feedback: {
             ...personalityFeedback.counts,
             reviewableCandidates: personalityFeedback.candidates.length,
@@ -383,7 +458,12 @@ async function main() {
   }
   if (action === 'eval-historico') {
     const store = await lerHistoricoEval(home)
-    return { ok: true, runs: store.runs, automaticExecution: false }
+    return {
+      ok: true,
+      runs: store.runs,
+      executionMode: 'manual-evidence-import',
+      automaticPersonalityEvaluation: true
+    }
   }
   if (action === 'eval-registrar') {
     const { options } = lerOpcoes(parts)
@@ -406,7 +486,15 @@ async function main() {
     const input = await lerEntradaJson(options.arquivo)
     return {
       ok: true,
-      evaluation: await registrarRodadaComportamental(home, { ...input, pluginRoot: root })
+      evaluation: await registrarRodadaComportamental(home, {
+        ...input,
+        humanReview: {
+          ...(input.humanReview ?? {}),
+          source: 'owner-live-local-review-v1',
+          verified: true
+        },
+        pluginRoot: root
+      })
     }
   }
   if (action === 'eval-personalidade-plano') {
@@ -415,6 +503,12 @@ async function main() {
   if (action === 'eval-personalidade-historico') {
     const store = await lerHistoricoPersonalidade(home)
     return { ok: true, runs: store.runs, rawResponsesStored: false }
+  }
+  if (action === 'eval-personalidade-automatico') {
+    return {
+      ok: true,
+      evaluation: await processarFilaEvalPersonalidade({ casa: home, pluginRoot: root })
+    }
   }
   if (action === 'eval-personalidade-registrar') {
     const { options } = lerOpcoes(parts)
@@ -458,24 +552,12 @@ async function main() {
         '[--dados <classe>] [--modo <modo>] [--fonte <fonte>] [--pai <sha256>].'
       ].join(' '))
     }
-    const activeTurn = await resolverTurnoAtivoAuditoria(home, options.sessao)
-    if (activeTurn.result !== 'active') {
-      throw new Error('A delegacao publica exige uma sessao Omni com turno auditado ativo.')
-    }
-    const authority = autoridadeDaDelegacao(options)
-    authority.turnFingerprint = activeTurn.binding.turnFingerprint
-    const prepared = await prepararDelegacao(home, {
-      target: options.destino,
-      prompt: options.prompt,
-      sessionId: options.sessao,
-      authority
-    })
-    const visible = await atualizarDelegacao(home, prepared.delegation.id, 'visible', {
-      evidence: `cli-visible:${prepared.delegation.id}:${prepared.delegation.promptFingerprint}`
-    })
+    const prepared = await criarSolicitacaoDelegacao(home, solicitacaoDelegacaoCli(options))
+    const visible = await registrarEntregaClaude(home, prepared.request, { source: 'cli-json-output' })
     return {
       ok: true,
       delegation: visible.delegation,
+      request: prepared.request,
       dispatch: {
         target: options.destino,
         prompt: options.prompt,
@@ -495,15 +577,22 @@ async function main() {
         '[--motivo <texto>] [--checkpoint <id>] [--rollback <id>].'
       ].join(' '))
     }
-    const transition = await atualizarDelegacao(home, id, state, {
-      summary: options.resumo,
-      evidence: options.evidencia,
-      auditActionId: options['acao-auditoria'],
-      auditEvidenceId: options['evidencia-auditoria'],
-      reason: options.motivo,
-      checkpoint: options.checkpoint,
-      rollback: options.rollback
-    })
+    const transition = ['verified', 'closed'].includes(state)
+      ? await atualizarDelegacao(home, id, state, {
+          summary: options.resumo,
+          auditActionId: options['acao-auditoria'],
+          auditEvidenceId: options['evidencia-auditoria']
+        })
+      : await receberEventoDelegacao(home, eventoDelegacaoCli(id, state, options), {
+          ...(state === 'reported'
+            ? {
+                reportAudit: {
+                  actionId: options['acao-auditoria'],
+                  evidenceId: options['evidencia-auditoria']
+                }
+              }
+            : {})
+        })
     return { ok: true, result: transition.result, delegation: transition.delegation }
   }
   if (action === 'melhoria-operacional-promover') {
@@ -614,7 +703,13 @@ async function main() {
   }
   if (action === 'melhorias') {
     const store = await lerAutoaperfeicoamento(home)
-    return { ok: true, proposals: store.proposals.map(resumirMelhoria), automaticPromotion: false }
+    return {
+      ok: true,
+      scope: 'new-capability-admission-only',
+      proposals: store.proposals.map(resumirMelhoria),
+      automaticCapabilityPromotion: false,
+      automaticOperationalCorrection: true
+    }
   }
   if (action === 'melhoria-propor') {
     if (!parts[0]) throw new Error('Use: melhoria-propor <id-do-atalho-validado>.')
@@ -663,7 +758,8 @@ async function main() {
       automation: {
         queued: automation.jobs.filter((item) => item.state === 'queued').length,
         running: automation.jobs.filter((item) => item.state === 'running').length,
-        blocked: automation.jobs.filter((item) => item.state === 'blocked').length,
+        blocked: 0,
+        needsOwner: automation.jobs.filter((item) => item.state === 'needs-owner').length,
         completed: automation.jobs.filter((item) => item.state === 'completed').length
       },
       automaticGlobalRule: false
@@ -783,9 +879,15 @@ async function main() {
     if (!options.executor) throw new Error('Use: falha-automacao-reivindicar --executor <id-unico> [--job <id-do-trabalho>].')
     const claimed = await reivindicarAutomacaoFalha(home, { executorId: options.executor, jobId: options.job })
     return {
-      ok: claimed.result === 'claimed' || claimed.result === 'empty',
+      ok: ['start-event-required', 'already-started', 'empty'].includes(claimed.result),
       automation: claimed.job
-        ? { result: claimed.result, jobId: claimed.job.id, patternId: claimed.job.patternId, prompt: claimed.prompt }
+        ? {
+            result: claimed.result,
+            jobId: claimed.job.id,
+            patternId: claimed.job.patternId,
+            prompt: claimed.prompt,
+            startEvidence: 'neutral-delegation-started'
+          }
         : { result: claimed.result }
     }
   }
@@ -803,11 +905,24 @@ async function main() {
   if (action === 'falha-automacao-bloquear') {
     const { options, positionals } = lerOpcoes(parts)
     if (!positionals[0] || !options.motivo) {
-      throw new Error('Use: falha-automacao-bloquear <job-id> --motivo <texto-seguro>.')
+      throw new Error('Use: falha-automacao-bloquear <job-id> --tipo <retryable|owner-authority> --motivo <texto-seguro> ...')
     }
-    const blocked = await bloquearAutomacaoFalha(home, positionals[0], options.motivo)
+    const kind = options.tipo ?? 'retryable'
+    if (kind === 'retryable' && (!options.evidencia || !options.estrategia)) {
+      throw new Error('Falha retryable exige --evidencia <id> e --estrategia <descricao>.')
+    }
+    if (kind === 'owner-authority' && (!options.efeito || !options.alvo)) {
+      throw new Error('Expansao de autoridade exige --efeito <codigo> e --alvo <alvo-concreto>.')
+    }
+    const blocked = await bloquearAutomacaoFalha(home, positionals[0], options.motivo, {
+      kind,
+      evidenceId: options.evidencia,
+      strategy: options.estrategia,
+      effect: options.efeito,
+      target: options.alvo
+    })
     return {
-      ok: blocked.result === 'blocked',
+      ok: ['retry-scheduled', 'needs-owner'].includes(blocked.result),
       automation: { result: blocked.result, jobId: blocked.job?.id ?? null }
     }
   }

@@ -100,9 +100,10 @@ do runtime, sem ocupar o diálogo com recusas preventivas.
 
 ## Delegação
 
-O desenho abaixo é o fluxo contratual. O runtime prepara, registra estados e emite o briefing; ele não
-inicia sozinho um subagente. `dispatch-requested` só vira execução quando o host realmente cria o
-executor e os hooks observam seus eventos.
+O desenho abaixo é o fluxo contratual. O runtime prepara, registra estados e exige o despacho; o
+adaptador do ambiente realiza o início material do executor. `dispatch-requested` só vira execução
+quando o host realmente cria o executor e os sensores observam o evento `started`; ausência desse
+evento mantém o trabalho recuperável e provoca nova tentativa, em vez de encerrar o caso em silêncio.
 
 ```text
 pedido longo/especializado
@@ -128,6 +129,12 @@ sucesso dependem de ação e evidência reais da auditoria, posteriores ao relat
 objeto. No caminho público, `owner-intent` referencia o turno ativo da sessão; autoridade herdada
 referencia um envelope existente, nunca um fingerprint solto. O teste da interface completa permanece
 no DoD humano.
+
+A porta neutra governa a preparação e todos os eventos externos ativos. Cada request é idempotente e
+gera um `delegationId`; o adaptador de host apenas transporta esse ID, converte entrega, início e relato
+para o protocolo e rejeita eventos sem correlação. O executor que emitiu `started` fica vinculado ao
+ciclo, e outro executor não pode reutilizar o mesmo ID. Tecnologia e nomes de hooks ficam no adaptador,
+nunca no núcleo da automação de falhas.
 
 ## Aprendizado e evolução
 
@@ -161,11 +168,13 @@ que `/omni:omni` foi ativado e não copia conversas, resultados ou erros para se
 ledger guarda apenas fingerprints, contadores e relatórios. Assim, uma interrupção ou hook ausente
 deixa de ser um buraco permanente sem transformar a mesma execução em duas evidências.
 
-O eval sintético continua protegendo regressões de forma. A personalidade só poderá passar no gate
-real com duas sessões instaladas e verificadas, conversa longa, correção do proprietário, uso de
-ferramenta, delegação, memória entre sessões, revisão humana, recibos verificados internamente e
-identidade externa autenticada. Os dois últimos elementos ainda não existem; hoje toda rodada termina
-`unverified-*`. Presença do prompt prova disponibilidade; não prova aderência comportamental.
+O eval sintético continua protegendo regressões de forma. O eval comportamental real exige duas
+sessões instaladas e verificadas, conversa longa, correção do proprietário, uso de ferramenta,
+delegação, memória entre sessões, revisão viva do proprietário e recibos vinculados e revalidados
+internamente. Não existe pedágio de identidade externa: no modelo local de um único proprietário, a
+raiz de confiança é formada pela release instalada, pelos transcritos em raiz confiável, pelos
+bindings de sessão e pela revisão local explícita. Presença do prompt prova disponibilidade; somente
+o conjunto completo de gates prova aderência comportamental.
 
 ## Estado da interface
 

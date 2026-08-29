@@ -16,7 +16,11 @@ import {
   testarCorrecaoFalha as testarCorrecaoFalhaReal,
   vinculoVerificacaoFalha
 } from '../runtime/falhas.mjs'
-import { reivindicarAutomacaoFalha, sincronizarAutomacaoFalhas } from '../runtime/automacao-falhas.mjs'
+import {
+  confirmarInicioAutomacaoFalha,
+  prepararDespachoAutomaticoFalha,
+  sincronizarAutomacaoFalhas
+} from '../runtime/automacao-falhas.mjs'
 import {
   avaliarMelhoria,
   decidirMelhoria,
@@ -57,13 +61,37 @@ function sha(value) {
   return createHash('sha256').update(String(value), 'utf8').digest('hex')
 }
 
+let startSequence = 0
+
+async function iniciarTrabalhoReal(casa, id, { at } = {}) {
+  startSequence += 1
+  const sessionId = `failure-real-start-${startSequence}`
+  await abrirTurnoAuditoria(casa, {
+    session_id: sessionId,
+    prompt: 'Inicie a validação real desta falha.'
+  }, { at })
+  const dispatch = await prepararDespachoAutomaticoFalha(casa, {
+    sessionId,
+    executorId: 'host-model-test'
+  }, { at })
+  assert.equal(dispatch.result, 'dispatch-required')
+  const started = await confirmarInicioAutomacaoFalha(casa, {
+    sessionId,
+    delegationId: dispatch.delegation.id,
+    agentId: `failure-subagent-${startSequence}`
+  }, { at })
+  assert.equal(started.result, 'started')
+  assert.equal(started.job.patternId, id)
+  return started.job
+}
+
 async function testarCorrecaoFalha(casa, id, input, options = {}) {
   const execution = input.evidenceId ?? input.auditActionId
   const actionRecordedAt = input.actionRecordedAt ?? '2099-01-01T00:00:00.000Z'
   const automation = await sincronizarAutomacaoFalhas(casa)
   let job = automation.jobs.find((item) => item.patternId === id && ['queued', 'running'].includes(item.state))
   if (job?.state === 'queued') {
-    job = (await reivindicarAutomacaoFalha(casa, { executorId: `executor-test-${id}` })).job
+    job = await iniciarTrabalhoReal(casa, id)
   }
   const pattern = (await lerFalhas(casa)).patterns.find((item) => item.id === id)
   const bindingMarker = vinculoVerificacaoFalha(pattern, job?.id)
@@ -261,13 +289,11 @@ test('teste de correção usa somente ação real verificada e posterior à aná
       hypothesis: 'aguardar healthcheck antes de abrir conexoes'
     }, { at: '2026-08-28T10:00:00.000Z' })
     await sincronizarAutomacaoFalhas(casa, { at: '2026-08-28T10:00:20.000Z' })
-    const claimed = await reivindicarAutomacaoFalha(
-      casa,
-      { executorId: 'executor-real-audit' },
-      { at: '2026-08-28T10:00:30.000Z' }
-    )
+    const claimed = await iniciarTrabalhoReal(casa, candidate.pattern.id, {
+      at: '2026-08-28T10:00:30.000Z'
+    })
     const analyzedPattern = (await lerFalhas(casa)).patterns.find((item) => item.id === candidate.pattern.id)
-    const bindingMarker = vinculoVerificacaoFalha(analyzedPattern, claimed.job.id)
+    const bindingMarker = vinculoVerificacaoFalha(analyzedPattern, claimed.id)
 
     await assert.rejects(
       testarCorrecaoFalhaReal(casa, candidate.pattern.id, {
@@ -294,7 +320,7 @@ test('teste de correção usa somente ação real verificada e posterior à aná
     const second = await registrarVerificacaoReal(casa, 'second', '2026-08-28T10:04:00.000Z', { bindingMarker })
 
     const available = await listarEvidenciasVerificadasFalha(casa, candidate.pattern.id, {
-      automationJobId: claimed.job.id
+      automationJobId: claimed.id
     })
     assert.equal(available.result, 'listed')
     assert.equal(available.evidence.length, 3)
@@ -311,27 +337,27 @@ test('teste de correção usa somente ação real verificada e posterior à aná
     const one = await testarCorrecaoFalhaReal(casa, candidate.pattern.id, {
       auditActionId: first.action.id,
       auditEvidenceId: available.evidence[0].evidenceId,
-      automationJobId: claimed.job.id,
+      automationJobId: claimed.id,
       criterion: 'processo termina com código zero'
     })
     const duplicateAction = await testarCorrecaoFalhaReal(casa, candidate.pattern.id, {
       auditActionId: first.action.id,
-      automationJobId: claimed.job.id,
+      automationJobId: claimed.id,
       criterion: 'processo termina com código zero'
     })
     const duplicateExecution = await testarCorrecaoFalhaReal(casa, candidate.pattern.id, {
       auditActionId: repeatedExecution.action.id,
-      automationJobId: claimed.job.id,
+      automationJobId: claimed.id,
       criterion: 'processo termina com código zero'
     })
     const remaining = await listarEvidenciasVerificadasFalha(casa, candidate.pattern.id, {
-      automationJobId: claimed.job.id
+      automationJobId: claimed.id
     })
     assert.deepEqual(remaining.evidence.map((item) => item.actionId), [second.action.id])
     const two = await testarCorrecaoFalhaReal(casa, candidate.pattern.id, {
       auditActionId: second.action.id,
       auditEvidenceId: available.evidence[2].evidenceId,
-      automationJobId: claimed.job.id,
+      automationJobId: claimed.id,
       criterion: 'processo termina com código zero'
     })
     assert.equal(one.result, 'testing')
@@ -341,7 +367,7 @@ test('teste de correção usa somente ação real verificada e posterior à aná
     assert.notEqual(two.pattern.fixTests[0].auditActionId, two.pattern.fixTests[1].auditActionId)
     assert.equal(two.pattern.fixTests.every((item) => item.verified && item.source === 'audit-self-correction'), true)
     assert.equal(two.pattern.fixTests.every((item) =>
-      item.automationJobId === claimed.job.id &&
+      item.automationJobId === claimed.id &&
       item.hypothesisFingerprint === two.pattern.analysis.hypothesisFingerprint &&
       item.verificationFamilyFingerprint === two.pattern.analysis.verificationFamilyFingerprint &&
       item.verificationBindingFingerprint === bindingMarker
@@ -379,14 +405,12 @@ test('job real de outro padrão não valida a hipótese atual', async () => {
     }, { at: '2026-08-28T10:59:00.000Z' })
 
     await sincronizarAutomacaoFalhas(casa, { at: '2026-08-28T11:00:00.000Z' })
-    const claimed = await reivindicarAutomacaoFalha(
-      casa,
-      { executorId: 'executor-do-outro-padrao' },
-      { at: '2026-08-28T11:00:01.000Z' }
-    )
-    assert.equal(claimed.job.patternId, other.id)
+    const claimed = await iniciarTrabalhoReal(casa, other.id, {
+      at: '2026-08-28T11:00:01.000Z'
+    })
+    assert.equal(claimed.patternId, other.id)
     const otherCurrent = (await lerFalhas(casa)).patterns.find((item) => item.id === other.id)
-    const otherBinding = vinculoVerificacaoFalha(otherCurrent, claimed.job.id)
+    const otherBinding = vinculoVerificacaoFalha(otherCurrent, claimed.id)
     const verification = await registrarVerificacaoReal(
       casa,
       'wrong-job-binding',
@@ -395,7 +419,7 @@ test('job real de outro padrão não valida a hipótese atual', async () => {
     )
     const rejected = await testarCorrecaoFalhaReal(casa, current.id, {
       auditActionId: verification.action.id,
-      automationJobId: claimed.job.id,
+      automationJobId: claimed.id,
       criterion: 'healthcheck passa e a consulta responde'
     })
     assert.equal(rejected.result, 'unverified-job')

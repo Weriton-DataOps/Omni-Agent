@@ -38,8 +38,8 @@ teste humano.
 - dados pessoais e conversa bruta fora do Git;
 - atualização do plugin com identidade canônica em `contratos/atualizacao/integridade.json`,
   integridade do payload, cache compatível, evals determinísticos e gates de schema;
-- avaliador comportamental que valida transcritos reais, release instalada e alegações de revisão sem
-  persistir conversa bruta, mas ainda produz somente `unverified-*` por falta de raiz confiável;
+- avaliador comportamental que valida transcritos reais em raiz confiável, release instalada, bindings
+  internos e revisão viva local sem persistir conversa bruta; só aprova quando todos os gates passam;
 - contratos e testes determinísticos de checkpoint, delegação, eval parcial e recarga da versão
   instalada; comportamento ponta a ponta permanece abaixo.
 
@@ -62,8 +62,9 @@ teste humano.
 - guardião canônico v2: fonte e testes prontos, sem ligação a `PreToolUse` em `hooks/hooks.json`; sua
   ativação depende de autorização explícita para mudar a fronteira global. Qualquer guardião antigo
   configurado fora deste repositório é estado externo e precisa ser conferido separadamente;
-- promoção confiável da personalidade: o formato e os validadores existem, mas faltam verificador
-  criptográfico interno e identidade externa autenticada do proprietário.
+- promoção confiável da personalidade: o executor e o juiz automáticos usam bindings locais
+  controlados; o eval comportamental separado ainda exige a revisão viva do proprietário e todos os
+  sinais reais previstos no Definition of Done.
 
 Os itens comportamentais e as pendências de ativação acima permanecem no Definition of Done iniciado
 em 27/08/2026 em

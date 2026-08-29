@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
 import { appendFile, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -19,6 +20,20 @@ import {
   registrarCoberturaAoVivo,
   varrerAtividadesDoDia
 } from '../runtime/varredura-diaria.mjs'
+
+function inicializarGit(repo) {
+  for (const args of [
+    ['init'],
+    ['config', 'user.email', 'omni-tests@example.invalid'],
+    ['config', 'user.name', 'Omni Tests'],
+    ['config', 'core.autocrlf', 'false'],
+    ['add', '.'],
+    ['commit', '-m', 'fixture baseline']
+  ]) {
+    const result = spawnSync('git', args, { cwd: repo, encoding: 'utf8', windowsHide: true })
+    assert.equal(result.status, 0, result.stderr || result.stdout)
+  }
+}
 
 function registro(sessionId, uuid, timestamp, role, content, extra = {}) {
   return JSON.stringify({
@@ -160,7 +175,6 @@ test('varredura tenta candidatas prontas e relata materialização local sem fin
   const routing = 'Você pegou uma função que não era dele e deveria ter passado para a sessão correta.'
   try {
     await mkdir(projects, { recursive: true })
-    await mkdir(join(repo, '.git'), { recursive: true })
     await mkdir(join(repo, 'contratos', 'operacao'), { recursive: true })
     await writeFile(join(repo, 'package.json'), JSON.stringify({ name: 'omni-agent' }), 'utf8')
     await writeFile(join(repo, 'contratos', 'operacao', 'regras-aprendidas.json'), JSON.stringify({
@@ -168,6 +182,7 @@ test('varredura tenta candidatas prontas e relata materialização local sem fin
       contract: 'omni-learned-rules-v1',
       rules: []
     }), 'utf8')
+    inicializarGit(repo)
     await configurarRepositorioCanonico(home, repo)
     await writeFile(join(projects, 'materialization.jsonl'), [
       registro(sessionId, 'activation', '2026-08-28T09:00:00-03:00', 'user', '<command-name>/omni:omni</command-name>'),
@@ -188,12 +203,12 @@ test('varredura tenta candidatas prontas e relata materialização local sem fin
     })
     assert.equal(result.scan.observations.materializations.attempted, 2)
     assert.equal(result.scan.observations.materializations.byResult['materialized-pending-release'], 1)
-    assert.equal(result.scan.observations.materializations.byResult['implementation-required'], 1)
+    assert.equal(result.scan.observations.materializations.byResult['pipeline-busy'], 1)
     assert.equal(JSON.stringify(result.scan.observations.materializations).includes('commit'), false)
     assert.equal(JSON.stringify(result.scan.observations.materializations).includes('push'), false)
     assert.equal(JSON.stringify(result.scan.observations.materializations).includes('release'), true)
     const statuses = (await lerCicloOperacional(home)).improvementCandidates.map((item) => item.status).sort()
-    assert.deepEqual(statuses, ['implementation-required', 'materialized-pending-release'])
+    assert.deepEqual(statuses, ['materialized-pending-release', 'ready'])
   } finally {
     await rm(root, { recursive: true, force: true })
   }

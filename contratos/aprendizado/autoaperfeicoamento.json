@@ -1,6 +1,7 @@
 {
   "schemaVersion": 1,
   "pipeline": "self-improvement-v1",
+  "scope": "new-capability-admission-only",
   "categories": [
     "learning",
     "shortcut",
@@ -36,8 +37,15 @@
   "minimumSuccessfulRuns": 4,
   "requiresIndependentValidation": true,
   "requiresOwnerApproval": true,
+  "ownerApprovalScope": "new-capability-only",
   "requiresPortableConfirmation": true,
   "requiresRoleFitConfirmation": true,
+  "automaticOperationalCorrection": true,
+  "automaticPersonalityEvaluation": true,
+  "ordinaryCorrectionHandledBy": "omni-operational-improvement-automation-v1",
+  "ordinaryCorrectionOwnerApprovalRequired": false,
+  "ordinaryCorrectionAutomaticRelease": true,
+  "personalityHandledBy": "omni-controlled-personality-eval-v1",
   "skillAdmissionQuestions": [
     "A capacidade é necessária diretamente para o papel de assistente cognitivo pessoal e continuidade do trabalho?",
     "A necessidade apareceu em um fluxo real do Omni?",
@@ -46,7 +54,9 @@
     "Existe evidência repetível de utilidade e resultado?"
   ],
   "automaticPromotion": false,
+  "automaticPromotionScope": "new-capability-disabled-until-owner-admission",
   "automaticGitCommit": false,
   "automaticGitPush": false,
+  "gitAutomationRestrictionScope": "new-capability-admission-only",
   "storeRawOutcome": false
 }

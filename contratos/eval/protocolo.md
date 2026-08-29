@@ -1,8 +1,8 @@
 # Protocolo de eval da personalidade
 
-Implementa a parte determinística das seções 28 e 29 da especificação mestre e define o gate futuro
-de promoção. A avaliação automática e o registro de alegações existem hoje; a decisão confiável de
-promover permanece indisponível enquanto não houver raiz de confiança interna.
+Implementa as seções 28 e 29 da especificação mestre: execução automática, avaliação objetiva e
+semântica, promoção local confiável e preparação autônoma da versão. Respostas brutas continuam fora
+do estado persistente e do Git.
 
 ## O que este protocolo mede
 
@@ -17,16 +17,16 @@ resposta capturada
         ↓
 camada automática ──► regra objetiva sobre o texto ──► aprovado ou reprovado
         ↓
-camada humana ──────► alegação de julgamento do proprietário
+camada semântica ───► juiz local controlado ou revisão viva do proprietário
         ↓
-verificação confiável ainda indisponível ──► não promove hoje
+bindings + todos os gates verdes ──► promoção e versão local
 ```
 
 A camada automática pega o que é mecanicamente verificável: tamanho, cabeçalho, lista, frase proibida,
 termo obrigatório, abertura repetida. Ela reprova sozinha, nunca aprova sozinha.
 
-A camada humana existe porque humor, timing e cumplicidade não são detectáveis por regex. Fingir que
-são produziria um número bonito e uma personalidade pior. Todo caso nasce com revisão humana pendente.
+A camada semântica existe porque humor, timing e cumplicidade não são detectáveis por regex. O juiz
+controlado avalia esses critérios; votos reais do proprietário permanecem evidência prioritária.
 
 ## Como uma rodada acontece
 
@@ -39,9 +39,9 @@ respostas capturadas fora do repositório
         ↓
 camada automática pontua as duas
         ↓
-proprietário revisa os critérios humanos e produz uma alegação
+juiz controlado avalia os critérios semânticos
         ↓
-recibos internos + identidade externa ──► decisão futura no manifesto
+recibos vinculados + gates verdes ──► decisão local no manifesto
 ```
 
 A baseline não é uma personalidade antiga inventada para o placar. Ela usa o mesmo provedor, modelo,
@@ -75,12 +75,14 @@ Uma candidata só sai de `candidate` quando, na mesma suíte:
 
 1. nenhum caso de peso 5 reprova na camada automática;
 2. o score automático da candidata não fica abaixo do score da baseline;
-3. o proprietário aprova explicitamente os critérios humanos;
+3. o juiz local controlado aprova todos os critérios semânticos, ou um evento vivo do proprietário
+   registra a decisão equivalente;
 4. todos os casos canônicos têm respostas nos dois conjuntos e nenhum aprendizado fica escondido num
    arquivo morto: cada candidato aprendido está coberto por caso canônico ou aparece como pendência;
-5. recibos criptográficos distintos vinculam explicitamente baseline e candidata à suíte, às sessões,
-   à configuração e aos hashes dos conjuntos de resposta;
-6. uma identidade externa autenticada vincula a decisão do proprietário à mesma rodada;
+5. recibos distintos vinculam baseline e candidata à suíte, às sessões, à configuração e aos hashes
+   dos conjuntos de resposta;
+6. o executor e o juiz locais controlados vinculam a decisão à mesma rodada dentro do modelo de
+   ameaça de uma máquina local com um único proprietário;
 7. a decisão entra no manifesto da personalidade e o carregador a revalida internamente.
 
 O identificador da personalidade é imutável. `omni-persona-v3-candidate` continua sendo o mesmo ID
@@ -110,30 +112,30 @@ pesos e alegações de aprovação humana. Ele recalcula os scores e recusa falh
 abaixo da baseline, resultado ausente, duplicado, adulterado ou fora de
 `contratos/eval/resultados/`.
 
-Isso garante integridade e rastreabilidade do artefato versionado, mas não autentica sua origem. A
-futura raiz de confiança precisa ser uma identidade externa do proprietário verificada pelo próprio
-runtime; hash e callback fornecido pelo chamador não provam sozinhos que uma avaliação foi honesta.
+Isso garante integridade, rastreabilidade e origem local verificável do artefato versionado. A raiz de
+confiança implementada é o executor controlado: ele produz as duas capturas, o juiz controlado decide
+os critérios semânticos e o runtime verifica todos os bindings. Hash ou callback arbitrário não ganha
+autoridade por existir.
 
 ## Estado de confiança implementado
 
-O runtime atual ainda não possui uma identidade externa nem um verificador criptográfico interno.
-Por isso:
+O runtime usa o contrato `omni-controlled-personality-eval-v1`. Por isso:
 
-- callbacks entregues por quem chama o runtime registram apenas alegações e nunca produzem `passed`;
+- callbacks arbitrários registram apenas alegações e nunca produzem `passed`;
 - cada alegação de captura precisa trazer recibo distinto e binding explícito à suíte, configuração,
   sessão e conjunto de respostas;
-- a alegação do proprietário fica vinculada à suíte, aos dois conjuntos e às decisões, mas permanece
-  `authenticated: false`;
-- rodadas novas ficam em `unverified-claim` ou `pending-unverified` e nunca são promovíveis;
+- a decisão do juiz controlado ou um evento vivo do proprietário pode ser verificada localmente;
+- rodadas controladas ficam `passed` somente com todos os gates verdes; as demais ficam `failed` ou
+  `unverified-claim`;
 - qualquer `passed` histórico é rebaixado para `unverified-legacy-claim` se o runtime não puder
   revalidá-lo criptograficamente;
-- o carregador falha fechado para manifestos `approved` até a verificação interna existir.
+- o carregador aceita `approved` somente com evidência íntegra emitida por autoridade local reconhecida.
 
-Esse bloqueio é intencional: o repositório registra o que foi alegado sem fingir que o autor, o
-chamador ou um JSONL arbitrário é uma autoridade externa.
+Isso remove o muro impossível de uma identidade externa sem transformar o autor, o chamador ou um
+JSONL arbitrário em autoridade.
 
-Score automático maior sem revisão humana não promove nada. Ele apenas mostra que a candidata não
-quebrou nenhuma regra objetiva.
+Score automático maior sem decisão semântica verificada não promove nada. O juiz controlado avalia
+essa camada sem substituir votos reais do proprietário quando eles existirem.
 
 ## Fronteira
 

@@ -257,14 +257,14 @@ test('rg vincula cada arquivo de padrao ao envelope e distingue fixed-strings', 
   const patterns = join(cwd, 'patterns.txt').replace(/\\/g, '/')
   const target = join(cwd, 'target').replace(/\\/g, '/')
   for (const command of [
-    `rg -f ${patterns} ${target}`,
-    `rg --file ${patterns} ${target}`,
-    `rg --file=${patterns} ${target}`
+    `rg -f "${patterns}" "${target}"`,
+    `rg --file "${patterns}" "${target}"`,
+    `rg --file="${patterns}" "${target}"`
   ]) {
     const result = classificarComandoLeitura('Bash', command, cwd)
     assert.deepEqual(result.targets, [normalizarAlvo(patterns), normalizarAlvo(target)])
   }
-  const fixed = classificarComandoLeitura('Bash', `rg -F texto ${target}`, cwd)
+  const fixed = classificarComandoLeitura('Bash', `rg -F texto "${target}"`, cwd)
   assert.deepEqual(fixed.targets, [normalizarAlvo(target)])
 })
 

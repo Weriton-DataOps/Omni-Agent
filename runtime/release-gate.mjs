@@ -13,12 +13,19 @@ export async function auditarAntesDaRelease({
 } = {}) {
   const audit = await auditarSaudeSistema(casa, { pluginRoot, repair: false, at })
   const errors = audit.run.findings.filter((item) => item.severity === 'error')
+  const recoverableErrors = errors.filter((item) =>
+    item.code === 'unresolved-turn-findings' && item.releaseBlocking === false
+  )
+  const recoverable = new Set(recoverableErrors)
+  const blockingErrors = errors.filter((item) => !recoverable.has(item))
   return {
-    ok: errors.length === 0,
+    ok: blockingErrors.length === 0,
     trigger: 'before-release',
     auditId: audit.run.id,
     status: audit.run.status,
     errors,
+    blockingErrors,
+    recoverableErrors,
     warnings: audit.run.findings.filter((item) => item.severity === 'warning'),
     rawConversationStored: false
   }

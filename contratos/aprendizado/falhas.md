@@ -31,17 +31,22 @@ ação → falha real → assinatura em hash
 - cada teste precisa apontar para uma ação de verificação bem-sucedida da auditoria, posterior à análise e ao pedido de despacho;
 - ação, trabalho, padrão, geração da evidência e hipótese formam um vínculo único; evidência de outro padrão ou de outra hipótese é recusada;
 - cada comando de verificação recebe o marcador SHA seguro emitido por `falha-evidencias`; uma verificação posterior sem esse marcador não é elegível;
-- uma candidata cria e reivindica deterministicamente um trabalho e registra `dispatch-requested`, sem nova pergunta ao proprietário;
-- `dispatch-requested` é um pedido ao host/modelo, não uma alegação de que o subagente realmente iniciou;
-- o trabalho é idempotente, tem lease e no máximo um candidato é reivindicado por turno;
+- uma candidata cria deterministicamente um trabalho e uma solicitação na porta neutra, sem nova pergunta ao proprietário;
+- o adaptador torna o briefing visível e o trabalho continua obrigatório até um evento neutro `started` confirmar o início real; pedido de despacho não conta como execução;
+- nomes de ferramenta, transporte e eventos do host pertencem ao adaptador; o núcleo conhece apenas capacidade, `delegationId` e estados do protocolo neutro;
+- o `Stop` impede encerramento enquanto o despacho obrigatório ainda não começou, sem transformar a pendência em bloqueio terminal;
+- o trabalho é idempotente, tem lease e no máximo um candidato é despachado por turno;
+- falha técnica ou lease vencida reenfileira o trabalho com estratégia materialmente diferente;
 - consistência compara o mesmo critério de aceitação; resumos reais podem variar entre execuções;
-- diagnóstico e testes locais/reversíveis são autônomos; destruição, escrita remota, custo e nova
-  permissão bloqueiam o trabalho e voltam ao proprietário;
+- diagnóstico, correção e testes locais/reversíveis são autônomos; somente uma expansão concreta de
+  autoridade — destruição, escrita remota, chamada paga, nova permissão ou privilégio — cria
+  `needs-owner`, sempre com efeito e alvo identificados;
 - teste falho ou inconsistente devolve o padrão ao estado analisado;
 - nova ocorrência após o eval invalida o resultado anterior;
 - alegações legadas de sucesso sem esse vínculo migram para histórico não verificado e deixam de contar para o eval;
 - erro bruto, stack trace, comando completo e resultado bruto não são persistidos;
-- eval aprovado gera somente proposta no pipeline 25, ainda sujeita a portabilidade e aprovação humana.
+- eval aprovado fecha a correção local e gera uma proposta separada quando houver aprendizado
+  realmente portável; não transforma automaticamente um defeito específico em regra global.
 
 O estado vive em `%APPDATA%\omni\learning\failures.json` ou `OMNI_HOME`. O Git contém apenas política,
 schema, runtime e testes.

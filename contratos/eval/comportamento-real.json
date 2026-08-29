@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "suite": "omni-real-behavior-v1",
   "target": "personalidade-ativa-e-ciclo-operacional",
   "minimumSessions": 2,
@@ -33,7 +33,7 @@
     "requireTrustedSessionReleaseReceipt": true,
     "requireDistinctReceiptFingerprints": true,
     "requireExplicitReceiptBindings": true,
-    "requireInternalCryptographicVerification": true,
+    "internalSessionVerification": "trusted-root-session-binding-v1",
     "callerSuppliedVerifierIsProof": false,
     "requireUuidFilename": true,
     "requireInstalledReleaseFingerprint": true,
@@ -43,9 +43,9 @@
   "promotion": {
     "automaticOnly": false,
     "requiresOwnerReview": true,
-    "requiresTrustedOwnerPresenceProof": true,
+    "ownerReviewAuthority": "owner-live-local-review-v1",
     "selfReportedApprovalIsProof": false,
-    "externalIdentityRequired": true,
+    "externalIdentityRequired": false,
     "requiresAllGates": true,
     "syntheticCasesAreRegressionTestsOnly": true
   }

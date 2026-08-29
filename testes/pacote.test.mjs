@@ -12,7 +12,7 @@ test('marketplace usa o plugin do próprio repositório e versão semântica', a
   const packageManifest = JSON.parse(await readFile(file('package.json'), 'utf8'))
   assert.equal(marketplace.plugins[0].source, './')
   assert.equal(manifest.name, 'omni')
-  assert.equal(manifest.version, '0.21.2')
+  assert.equal(manifest.version, '0.22.0')
   assert.equal(packageManifest.version, manifest.version)
   assert.equal(releaseIdentity.identity.version, manifest.version)
   assert.ok(Number.isFinite(Date.parse(releaseIdentity.identity.releaseAuditScopeStartedAt)))
@@ -71,16 +71,24 @@ test('runtime, schema e manifesto concordam sobre as versões', async () => {
   assert.equal(shortcutPolicy.verifiedObservations.requireActionFamily, true)
   assert.equal(shortcutPolicy.storeRawOutcome, false)
   assert.equal(improvementPolicy.pipeline, 'self-improvement-v1')
+  assert.equal(improvementPolicy.scope, 'new-capability-admission-only')
   assert.deepEqual(improvementPolicy.destinations, [
     'discard', 'memory', 'operational-rule', 'procedure', 'routing', 'hook',
     'runtime-fix', 'personality', 'eval', 'capability'
   ])
   assert.equal(improvementPolicy.implementationRoutes['runtime-fix'], 'runtime-change')
   assert.equal(improvementPolicy.requiresOwnerApproval, true)
+  assert.equal(improvementPolicy.ownerApprovalScope, 'new-capability-only')
+  assert.equal(improvementPolicy.automaticOperationalCorrection, true)
+  assert.equal(improvementPolicy.ordinaryCorrectionOwnerApprovalRequired, false)
+  assert.equal(improvementPolicy.ordinaryCorrectionAutomaticRelease, true)
+  assert.equal(improvementPolicy.gitAutomationRestrictionScope, 'new-capability-admission-only')
+  assert.equal(improvementPolicy.automaticPersonalityEvaluation, true)
   assert.equal(improvementPolicy.requiresPortableConfirmation, true)
   assert.equal(improvementPolicy.requiresRoleFitConfirmation, true)
   assert.equal(improvementPolicy.skillAdmissionQuestions.length, 5)
   assert.equal(improvementPolicy.automaticPromotion, false)
+  assert.equal(improvementPolicy.automaticPromotionScope, 'new-capability-disabled-until-owner-admission')
   assert.equal(improvementPolicy.automaticGitCommit, false)
   assert.equal(improvementPolicy.automaticGitPush, false)
   assert.equal(failurePolicy.policy, 'failure-learning-v3')
@@ -110,16 +118,23 @@ test('runtime, schema e manifesto concordam sobre as versões', async () => {
   assert.equal(failurePolicy.automaticPromotion, false)
   assert.equal(failurePolicy.storeRawError, false)
   assert.equal(failurePolicy.storeRawTestOutcome, false)
-  assert.ok(systemAuditPolicy.findings.includes('historical-unresolved-turn-findings'))
-  assert.equal(systemAuditPolicy.turnFindingLifecycle.activeOrInconsistent.severityBeforeRelease, 'error')
-  assert.equal(systemAuditPolicy.turnFindingLifecycle.terminalHistorical.requiresValidClosedAt, true)
-  assert.equal(systemAuditPolicy.turnFindingLifecycle.terminalHistorical.proof, 'closedAt-before-releaseAuditScopeStartedAt')
-  assert.equal(systemAuditPolicy.turnFindingLifecycle.terminalHistorical.preserveOriginalFindingState, true)
+  assert.equal(systemAuditPolicy.findings.includes('historical-unresolved-turn-findings'), false)
+  assert.equal(systemAuditPolicy.turnFindingLifecycle.recoverable.severity, 'error')
+  assert.equal(systemAuditPolicy.turnFindingLifecycle.recoverable.survivesSessionAndReleaseBoundary, true)
+  assert.equal(systemAuditPolicy.turnFindingLifecycle.recoverable.retestAutomatically, true)
+  assert.equal(systemAuditPolicy.turnFindingLifecycle.recoverable.terminalArchiveWithoutCounterproof, false)
   assert.equal(failurePolicy.automaticCandidateValidation.enabled, true)
-  assert.equal(failurePolicy.automaticCandidateValidation.executor, 'background-subagent')
+  assert.equal(failurePolicy.automaticCandidateValidation.executorCapability, 'failure-validation')
+  assert.equal(failurePolicy.automaticCandidateValidation.transport, 'adapter-owned')
   assert.equal(failurePolicy.automaticCandidateValidation.requiresOwnerPrompt, false)
-  assert.equal(failurePolicy.automaticCandidateValidation.dispatchGuarantee, 'request-only')
-  assert.equal(failurePolicy.automaticCandidateValidation.hostExecutionRequired, true)
+  assert.equal(failurePolicy.automaticCandidateValidation.dispatchGuarantee, 'required-until-started-event')
+  assert.equal(failurePolicy.automaticCandidateValidation.realStartEventRequired, true)
+  assert.equal(failurePolicy.automaticCandidateValidation.startEvidence, 'neutral-delegation-started')
+  assert.equal(failurePolicy.automaticCandidateValidation.stopGateRequiresStart, true)
+  assert.equal(failurePolicy.automaticCandidateValidation.retryableFailureDisposition, 'requeue-different-strategy')
+  assert.equal(failurePolicy.automaticCandidateValidation.terminalBlockedState, false)
+  assert.equal(failurePolicy.automaticCandidateValidation.ownerDecisionOnlyForConcreteAuthorityExpansion, true)
+  assert.ok(failurePolicy.automaticCandidateValidation.ownerAuthorityEffects.includes('remote-write'))
   assert.ok(failurePolicy.automaticCandidateValidation.ownerAuthorizationRequiredFor.includes('ação destrutiva'))
   assert.equal(dailyScan.contract, 'omni-daily-activity-scan-v1')
   assert.equal(dailyScan.privacy.storeRawConversation, false)
@@ -159,6 +174,10 @@ test('plugin contém somente o núcleo declarado', async () => {
   await stat(file('runtime/autoaperfeicoamento.mjs'))
   await stat(file('runtime/falhas.mjs'))
   await stat(file('runtime/automacao-falhas.mjs'))
+  await stat(file('runtime/automacao-melhorias.mjs'))
+  await stat(file('runtime/porta-delegacao.mjs'))
+  await stat(file('runtime/adaptador-claude-delegacao.mjs'))
+  await stat(file('contratos/operacao/automacao-melhorias.json'))
   await stat(file('runtime/versao.mjs'))
   await stat(file('runtime/atualizacao.mjs'))
   await stat(file('contratos/atualizacao/releases.json'))
@@ -216,7 +235,7 @@ test('fronteiras mantêm interface e iniciativas externas independentes do Omni'
   assert.equal(invariants.scope.backlogExecution, 'prioritize-against-current-definition-of-done')
   assert.equal(
     invariants.boundaries.agentOrchestration,
-    'host-dependent-dispatch-with-visible-prompt-and-evidence-required'
+    'neutral-delegation-port-with-adapter-owned-transport-and-evidence'
   )
 })
 
@@ -246,6 +265,11 @@ test('hook injeta contexto por turno somente após ativação do Omni', async ()
   assert.deepEqual(dailyStart.args, ['${CLAUDE_PLUGIN_ROOT}/runtime/hook-varredura.mjs'])
   assert.equal(dailyStart.async, true)
   assert.ok(hooks.hooks.Stop[0].hooks.some((hook) => hook.args?.[0]?.endsWith('hook-varredura.mjs')))
+  const dailyRuntime = await readFile(file('runtime/hook-varredura.mjs'), 'utf8')
+  assert.match(dailyRuntime, /processarReleasePendenteMelhoria/)
+  assert.ok(hooks.hooks.Stop[0].hooks.some((hook) =>
+    hook.args?.[0]?.endsWith('hook-varredura.mjs') && hook.async === true && hook.timeout >= 900
+  ))
 })
 
 test('personalidade v3 é a fonte ativa e canais externos continuam planejados', async () => {
@@ -306,6 +330,7 @@ test('a v2 permanece histórica e fora do alvo da suíte ativa', async () => {
 })
 
 test('contexto ativo não carrega nomes ou caminhos estranhos ao Omni', async () => {
+  const invariants = JSON.parse(await readFile(file('contratos/arquitetura/invariantes.json'), 'utf8'))
   const activeFiles = [
     'skills/omni/SKILL.md',
     'runtime/cli.mjs',
@@ -321,7 +346,10 @@ test('contexto ativo não carrega nomes ou caminhos estranhos ao Omni', async ()
     'contratos/personalidade/omni-persona-v3.md'
   ]
   const active = (
-    await Promise.all(activeFiles.map((path) => readFile(file(path), 'utf8')))
+    [
+      ...(await Promise.all(activeFiles.map((path) => readFile(file(path), 'utf8')))),
+      JSON.stringify(invariants.operationalRole.promptRules)
+    ]
   ).join('\n').toLowerCase()
   const forbidden = [
     ['over', 'core'].join(''),

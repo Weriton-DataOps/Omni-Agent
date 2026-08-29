@@ -1,6 +1,6 @@
 # ADR-001 — Fronteiras entre as iniciativas
 
-**Status:** aprovado pelo proprietário em 26/ago/2026.
+**Status:** histórico; refinado e parcialmente substituído pelo ADR-002 em 29/ago/2026.
 
 ## Decisão
 
@@ -9,7 +9,7 @@ Omni, Oracle e OverCore são iniciativas independentes. Nenhuma delas é camada 
 ```text
 Omni                         Oracle                       OverCore
 agente pessoal               agente observador           ambiente de desenvolvimento
-executor e suporte           vigilante e reportador      baseado no Agent SDK
+executor e suporte           vigilante e reportador      tecnologia ainda não decidida
        │                            │                            │
 chat/realtime depois         superfícies depois          sistema de desenvolvimento depois
        └──────────────── contratos de integração futuros ───────┘
@@ -31,7 +31,7 @@ chat/realtime depois         superfícies depois          sistema de desenvolvim
 ### OverCore
 
 - iniciativa e repositório próprios;
-- ambiente de desenvolvimento no Agent SDK;
+- ambiente de desenvolvimento construído do zero, com tecnologia decidida em seu próprio projeto;
 - futuramente reunirá agentes, skills e modelos maduros em um sistema de desenvolvimento.
 
 ## Aplicação à especificação mestre

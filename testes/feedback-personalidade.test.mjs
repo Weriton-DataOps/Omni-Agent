@@ -138,6 +138,9 @@ test('proximo prompt do proprietario vira voto ligado a ultima resposta e ajuste
     assert.equal(observed.adjustment.expiresAfterTurns, 1)
     assert.ok(observed.adjustment.directives.includes('increase-contextual-humor'))
     assert.ok(observed.adjustment.directives.includes('increase-useful-analogies'))
+    assert.ok(observed.candidateSignals.length >= 4)
+    assert.ok(observed.candidateSignals.every((item) => item.state === 'observing'))
+    assert.ok(observed.candidateSignals.every((item) => /^[a-f0-9]{64}$/.test(item.voteFingerprint)))
     assert.equal(observed.counts.totalVotes, 1)
 
     const raw = await readFile(caminhoDoFeedbackPersonalidade(casa), 'utf8')
@@ -188,6 +191,8 @@ test('sinal repetido permanece candidata local revisavel e nao altera galeria', 
     assert.equal(humor.status, 'reviewable')
     assert.equal(humor.occurrences, 2)
     assert.equal(summary.counts.reviewableCandidates >= 2, true)
+    assert.ok(summary.persistentAdjustment.directives.includes('increase-contextual-humor'))
+    assert.ok(summary.persistentAdjustment.directives.includes('increase-tone-presence'))
     assert.deepEqual(await readdir(casa), ['feedback'])
   } finally {
     await rm(casa, { recursive: true, force: true })
@@ -237,9 +242,73 @@ test('voto identico no mesmo turno e idempotente', async () => {
   }
   try {
     await response(casa, input.sessionId)
-    assert.equal((await observarVotoPersonalidade(casa, input)).result, 'recorded')
-    assert.equal((await observarVotoPersonalidade(casa, input)).result, 'duplicate')
+    const recorded = await observarVotoPersonalidade(casa, input)
+    const duplicate = await observarVotoPersonalidade(casa, input)
+    assert.equal(recorded.result, 'recorded')
+    assert.equal(duplicate.result, 'duplicate')
+    assert.deepEqual(duplicate.candidateSignals, recorded.candidateSignals)
     assert.equal((await lerFeedbackPersonalidade(casa)).votes.length, 1)
+  } finally {
+    await rm(casa, { recursive: true, force: true })
+  }
+})
+
+test('direcao persistente exige recorrencia e muda com contraprova recorrente de polaridade oposta', async () => {
+  const casa = await home()
+  try {
+    for (const sessionId of ['negative-1', 'negative-2']) {
+      await response(casa, sessionId)
+      await observarVotoPersonalidade(casa, {
+        sessionId,
+        origin: 'owner-live',
+        feedback: 'A resposta ficou seca.'
+      })
+    }
+    let summary = await resumirFeedbackPersonalidade(casa)
+    assert.ok(summary.persistentAdjustment.directives.includes('change-overall-voice'))
+    assert.ok(summary.persistentAdjustment.directives.includes('increase-tone-presence'))
+
+    for (const sessionId of ['positive-1', 'positive-2']) {
+      await response(casa, sessionId)
+      await observarVotoPersonalidade(casa, {
+        sessionId,
+        origin: 'owner-live',
+        feedback: 'Agora a resposta nao esta seca; esse tom ficou otimo.'
+      })
+    }
+    summary = await resumirFeedbackPersonalidade(casa)
+    assert.equal(summary.persistentAdjustment.directives.includes('change-overall-voice'), false)
+    assert.equal(summary.persistentAdjustment.directives.includes('increase-tone-presence'), false)
+    assert.ok(summary.persistentAdjustment.directives.includes('preserve-overall-voice'))
+    assert.ok(summary.persistentAdjustment.directives.includes('preserve-tone'))
+  } finally {
+    await rm(casa, { recursive: true, force: true })
+  }
+})
+
+test('contraprova substitui somente a propria dimensao', async () => {
+  const casa = await home()
+  try {
+    for (const sessionId of ['humor-negative-1', 'humor-negative-2']) {
+      await response(casa, sessionId)
+      await observarVotoPersonalidade(casa, {
+        sessionId,
+        origin: 'owner-live',
+        feedback: 'Faltou humor nessa resposta.'
+      })
+    }
+    for (const sessionId of ['analogy-positive-1', 'analogy-positive-2']) {
+      await response(casa, sessionId)
+      await observarVotoPersonalidade(casa, {
+        sessionId,
+        origin: 'owner-live',
+        feedback: 'A analogia funcionou nessa resposta.'
+      })
+    }
+
+    const summary = await resumirFeedbackPersonalidade(casa)
+    assert.ok(summary.persistentAdjustment.directives.includes('increase-contextual-humor'))
+    assert.ok(summary.persistentAdjustment.directives.includes('preserve-analogy-level'))
   } finally {
     await rm(casa, { recursive: true, force: true })
   }

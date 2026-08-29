@@ -18,7 +18,9 @@
     "recursionGuardRequired": true
   },
   "correction": {
-    "producesRepairDirectiveOnly": true,
+    "producesRepairDirectiveOnly": false,
+    "producesRecoverableWork": true,
+    "reversibleAuthorizedRepair": "execute-or-delegate-automatically",
     "neverExecutesExternalMutation": true,
     "idempotentByFindingFingerprint": true,
     "maximumIdenticalFailedStrategies": 1,
@@ -27,7 +29,24 @@
   },
   "authority": {
     "doesNotGrantNewAuthority": true,
-    "allRepairsRemainBoundByCurrentRequest": true
+    "allRepairsRemainBoundByCurrentRequest": true,
+    "automaticWithoutNewApproval": [
+      "reversible-omni-source-correction",
+      "tests-and-evals",
+      "authorized-release-cycle"
+    ],
+    "ownerDecisionOnlyWhen": [
+      "material-objective-expansion",
+      "new-secret-identity-privilege-or-financial-effect",
+      "irreversible-effect-without-credible-recovery"
+    ]
+  },
+  "recovery": {
+    "terminalizeOnRecursionGuard": false,
+    "terminalizeOnSessionEnd": false,
+    "legacyBlockedTurnsBecomeRepairing": true,
+    "resumeAutomaticallyWhenCauseClears": true,
+    "survivesSessionAndReleaseBoundary": true
   },
   "objectiveBinding": {
     "algorithm": "omni-authority-objective-v1",

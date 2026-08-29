@@ -126,7 +126,7 @@ test('rodada registra resultados e autoavaliacao como alegacao nao autenticada',
       ...evaluated.trust.captureReceiptClaims.map((item) => item.receiptFingerprint),
       evaluated.ownerReviewClaim.receiptFingerprint
     ]).size, 3)
-    assert.equal(evaluated.gates.find((item) => item.id === 'owner-presence-cryptographically-verified').passed, false)
+    assert.equal(evaluated.gates.find((item) => item.id === 'review-produced-by-verifiable-local-authority').passed, false)
     assert.throws(() => criarEvidenciaPromocao(evaluated), /Promocao bloqueada/)
 
     const recorded = await registrarRodadaPersonalidade(casa, input)

@@ -64,8 +64,16 @@
     },
     "successStates": ["verified"],
     "closedSuccessRequiresOutcome": "verified",
-    "subagentStopProduces": "reported",
+    "executorReportProduces": "reported",
+    "inboundCannotProduce": ["verified", "closed"],
+    "externalCorrelation": "delegation-id",
     "untrackedExecutorProduces": "failed",
+    "adapterCorrelation": {
+      "requiresExplicitDelegationId": true,
+      "uncorrelatedEvent": "rejected-no-state",
+      "bindExecutorOnStarted": true,
+      "duplicateRequiresSameExecutor": true
+    },
     "evidenceRequiredFor": ["visible", "running", "reported", "verified", "blocked", "failed", "cancelled"],
     "targetReceivesVisiblePrompt": true,
     "centralConversationRemainsAvailable": true,

@@ -1,5 +1,9 @@
 # Autoavaliação do Omni — confronto com evidência
 
+> Registro histórico de 28/08/2026. A exigência de identidade externa descrita abaixo foi substituída
+> pelo protocolo local controlado de 29/08/2026. Este arquivo preserva o diagnóstico original e não
+> governa o runtime nem o gate atual.
+
 Data: 28/08/2026
 Estado: diagnóstico incorporado; correções técnicas implementadas; observação comportamental reservada.
 

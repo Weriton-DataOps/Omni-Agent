@@ -11,7 +11,10 @@
     "automatic": [
       "coalesce-duplicate-failure-jobs",
       "supersede-stale-jobs",
-      "migrate-local-stores-with-backup"
+      "migrate-local-stores-with-backup",
+      "materialize-ready-operational-improvements",
+      "serialize-operational-improvements-per-repository",
+      "route-source-improvements-to-neutral-delegation"
     ],
     "requiresIndependentReadback": true,
     "sourceChangesUseImplementationRoute": true,
@@ -26,7 +29,6 @@
     "duplicate-active-failure-jobs",
     "unverified-delegations",
     "unresolved-turn-findings",
-    "historical-unresolved-turn-findings",
     "duplicate-portable-rules",
     "evaluated-learning-without-route",
     "materialized-learning-without-installed-readback",
@@ -35,19 +37,13 @@
     "operational-materialized-without-installed-readback"
   ],
   "turnFindingLifecycle": {
-    "activeOrInconsistent": {
+    "recoverable": {
       "findingStates": ["open", "unresolved"],
-      "severityBeforeRelease": "error"
-    },
-    "terminalHistorical": {
-      "turnState": "blocked",
-      "requiresValidClosedAt": true,
-      "proof": "closedAt-before-releaseAuditScopeStartedAt",
-      "releaseScopeSource": "contratos/atualizacao/integridade.json#identity.releaseAuditScopeStartedAt",
-      "findingState": "unresolved",
-      "severityBeforeRelease": "warning",
-      "preserveOriginalFindingState": true,
-      "doesNotClaimCorrection": true
+      "severity": "error",
+      "releaseBlocking": false,
+      "survivesSessionAndReleaseBoundary": true,
+      "retestAutomatically": true,
+      "terminalArchiveWithoutCounterproof": false
     }
   },
   "metrics": [

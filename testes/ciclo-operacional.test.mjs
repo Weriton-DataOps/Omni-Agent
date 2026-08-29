@@ -26,6 +26,20 @@ import {
   materializarMelhoriaConfigurada
 } from '../runtime/evolucao.mjs'
 
+function personalitySourceRef(turn, suffix = 'a') {
+  return {
+    kind: 'personality-feedback',
+    candidateId: `personality-candidate-${'a'.repeat(24)}`,
+    voteFingerprint: suffix.repeat(64),
+    turnFingerprint: turn.repeat(64),
+    answerFingerprint: 'b'.repeat(64),
+    personaId: 'omni-persona-v3-candidate',
+    releaseFingerprint: 'c'.repeat(64),
+    reasonCode: 'tone-too-dry',
+    canonicalCaseId: 'voz-perceptivel-sem-piada'
+  }
+}
+
 test('preparo visível idempotente não duplica delegação nem alega execução', async () => {
   const casa = await mkdtemp(join(tmpdir(), 'omni-cycle-visible-idempotent-'))
   const input = {
@@ -296,7 +310,9 @@ test('contrato de autoridade usa risco como preparo e restringe nova decisão a 
   assert.equal(authority.authority.parentFingerprintMustResolveExistingAuthority, true)
   assert.equal(authority.ownerDecisionWhen.length, 3)
   assert.match(authority.risk.principle, /checkpoint.*rollback.*compensacao.*verificacao/i)
-  assert.equal(cycle.delegation.subagentStopProduces, 'reported')
+  assert.equal(cycle.delegation.executorReportProduces, 'reported')
+  assert.deepEqual(cycle.delegation.inboundCannotProduce, ['verified', 'closed'])
+  assert.equal(cycle.delegation.externalCorrelation, 'delegation-id')
   assert.deepEqual(cycle.delegation.successStates, ['verified'])
   assert.equal(cycle.delegation.closedSuccessRequiresOutcome, 'verified')
   assert.equal(cycle.delegation.reportedIsNotSuccess, true)
@@ -542,6 +558,39 @@ test('melhoria repetida escolhe artefato coerente em vez de criar skill para tud
   }
 })
 
+test('sourceRef de personalidade torna reforco idempotente por turno e preserva proveniencia', async () => {
+  const casa = await mkdtemp(join(tmpdir(), 'omni-cycle-personality-source-'))
+  const input = {
+    category: 'owner-personality-feedback',
+    destination: 'personality',
+    statement: 'Dar mais calor ao tom seco sem aumentar cerimonia.'
+  }
+  try {
+    const first = await proporMelhoriaOperacional(casa, {
+      ...input,
+      sourceRef: personalitySourceRef('1')
+    })
+    const replay = await proporMelhoriaOperacional(casa, {
+      ...input,
+      sourceRef: personalitySourceRef('1')
+    })
+    const second = await proporMelhoriaOperacional(casa, {
+      ...input,
+      sourceRef: personalitySourceRef('2', 'd')
+    })
+    assert.equal(first.candidate.status, 'observing')
+    assert.equal(replay.result, 'duplicate-evidence')
+    assert.equal(replay.candidate.occurrences, 1)
+    assert.equal(second.candidate.status, 'ready')
+    assert.equal(second.candidate.occurrences, 2)
+    assert.equal(second.candidate.sourceRefs.length, 2)
+    assert.equal(JSON.stringify(second.candidate).includes('Dar mais calor'), true)
+    assert.equal(JSON.stringify(second.candidate).includes('Resposta anterior'), false)
+  } finally {
+    await rm(casa, { recursive: true, force: true })
+  }
+})
+
 test('melhoria legada materialized migra sem alegar release instalada', async () => {
   const casa = await home()
   const timestamp = '2026-08-27T12:00:00.000Z'
@@ -573,6 +622,26 @@ test('melhoria legada materialized migra sem alegar release instalada', async ()
     assert.equal(migrated.artifactRef.kind, 'portable-entry')
     assert.equal(migrated.installedReadback, null)
     assert.equal(migrated.transitionHistory.at(-1).kind, 'legacy-migration')
+  } finally {
+    await rm(casa, { recursive: true, force: true })
+  }
+})
+
+test('melhoria lifecycle v2 anterior recebe sourceRefs vazio sem perder estado', async () => {
+  const casa = await mkdtemp(join(tmpdir(), 'omni-cycle-source-migration-'))
+  try {
+    await proporMelhoriaOperacional(casa, {
+      category: 'owner-correction',
+      destination: 'operational-rule',
+      statement: 'Preservar compatibilidade da proveniencia.'
+    })
+    const path = caminhoDoCiclo(casa)
+    const raw = JSON.parse(await readFile(path, 'utf8'))
+    delete raw.improvementCandidates[0].sourceRefs
+    await writeFile(path, `${JSON.stringify(raw, null, 2)}\n`, 'utf8')
+    const migrated = await lerCicloOperacional(casa)
+    assert.deepEqual(migrated.improvementCandidates[0].sourceRefs, [])
+    assert.equal(migrated.improvementCandidates[0].status, 'observing')
   } finally {
     await rm(casa, { recursive: true, force: true })
   }

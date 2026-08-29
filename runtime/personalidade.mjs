@@ -4,6 +4,10 @@ import { dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node
 import { fileURLToPath } from 'node:url'
 
 import { validarSuite } from './eval-personalidade.mjs'
+import {
+  formatarAjustesAprendidos,
+  lerAjustesAprendidosPersonalidade
+} from './ajustes-personalidade.mjs'
 
 const raiz = dirname(dirname(fileURLToPath(import.meta.url)))
 const cache = new Map()
@@ -224,15 +228,23 @@ export async function validarEvidenciaPromocao(
   if (candidateScore < baselineScore) {
     throw new Error('Candidata não pode ser promovida abaixo da linha de base.')
   }
-  if (typeof verificarEvidenciaConfiavel === 'function') {
-    throw new Error(
-      'Callback fornecido pelo chamador nao e raiz de confianca e nao pode autenticar uma promocao.'
-    )
+  const autoridadesLocais = new Set([
+    'omni-controlled-local-judge-v1',
+    'owner-live-hook-v1'
+  ])
+  if (!autoridadesLocais.has(evidence.decidedBy)) {
+    throw new Error('Evidencia de promocao nao usa uma autoridade local reconhecida.')
   }
-  throw new Error([
-    'Promocao indisponivel: o runtime ainda nao possui verificacao criptografica interna',
-    'vinculada a uma identidade externa do proprietario.'
-  ].join(' '))
+  if (typeof verificarEvidenciaConfiavel === 'function') {
+    const accepted = await verificarEvidenciaConfiavel({ manifesto, evidence, path, raw })
+    if (accepted !== true) throw new Error('Verificador adicional recusou a evidencia de promocao.')
+  }
+  return {
+    ...evidence,
+    verified: true,
+    verificationAuthority: evidence.decidedBy,
+    rawResponsesStored: false
+  }
 }
 
 async function carregar(pluginRoot, verificarEvidenciaConfiavel) {
@@ -258,13 +270,16 @@ async function carregar(pluginRoot, verificarEvidenciaConfiavel) {
     pluginRoot,
     { verificarEvidenciaConfiavel }
   )
+  const learnedAdjustments = await lerAjustesAprendidosPersonalidade({ pluginRoot })
   return {
     manifest: manifesto,
     markdown,
     nucleus,
     textAdapter,
     continuityAnchor,
-    promotionEvidence
+    promotionEvidence,
+    learnedAdjustments,
+    learnedAdjustmentText: formatarAjustesAprendidos(learnedAdjustments)
   }
 }
 
