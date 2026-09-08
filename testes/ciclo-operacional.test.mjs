@@ -12,8 +12,11 @@ import {
   marcarMelhoriaOperacional,
   observarDelegacao,
   prepararDelegacao,
+  prepararDelegacaoIdempotente,
   prepararDelegacaoVisivelIdempotente,
-  proporMelhoriaOperacional
+  proporMelhoriaOperacional,
+  reconciliarDelegacoesOperacionais,
+  renovarLeaseDelegacaoPendente
 } from '../runtime/ciclo-operacional.mjs'
 import {
   abrirTurnoAuditoria,
@@ -311,7 +314,7 @@ test('contrato de autoridade usa risco como preparo e restringe nova decisão a 
   assert.equal(authority.ownerDecisionWhen.length, 3)
   assert.match(authority.risk.principle, /checkpoint.*rollback.*compensacao.*verificacao/i)
   assert.equal(cycle.delegation.executorReportProduces, 'reported')
-  assert.deepEqual(cycle.delegation.inboundCannotProduce, ['verified', 'closed'])
+  assert.deepEqual(cycle.delegation.inboundCannotProduce, ['verified', 'closed', 'archived'])
   assert.equal(cycle.delegation.externalCorrelation, 'delegation-id')
   assert.deepEqual(cycle.delegation.successStates, ['verified'])
   assert.equal(cycle.delegation.closedSuccessRequiresOutcome, 'verified')
@@ -319,6 +322,9 @@ test('contrato de autoridade usa risco como preparo e restringe nova decisão a 
   assert.equal(cycle.delegation.verifiedRequiresAuditActionAndEvidence, true)
   assert.equal(cycle.delegation.verificationMustFollowReport, true)
   assert.equal(cycle.delegation.verificationMustMatchAuditedObject, true)
+  assert.deepEqual(cycle.delegation.terminalStates, ['closed', 'failed', 'cancelled', 'archived'])
+  assert.equal(cycle.delegation.historicalUnverifiableState, 'archived')
+  assert.equal(cycle.delegation.historicalUnverifiableOutcome, 'historical-unverifiable')
 })
 
 test('autoridade e evidências inválidas são recusadas em vez de truncadas ou presumidas', async () => {
@@ -486,7 +492,7 @@ test('verified exige readback auditado posterior ao relato e do mesmo objeto', a
   }
 })
 
-test('delegação legada fechada permanece histórica sem ganhar verificação retroativa', async () => {
+test('delegação legada fechada é arquivada sem ganhar verificação retroativa', async () => {
   const casa = await home()
   try {
     const timestamp = '2026-08-27T12:00:00.000Z'
@@ -515,11 +521,142 @@ test('delegação legada fechada permanece histórica sem ganhar verificação r
 
     const store = await lerCicloOperacional(casa)
     const legacy = store.delegations[0]
-    assert.equal(legacy.state, 'closed')
-    assert.equal(legacy.finalOutcome, 'legacy-unverified')
+    assert.equal(legacy.state, 'archived')
+    assert.equal(legacy.finalOutcome, 'historical-unverifiable')
     assert.equal(legacy.legacyUnverified, true)
     assert.equal(legacy.verificationEvidenceFingerprint, null)
     assert.equal(legacy.visiblePromptConfirmed, false)
+    assert.match(legacy.reasonFingerprint, /^[a-f0-9]{64}$/)
+  } finally {
+    await rm(casa, { recursive: true, force: true })
+  }
+})
+
+test('reconciliação global preserva binding ativo e cancela visible órfã após o lease', async () => {
+  const casa = await home()
+  try {
+    const active = await prepararDelegacao(casa, {
+      target: 'executor-ativo',
+      prompt: 'Execute o trabalho ainda vinculado.',
+      sessionId: 'main-active-binding'
+    }, { at: '2026-08-27T10:00:00.000Z' })
+    await atualizarDelegacao(casa, active.delegation.id, 'visible', {
+      evidence: 'visible-active-binding'
+    }, { at: '2026-08-27T10:00:01.000Z' })
+    const orphan = await prepararDelegacao(casa, {
+      target: 'executor-orfao',
+      prompt: 'Execute o trabalho que perdeu o binding.',
+      sessionId: 'main-orphan-binding'
+    }, { at: '2026-08-27T10:00:00.000Z' })
+    await atualizarDelegacao(casa, orphan.delegation.id, 'visible', {
+      evidence: 'visible-orphan-binding'
+    }, { at: '2026-08-27T10:00:01.000Z' })
+
+    const reconciled = await reconciliarDelegacoesOperacionais(casa, {
+      activeDelegationIds: [active.delegation.id],
+      at: '2026-08-27T11:01:00.000Z'
+    })
+    assert.equal(reconciled.cancelled, 1)
+    assert.equal(reconciled.preservedActive, 1)
+    let cycle = await lerCicloOperacional(casa)
+    assert.equal(cycle.delegations.find((item) => item.id === active.delegation.id).state, 'visible')
+    const terminal = cycle.delegations.find((item) => item.id === orphan.delegation.id)
+    assert.equal(terminal.state, 'cancelled')
+    assert.equal(terminal.finalOutcome, 'cancelled')
+
+    const replay = await reconciliarDelegacoesOperacionais(casa, {
+      activeDelegationIds: [active.delegation.id],
+      at: '2026-08-27T11:02:00.000Z'
+    })
+    assert.equal(replay.cancelled, 0)
+    cycle = await lerCicloOperacional(casa)
+    assert.equal(cycle.delegations.find((item) => item.id === orphan.delegation.id).state, 'cancelled')
+  } finally {
+    await rm(casa, { recursive: true, force: true })
+  }
+})
+
+test('renovacao atomica anterior a reconciliacao preserva delegacao pendente sem renovar terminal', async () => {
+  const casa = await home()
+  const input = {
+    target: 'omni-self-correction',
+    prompt: 'Implemente uma autocorrecao local reversivel com verificacao completa.',
+    sessionId: 'lease-renewal-before-reconciliation',
+    idempotencyKey: 'operational-improvement:lease-renewal:1',
+    authority: {
+      source: 'owner-intent',
+      turnFingerprint: 'a'.repeat(64)
+    }
+  }
+  try {
+    const prepared = await prepararDelegacaoIdempotente(casa, input, {
+      at: '2026-08-27T10:00:00.000Z'
+    })
+    const renewed = await renovarLeaseDelegacaoPendente(casa, prepared.delegation.id, {
+      at: '2026-08-27T11:01:00.000Z'
+    })
+    assert.equal(renewed.result, 'renewed')
+    assert.equal(renewed.delegation.updatedAt, '2026-08-27T11:01:00.000Z')
+
+    const reconciled = await reconciliarDelegacoesOperacionais(casa, {
+      activeDelegationIds: [],
+      at: '2026-08-27T11:01:01.000Z'
+    })
+    assert.equal(reconciled.cancelled, 0)
+    let delegation = (await lerCicloOperacional(casa)).delegations[0]
+    assert.equal(delegation.state, 'prepared')
+
+    await atualizarDelegacao(casa, delegation.id, 'cancelled', {
+      reason: 'Encerramento deterministico do teste de renovacao.',
+      evidence: 'lease-renewal-terminal-test'
+    }, { at: '2026-08-27T11:02:00.000Z' })
+    const terminal = await renovarLeaseDelegacaoPendente(casa, delegation.id, {
+      at: '2026-08-27T11:03:00.000Z'
+    })
+    assert.equal(terminal.result, 'not-pending')
+    assert.equal(terminal.renewed, false)
+    delegation = (await lerCicloOperacional(casa)).delegations[0]
+    assert.equal(delegation.state, 'cancelled')
+    assert.equal(delegation.updatedAt, '2026-08-27T11:02:00.000Z')
+  } finally {
+    await rm(casa, { recursive: true, force: true })
+  }
+})
+
+test('reported sem prova independente pode ser arquivada, nunca promovida a verified', async () => {
+  const casa = await home()
+  try {
+    const prepared = await prepararDelegacao(casa, {
+      target: 'executor-sem-readback',
+      prompt: 'Execute e relate sem presumir verificação.',
+      sessionId: 'main-unverified-report'
+    })
+    const id = prepared.delegation.id
+    await atualizarDelegacao(casa, id, 'visible', { evidence: 'visible-unverified-report' })
+    await atualizarDelegacao(casa, id, 'running', { evidence: 'running-unverified-report' })
+    await atualizarDelegacao(casa, id, 'reported', {
+      evidence: 'reported-unverified-report',
+      summary: 'Executor apresentou somente o próprio relato.'
+    })
+    await assert.rejects(
+      atualizarDelegacao(casa, id, 'verified', {
+        summary: 'Tentativa sem readback independente.'
+      }),
+      /Acao de verificacao da auditoria/
+    )
+    const archived = await atualizarDelegacao(casa, id, 'archived', {
+      reason: 'Relato sem binding de auditoria recuperável.',
+      evidence: 'historical-unverifiable-report'
+    })
+    assert.equal(archived.delegation.state, 'archived')
+    assert.equal(archived.delegation.finalOutcome, 'historical-unverifiable')
+    assert.equal(archived.delegation.verificationEvidenceFingerprint, null)
+    await assert.rejects(
+      atualizarDelegacao(casa, id, 'verified', {
+        summary: 'Arquivo terminal não pode ser promovido.'
+      }),
+      /archived -> verified/
+    )
   } finally {
     await rm(casa, { recursive: true, force: true })
   }

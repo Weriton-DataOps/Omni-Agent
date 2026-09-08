@@ -1,12 +1,13 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
-import { mkdir, open, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { basename, extname, isAbsolute, join, resolve } from 'node:path'
 
 import {
   fingerprintObjetivo,
   OBJECTIVE_FINGERPRINT_ALGORITHM
 } from './passe.mjs'
+import { acquireLocalFileLock } from '../dist/adapters/local-json/node-local-file-lock.js'
 
 export const AUDIT_SELF_CORRECTION_SCHEMA_VERSION = 1
 
@@ -14,8 +15,25 @@ const CONTRACT_PATH = new URL('../contratos/operacao/auditoria-autocorrecao.json
 const TURN_STATES = new Set(['open', 'executing', 'repairing', 'verified', 'blocked'])
 const ACTION_STATES = new Set(['running', 'reported', 'succeeded', 'failed'])
 const EFFECTS = new Set(['verification', 'mutation', 'execution', 'delegation'])
-const FINDING_STATES = new Set(['open', 'corrected', 'unresolved'])
-const CORRECTION_STATES = new Set(['requested', 'verified', 'failed'])
+const TERMINAL_RECOVERY_STATES = [
+  'owner-reconfirmation-required',
+  'historical-unverifiable',
+  'superseded'
+]
+const FINDING_STATES = new Set(['open', 'corrected', 'unresolved', ...TERMINAL_RECOVERY_STATES])
+const CORRECTION_STATES = new Set(['requested', 'verified', 'failed', ...TERMINAL_RECOVERY_STATES])
+const RECOVERY_STATES = new Set(['queued', 'claimed', ...TERMINAL_RECOVERY_STATES])
+const HISTORICAL_FINDING_POLICY = Object.freeze({
+  'requested-action-not-executed': 'owner-reconfirmation-required',
+  'authorized-work-returned-to-owner': 'owner-reconfirmation-required',
+  'turn-interrupted-recovery': 'owner-reconfirmation-required',
+  'mutation-without-readback': 'historical-unverifiable',
+  'delegation-still-running': 'historical-unverifiable',
+  'delegation-without-independent-verification': 'historical-unverifiable',
+  'unresolved-tool-failure': 'historical-unverifiable',
+  'repeated-failed-strategy': 'historical-unverifiable',
+  'completion-claim-without-evidence': 'superseded'
+})
 
 function now(value) {
   return value ? new Date(value).toISOString() : new Date().toISOString()
@@ -32,6 +50,17 @@ function normalized(value) {
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function normalizedPreservingLines(value) {
+  return String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\r\n?/g, '\n')
+    .replace(/[^\S\n]+/g, ' ')
+    .replace(/\n{2,}/g, '\n')
     .trim()
 }
 
@@ -90,6 +119,18 @@ async function contract() {
     value.recovery?.legacyBlockedTurnsBecomeRepairing !== true ||
     value.recovery?.resumeAutomaticallyWhenCauseClears !== true ||
     value.recovery?.survivesSessionAndReleaseBoundary !== true ||
+    value.recovery?.durableClaimLedger !== true ||
+    value.recovery?.claimRequiresCurrentRequestFingerprint !== true ||
+    value.recovery?.reexecuteWithoutActionReference !== false ||
+    !Array.isArray(value.recovery?.terminalFindingStates) ||
+    value.recovery.terminalFindingStates.length !== TERMINAL_RECOVERY_STATES.length ||
+    !TERMINAL_RECOVERY_STATES.every((state) => value.recovery.terminalFindingStates.includes(state)) ||
+    typeof value.recovery?.historicalFindingPolicy !== 'object' ||
+    value.recovery.historicalFindingPolicy === null ||
+    Object.keys(value.recovery.historicalFindingPolicy).length !== Object.keys(HISTORICAL_FINDING_POLICY).length ||
+    !Object.entries(HISTORICAL_FINDING_POLICY).every(([code, state]) =>
+      value.recovery.historicalFindingPolicy[code] === state
+    ) ||
     value.objectiveBinding?.algorithm !== OBJECTIVE_FINGERPRINT_ALGORITHM ||
     value.objectiveBinding?.legacyWithoutAlgorithm !== 'unverifiable' ||
     value.objectiveBinding?.storeRawObjective !== false ||
@@ -176,13 +217,34 @@ function correctionValid(item) {
     item &&
       typeof item.id === 'string' && item.id.startsWith('audit-correction-') &&
       fingerprintValid(item.findingFingerprint) &&
-      ['execute-request', 'verify-state', 'change-strategy', 'verify-delegation', 'remove-unverified-claim'].includes(item.kind) &&
+      ['execute-request', 'resume-authorized-work', 'verify-state', 'change-strategy', 'verify-delegation', 'remove-unverified-claim'].includes(item.kind) &&
       CORRECTION_STATES.has(item.state) &&
       item.mode === 'repair-directive' &&
       item.rollback === 'ledger-only' &&
       Number.isInteger(item.attempts) && item.attempts >= 1 &&
       dateValid(item.createdAt) &&
       dateValid(item.updatedAt)
+  )
+}
+
+function recoveryValid(item) {
+  return Boolean(
+    item &&
+      RECOVERY_STATES.has(item.state) &&
+      Number.isInteger(item.claimAttempts) && item.claimAttempts >= 0 &&
+      dateValid(item.queuedAt) &&
+      dateValid(item.updatedAt) &&
+      (item.claimedAt === null || dateValid(item.claimedAt)) &&
+      (item.claimedByTurnId === null ||
+        (typeof item.claimedByTurnId === 'string' && item.claimedByTurnId.startsWith('audit-turn-'))) &&
+      (item.claimedBySessionFingerprint === null || fingerprintValid(item.claimedBySessionFingerprint)) &&
+      (item.terminalReason === null ||
+        (typeof item.terminalReason === 'string' && item.terminalReason.length <= 160)) &&
+      (item.state !== 'claimed' || (
+        item.claimedAt !== null &&
+        item.claimedByTurnId !== null &&
+        item.claimedBySessionFingerprint !== null
+      ))
   )
 }
 
@@ -205,6 +267,7 @@ function turnValid(item) {
       Array.isArray(item.evidence) && item.evidence.every(evidenceValid) &&
       Array.isArray(item.findings) && item.findings.every(findingValid) &&
       Array.isArray(item.corrections) && item.corrections.every(correctionValid) &&
+      (item.recovery === undefined || recoveryValid(item.recovery)) &&
       TURN_STATES.has(item.state) &&
       Number.isInteger(item.stopAttempts) && item.stopAttempts >= 0 &&
       Number.isInteger(item.stopBlocksIssued) && item.stopBlocksIssued >= 0 && item.stopBlocksIssued <= 1 &&
@@ -234,23 +297,15 @@ function validateStore(store, path) {
 
 async function acquireLock(casa) {
   const directory = join(casa, 'audits')
-  await mkdir(directory, { recursive: true })
   const path = join(directory, 'self-correction.lock')
-  for (let attempt = 0; attempt < 40; attempt += 1) {
-    try {
-      const handle = await open(path, 'wx')
-      return async () => {
-        await handle.close()
-        await unlink(path).catch(() => undefined)
-      }
-    } catch (error) {
-      if (error?.code !== 'EEXIST') throw error
-      const age = Date.now() - (await stat(path).catch(() => ({ mtimeMs: Date.now() }))).mtimeMs
-      if (age > 10_000) await unlink(path).catch(() => undefined)
-      await new Promise((resolveWait) => setTimeout(resolveWait, 50))
-    }
-  }
-  throw new Error('A auditoria e autocorreção está ocupada por outra escrita.')
+  const lock = await acquireLocalFileLock(path, {
+    acquisitionTimeoutMs: 2_000,
+    retryDelayMs: 50,
+    staleLockMs: 10_000,
+    heartbeatMs: 2_500,
+    timeoutMessage: 'A auditoria e autocorreção está ocupada por outra escrita.'
+  })
+  return () => lock.release()
 }
 
 async function load(casa) {
@@ -269,11 +324,53 @@ async function load(casa) {
   }
 }
 
+function findingsInRecovery(turn) {
+  return (turn.findings ?? []).filter((item) => item.state === 'open' || item.state === 'unresolved')
+}
+
+function recoveryTimestamp(turn, fallback = now()) {
+  return dateValid(turn.updatedAt)
+    ? turn.updatedAt
+    : dateValid(turn.openedAt) ? turn.openedAt : fallback
+}
+
+function ensureTurnRecovery(turn, timestamp = recoveryTimestamp(turn)) {
+  if (turn.recovery) return turn.recovery
+  turn.recovery = {
+    state: 'queued',
+    claimAttempts: 0,
+    queuedAt: timestamp,
+    claimedAt: null,
+    claimedByTurnId: null,
+    claimedBySessionFingerprint: null,
+    terminalReason: null,
+    updatedAt: timestamp
+  }
+  return turn.recovery
+}
+
+function deduplicateInterruptedRecovery(turn) {
+  const interrupted = (turn.findings ?? []).filter((item) => item.code === 'turn-interrupted-recovery')
+  if (interrupted.length <= 1) return
+  const canonical = interrupted
+    .slice()
+    .sort((left, right) => {
+      const leftPending = ['open', 'unresolved'].includes(left.state) ? 0 : 1
+      const rightPending = ['open', 'unresolved'].includes(right.state) ? 0 : 1
+      return leftPending - rightPending || Date.parse(left.detectedAt) - Date.parse(right.detectedAt)
+    })[0]
+  for (const duplicate of interrupted) {
+    if (duplicate === canonical || !['open', 'unresolved'].includes(duplicate.state)) continue
+    duplicate.state = 'superseded'
+    const correction = (turn.corrections ?? []).find((item) => item.findingFingerprint === duplicate.fingerprint)
+    if (correction && ['requested', 'failed'].includes(correction.state)) correction.state = 'superseded'
+  }
+}
+
 function migrarTurnosRecuperaveis(store) {
   for (const turn of store.turns ?? []) {
-    const hasUnresolvedWork = (turn.findings ?? []).some((item) =>
-      item.state === 'open' || item.state === 'unresolved'
-    )
+    deduplicateInterruptedRecovery(turn)
+    const hasUnresolvedWork = findingsInRecovery(turn).length > 0
     if (turn.state !== 'blocked' || !hasUnresolvedWork) continue
     turn.state = 'repairing'
     turn.closedAt = null
@@ -285,6 +382,11 @@ function migrarTurnosRecuperaveis(store) {
     }
     for (const correction of turn.corrections ?? []) {
       if (correction.state === 'failed') correction.state = 'requested'
+    }
+  }
+  for (const turn of store.turns ?? []) {
+    if (turn.state === 'repairing' && findingsInRecovery(turn).length > 0) {
+      ensureTurnRecovery(turn)
     }
   }
   return store
@@ -325,11 +427,14 @@ export async function lerAuditoriaAutocorrecao(casa) {
 
 function classifyRequest(prompt) {
   const text = normalized(prompt)
+    .replace(/^omni[, :]+/, '')
+    .replace(/^.*[,;]\s*(arruma|arrume|corrija|corrige)\b/, '$1')
+    .replace(/^(?:voce\s+)?(?:consegue|conseguiria|poderia)\s+/, '')
   const lead = '(?:(?:por favor|agora|ja|entao|tambem|nesse caso)[, ]+)*'
-  const modal = '(?:quero que |preciso que |pode(?: tambem)? |vamos )?'
+  const modal = '(?:quero(?: que)? |precis(?:o)? que |pode(?: tambem)? |vamos )?'
   const direct = (verbs) => new RegExp(`^${lead}${modal}(?:${verbs})\\b`).test(text)
   const textualCreation = new RegExp(
-    `^${lead}${modal}(?:faca|fazer)\\s+(?:(?:um|uma)\\s+)?(?:teste de humor|analogia|resumo|explicacao|comparacao|piada|exemplo|texto|roteiro|lista|mapa mental)\\b`
+    `^${lead}${modal}(?:faca|fazer|faz)\\s+(?:(?:um|uma)\\s+)?(?:teste de humor|analogia|resumo|explicacao|comparacao|piada|exemplo|texto|roteiro|lista|mapa mental)\\b`
   ).test(text)
   const discursiveInspection = new RegExp(
     `^${lead}${modal}(?:analise|analisar|avalie|avaliar|compare|comparar)\\b`
@@ -338,16 +443,29 @@ function classifyRequest(prompt) {
   const realStateRequest = /\b(?:estado real|estado atual|o que foi feito|o que esta rodando|esta aberto|esta aberta|esta funcionando|confira|verifique|inspecione|audite)\b/.test(text)
   if (textualCreation && !externalTarget && !realStateRequest) return 'conversation'
   if (discursiveInspection && !externalTarget && !realStateRequest) return 'conversation'
-  if (new RegExp(`^${lead}${modal}(?:faca|fazer)\\s+(?:essa|esse|esta|este|a|o|uma|um)?\\s*(?:correcao|ajuste|alteracao|mudanca|implementacao|edicao)\\b`).test(text)) {
+  if (/^faz sentido\b/.test(text)) return 'conversation'
+  const desiredMutation = new RegExp(
+    `^${lead}(?:quero|precis(?:o)?)\\s+(?:que\\s+)?` +
+    `(?:(?:isso|isto|essa|esse|estas|estes|o|a|os|as|um|uma|meu|minha|meus|minhas|projeto|arquivo|sistema|codigo|plugin|omni)(?:\\s+[a-z0-9_.-]+){0,5}\\s+)?` +
+    `(?:seja\\s+)?(?:corrigid[oa]s?|ajustad[oa]s?|alterad[oa]s?|implementad[oa]s?|atualizad[oa]s?|instalad[oa]s?)\\b`
+  ).test(text)
+  const naturalOperationalNeed = new RegExp(
+    `^${lead}precis(?:o)?\\s+(?:fazer|faz|faca)\\s+` +
+    `(?:(?:algum|alguma|alguns|algumas|o|a|os|as|um|uma)\\s+)?` +
+    `(?:correcoes?|ajustes?|alteracoes?|implementacoes?|build|testes?|instalacao|atualizacao|auditoria|verificacao)\\b`
+  ).test(text)
+  if (desiredMutation || naturalOperationalNeed) return 'mutation'
+  const nominalDeterminers = '(?:(?:essa|esse|estas|estes|a|o|as|os|uma|um|umas|uns|toda|todo|todas|todos|alguma|algum|algumas|alguns)[ ]+){0,2}'
+  if (new RegExp(`^${lead}${modal}(?:faca|fazer|faz)\\s+${nominalDeterminers}(?:correc(?:ao|oes)|ajustes?|alterac(?:ao|oes)|mudancas?|implementac(?:ao|oes)|edic(?:ao|oes))\\b`).test(text)) {
     return 'mutation'
   }
-  if (new RegExp(`^${lead}${modal}(?:faca|fazer)\\s+(?:essa|esse|esta|este|a|o|uma|um)?\\s*(?:verificacao|auditoria|inspecao|conferencia)\\b`).test(text)) {
+  if (new RegExp(`^${lead}${modal}(?:faca|fazer|faz)\\s+${nominalDeterminers}(?:verificac(?:ao|oes)|auditorias?|inspec(?:ao|oes)|conferencias?)\\b`).test(text)) {
     return 'inspection'
   }
-  if (direct('implemente|implementar|corrija|corrigir|crie|criar|edite|editar|altere|alterar|remova|remover|apague|apagar|instale|instalar|atualize|atualizar|publique|publicar|suba|subir|grave|gravar|registre|registrar|aplique|aplicar|incorpore|incorporar')) {
+  if (direct('melhore|melhora|melhorar|arruma|arrume|arrumar|implemente|implementa|implementar|corrija|corrige|corrigir|crie|cria|criar|edite|edita|editar|altere|altera|alterar|remova|remove|remover|apague|apaga|apagar|instale|instala|instalar|atualize|atualiza|atualizar|publique|publica|publicar|suba|sobe|subir|grave|grava|gravar|registre|registra|registrar|aplique|aplica|aplicar|incorpore|incorpora|incorporar')) {
     return 'mutation'
   }
-  if (direct('faca|fazer|execute|executar|rode|rodar|inicie|iniciar|abra|abrir|feche|fechar|delegue|delegar|envie|enviar|continue|continuar|siga|seguir')) return 'execution'
+  if (direct('faca|fazer|faz|execute|executa|executar|rode|roda|rodar|inicie|inicia|iniciar|abra|abre|abrir|feche|fecha|fechar|delegue|delega|delegar|envie|envia|enviar|continue|continua|continuar|siga|segue|seguir')) return 'execution'
   if (direct('verifique|verifica|verificar|confira|conferir|avalie|avaliar|analise|analisar|audite|auditar|inspecione|inspecionar|veja|ver|procure|procurar|leia|ler|compare|comparar')) return 'inspection'
   if (/^mao na massa\b/.test(text)) return 'execution'
   if (
@@ -674,9 +792,205 @@ export async function resolverImplementacaoDelegadaAuditoria(casa, {
   }
 }
 
+function terminalStateForFinding(turn, finding, policy) {
+  if (turn.requestFingerprintAlgorithm !== OBJECTIVE_FINGERPRINT_ALGORITHM) {
+    return 'historical-unverifiable'
+  }
+  const configured = policy.recovery.historicalFindingPolicy[finding.code]
+  return TERMINAL_RECOVERY_STATES.includes(configured)
+    ? configured
+    : 'historical-unverifiable'
+}
+
+function aggregateTerminalRecoveryState(states) {
+  if (states.includes('owner-reconfirmation-required')) return 'owner-reconfirmation-required'
+  if (states.includes('historical-unverifiable')) return 'historical-unverifiable'
+  return 'superseded'
+}
+
+function terminalizeHistoricalTurn(turn, policy, timestamp) {
+  const terminalized = []
+  for (const finding of findingsInRecovery(turn)) {
+    const state = terminalStateForFinding(turn, finding, policy)
+    finding.state = state
+    finding.updatedAt = timestamp
+    terminalized.push({ finding, state })
+    const correction = turn.corrections.find((item) => item.findingFingerprint === finding.fingerprint)
+    if (correction) {
+      correction.state = state
+      correction.updatedAt = timestamp
+    }
+  }
+  if (terminalized.length === 0) return terminalized
+
+  const recovery = ensureTurnRecovery(turn, timestamp)
+  recovery.state = aggregateTerminalRecoveryState(terminalized.map((item) => item.state))
+  recovery.claimedAt = null
+  recovery.claimedByTurnId = null
+  recovery.claimedBySessionFingerprint = null
+  recovery.terminalReason = `historical-reconciliation:${recovery.state}`
+  recovery.updatedAt = timestamp
+  turn.state = 'blocked'
+  turn.closedAt = timestamp
+  turn.updatedAt = timestamp
+  for (const commitment of turn.commitments) {
+    if (commitment.state === 'open') commitment.state = 'blocked'
+  }
+  return terminalized
+}
+
+function supersedeRecoveredTurn(turn, resolvedByTurn, timestamp) {
+  for (const finding of turn.findings) {
+    if (finding.state === 'corrected') continue
+    finding.state = 'superseded'
+    finding.updatedAt = timestamp
+    const correction = turn.corrections.find((item) => item.findingFingerprint === finding.fingerprint)
+    if (correction) {
+      correction.state = 'superseded'
+      correction.updatedAt = timestamp
+    }
+  }
+  const recovery = ensureTurnRecovery(turn, timestamp)
+  recovery.state = 'superseded'
+  recovery.claimedAt ??= timestamp
+  recovery.claimedByTurnId = resolvedByTurn.id
+  recovery.claimedBySessionFingerprint = resolvedByTurn.sessionFingerprint
+  recovery.terminalReason = 'verified-current-request-supersedes-historical-turn'
+  recovery.updatedAt = timestamp
+  turn.state = 'blocked'
+  turn.closedAt = timestamp
+  turn.updatedAt = timestamp
+  for (const commitment of turn.commitments) {
+    if (commitment.state === 'open') commitment.state = 'blocked'
+  }
+}
+
+function supersedeClaimsResolvedBy(store, turn, timestamp) {
+  const superseded = []
+  for (const candidate of store.turns) {
+    if (candidate.id === turn.id || candidate.recovery?.state !== 'claimed') continue
+    if (candidate.recovery.claimedByTurnId !== turn.id) continue
+    supersedeRecoveredTurn(candidate, turn, timestamp)
+    superseded.push(candidate.id)
+  }
+  return superseded
+}
+
+function recoveryStateAfterReleasedClaim(turn) {
+  const states = turn.findings.map((item) => item.state)
+  if (states.includes('owner-reconfirmation-required')) return 'owner-reconfirmation-required'
+  if (states.includes('historical-unverifiable')) return 'historical-unverifiable'
+  if (states.some((item) => item === 'open' || item === 'unresolved')) return 'queued'
+  return 'superseded'
+}
+
+function releaseClaimsOwnedBy(store, turnId, timestamp) {
+  const released = []
+  for (const candidate of store.turns) {
+    if (candidate.recovery?.state !== 'claimed' || candidate.recovery.claimedByTurnId !== turnId) continue
+    candidate.recovery.state = recoveryStateAfterReleasedClaim(candidate)
+    candidate.recovery.claimedAt = null
+    candidate.recovery.claimedByTurnId = null
+    candidate.recovery.claimedBySessionFingerprint = null
+    candidate.recovery.terminalReason = candidate.recovery.state === 'queued'
+      ? null
+      : `historical-reconciliation:${candidate.recovery.state}`
+    candidate.recovery.updatedAt = timestamp
+    released.push(candidate.id)
+  }
+  return released
+}
+
+function claimMatchingRecoveryTurns(store, currentTurn, timestamp) {
+  const claimed = []
+  for (const candidate of store.turns) {
+    if (candidate.id === currentTurn.id || candidate.requestFingerprint !== currentTurn.requestFingerprint) continue
+    if (candidate.requestFingerprintAlgorithm !== OBJECTIVE_FINGERPRINT_ALGORITHM) continue
+    if (!candidate.recovery || candidate.recovery.state === 'superseded') continue
+    if (candidate.recovery.state === 'claimed') continue
+    candidate.recovery.state = 'claimed'
+    candidate.recovery.claimAttempts += 1
+    candidate.recovery.claimedAt = timestamp
+    candidate.recovery.claimedByTurnId = currentTurn.id
+    candidate.recovery.claimedBySessionFingerprint = currentTurn.sessionFingerprint
+    candidate.recovery.terminalReason = null
+    candidate.recovery.updatedAt = timestamp
+    claimed.push({ turnId: candidate.id, claimAttempt: candidate.recovery.claimAttempts })
+  }
+  return claimed
+}
+
+function recoveryContext(claimed) {
+  if (claimed.length === 0) return null
+  return [
+    `RETOMADA DURAVEL INTERNA: o pedido atual reautoriza ${claimed.length} turno(s) historico(s) com o mesmo objetivo.`,
+    'O Omni deve cumprir o pedido no turno atual e produzir readback novo; este bloco nunca vira ordem ou checklist para o proprietario.',
+    'Fingerprints historicos nunca autorizam reexecutar uma acao nem servem como evidencia.',
+    'Somente a verificacao do turno atual podera superseder as pendencias historicas reivindicadas.'
+  ].join(' ')
+}
+
+export async function reconciliarTurnosPendentesAuditoria(casa, input = {}, { at } = {}) {
+  const timestamp = now(at)
+  return change(casa, (store, policy) => {
+    if (input?.session_id) {
+      sessionFor(store, hash(input.session_id), timestamp)
+    }
+    const activeTurnIds = new Set(store.sessions
+      .filter((item) => item.state === 'active' && item.activeTurnId)
+      .map((item) => item.activeTurnId))
+    const summary = {
+      terminalized: 0,
+      ownerReconfirmationRequired: 0,
+      historicalUnverifiable: 0,
+      superseded: 0,
+      staleClaimsReleased: 0,
+      activeSkipped: 0
+    }
+
+    for (const turn of store.turns) {
+      if (!turn.recovery || turn.recovery.state !== 'claimed') continue
+      const claimer = store.turns.find((item) => item.id === turn.recovery.claimedByTurnId)
+      if (claimer?.state === 'verified') {
+        supersedeRecoveredTurn(turn, claimer, timestamp)
+        summary.superseded += 1
+      } else if (!claimer || !activeTurnIds.has(claimer.id)) {
+        const released = releaseClaimsOwnedBy(store, turn.recovery.claimedByTurnId, timestamp)
+        summary.staleClaimsReleased += released.length
+      }
+    }
+
+    for (const turn of store.turns) {
+      if (activeTurnIds.has(turn.id)) {
+        if (findingsInRecovery(turn).length > 0) summary.activeSkipped += 1
+        continue
+      }
+      if (turn.recovery?.state === 'claimed' || turn.recovery?.state === 'superseded') continue
+      if (findingsInRecovery(turn).length === 0) continue
+      const terminalized = terminalizeHistoricalTurn(turn, policy, timestamp)
+      summary.terminalized += terminalized.length
+      for (const item of terminalized) {
+        if (item.state === 'owner-reconfirmation-required') summary.ownerReconfirmationRequired += 1
+        if (item.state === 'historical-unverifiable') summary.historicalUnverifiable += 1
+        if (item.state === 'superseded') summary.superseded += 1
+      }
+    }
+    return {
+      result: summary.terminalized > 0 || summary.staleClaimsReleased > 0 || summary.superseded > 0
+        ? 'reconciled'
+        : 'unchanged',
+      summary
+    }
+  })
+}
+
 function preserveTurnForRecovery(turn, policy, timestamp) {
   const fingerprint = hash(`${turn.id}:turn-interrupted-recovery:${turn.requestFingerprint}`)
-  let finding = turn.findings.find((item) => item.fingerprint === fingerprint)
+  let finding = turn.findings.find((item) => item.fingerprint === fingerprint) ??
+    turn.findings.find((item) =>
+      item.code === 'turn-interrupted-recovery' && ['open', 'unresolved'].includes(item.state)
+    ) ??
+    turn.findings.find((item) => item.code === 'turn-interrupted-recovery')
   if (!finding) {
     finding = {
       id: `audit-finding-${randomUUID()}`,
@@ -717,6 +1031,13 @@ function preserveTurnForRecovery(turn, policy, timestamp) {
   turn.state = 'repairing'
   turn.closedAt = null
   turn.updatedAt = timestamp
+  const recovery = ensureTurnRecovery(turn, timestamp)
+  recovery.state = 'queued'
+  recovery.claimedAt = null
+  recovery.claimedByTurnId = null
+  recovery.claimedBySessionFingerprint = null
+  recovery.terminalReason = null
+  recovery.updatedAt = timestamp
   for (const commitment of turn.commitments.filter((item) => item.state === 'blocked')) commitment.state = 'open'
 }
 
@@ -732,6 +1053,7 @@ export async function abrirTurnoAuditoria(casa, input, { at } = {}) {
       : null
     if (previous && !['verified', 'blocked'].includes(previous.state)) {
       preserveTurnForRecovery(previous, policy, timestamp)
+      releaseClaimsOwnedBy(store, previous.id, timestamp)
     }
     const requestKind = classifyRequest(prompt)
     const turn = {
@@ -757,7 +1079,14 @@ export async function abrirTurnoAuditoria(casa, input, { at } = {}) {
     }
     store.turns.push(turn)
     session.activeTurnId = turn.id
-    return { result: 'opened', turn, context: contextoAuditoriaObrigatoria(turn) }
+    const claimed = claimMatchingRecoveryTurns(store, turn, timestamp)
+    const resumedContext = recoveryContext(claimed)
+    return {
+      result: 'opened',
+      turn,
+      recovery: { claimed },
+      context: [contextoAuditoriaObrigatoria(turn), resumedContext].filter(Boolean).join(' ')
+    }
   })
 }
 
@@ -1195,7 +1524,26 @@ function currentFindings(turn, input, policy) {
     }
   }
 
-  const answer = typeof input?.last_assistant_message === 'string' ? normalized(input.last_assistant_message) : ''
+  const answer = typeof input?.last_assistant_message === 'string'
+    ? normalizedPreservingLines(input.last_assistant_message).replace(/[*_`~]/g, '')
+    : ''
+  const operationalInfinitive = '(?:fazer|rodar|executar|abrir|instalar|corrigir|verificar|conferir|acessar|digitar|clicar|reiniciar|recarregar)'
+  const directOperationalImperative = '(?:valide|valida|rode|roda|execute|executa|abra|abre|instale|instala|corrija|corrige|faca|faz(?!\\s+sentido\\b)|verifique|verifica|confira|confere|acesse|acessa|digite|digita|clique|clica|reinicie|reinicia|recarregue|recarrega)'
+  const responseBoundary = '(?:^|[.!?:;]\\s+|\\n)\\s*(?:(?:[-+]\\s*(?:\\[[ x]\\]\\s*)?)|(?:\\d+[.)]\\s*))?'
+  const operationalImperative = new RegExp([
+    `${responseBoundary}(?:(?:por favor|depois|agora|quando puder)[, ]+)*${directOperationalImperative}\\b`,
+    `\\b(?:preciso|necessito|quero)\\s+que\\s+(?:voce|vc)\\s+${directOperationalImperative}\\b`,
+    `\\b(?:proxima etapa|proximo passo)\\s+e\\s+(?:voce|vc)\\s+${operationalInfinitive}\\b`,
+    `\\b(?:voce|vc)\\s+(?:pode|deve|precisa(?:\\s+de)?|tem\\s+que)\\s+(?:agora\\s+)?${operationalInfinitive}\\b`,
+    `\\b(?:agora\\s+)?e\\s+so\\s+(?:voce\\s+)?${operationalInfinitive}\\b`
+  ].join('|'))
+  if (turn.requestKind !== 'conversation' && operationalImperative.test(answer)) {
+    findings.push({
+      code: 'authorized-work-returned-to-owner',
+      severity: 'error',
+      subject: turn.requestFingerprint
+    })
+  }
   const claimsCompletion = /\b(conclui|corrigi|feito|pronto|resolvido|implementei|funcionando|passou|finalizado)\b/.test(answer)
   const hasEvidence = turn.evidence.some((item) => ['state-readback', 'execution-result'].includes(item.kind))
   if (
@@ -1210,6 +1558,7 @@ function currentFindings(turn, input, policy) {
 
 const CORRECTION_BY_FINDING = {
   'requested-action-not-executed': 'execute-request',
+  'authorized-work-returned-to-owner': 'resume-authorized-work',
   'mutation-without-readback': 'verify-state',
   'delegation-still-running': 'verify-delegation',
   'delegation-without-independent-verification': 'verify-delegation',
@@ -1219,13 +1568,14 @@ const CORRECTION_BY_FINDING = {
 }
 
 const REPAIR_TEXT = {
-  'requested-action-not-executed': 'execute o trabalho solicitado ou declare o bloqueio real',
-  'mutation-without-readback': 'leia o estado alterado e confirme o resultado real',
-  'delegation-still-running': 'acompanhe a delegação até um estado terminal',
-  'delegation-without-independent-verification': 'verifique independentemente o resultado delegado',
-  'unresolved-tool-failure': 'diagnostique a causa e use uma estratégia materialmente diferente',
-  'repeated-failed-strategy': 'pare de repetir a mesma estratégia e escolha outra abordagem',
-  'completion-claim-without-evidence': 'retire a alegação de sucesso ou produza evidência verificável'
+  'requested-action-not-executed': 'o Omni executa o trabalho solicitado ou registra o bloqueio real',
+  'authorized-work-returned-to-owner': 'o Omni retoma o trabalho já autorizado e substitui a ordem ao proprietário por execução e resultado',
+  'mutation-without-readback': 'o Omni lê o estado alterado e confirma o resultado real',
+  'delegation-still-running': 'o orquestrador acompanha a delegação até um estado terminal',
+  'delegation-without-independent-verification': 'o verificador confere independentemente o resultado delegado',
+  'unresolved-tool-failure': 'o executor diagnostica a causa e usa uma estratégia materialmente diferente',
+  'repeated-failed-strategy': 'o executor abandona a estratégia repetida e escolhe outra abordagem',
+  'completion-claim-without-evidence': 'o Omni retira a alegação de sucesso ou produz evidência verificável'
 }
 
 function reconcileFindings(turn, detected, policy, timestamp) {
@@ -1286,9 +1636,10 @@ function repairReason(openFindings) {
       .filter(([, action]) => Boolean(action))
   )]
   return [
-    'A auditoria obrigatória encontrou divergência antes do fechamento.',
-    ...actions.map(([code, action], index) => `${index + 1}. [${code}] ${action}.`),
-    'Continue neste mesmo turno, corrija somente dentro da autoridade do pedido atual e conclua após verificar o estado real.'
+    'A auditoria obrigatória encontrou divergência antes do fechamento; estas são obrigações internas do Omni.',
+    ...actions.map(([code, action]) => `- obrigação interna [${code}]: ${action}.`),
+    'O Omni continua neste mesmo turno, corrige somente dentro da autoridade atual e encerra após verificar o estado real.',
+    'Este bloco nunca deve virar comando ou checklist para o proprietário.'
   ].join('\n')
 }
 
@@ -1308,7 +1659,8 @@ export async function auditarParada(casa, input, { at } = {}) {
       turn.closedAt = timestamp
       for (const commitment of turn.commitments) commitment.state = 'fulfilled'
       if (session) session.activeTurnId = null
-      return { result: 'verified', decision: null, reason: null, turn }
+      const supersededRecoveryTurnIds = supersedeClaimsResolvedBy(store, turn, timestamp)
+      return { result: 'verified', decision: null, reason: null, turn, supersededRecoveryTurnIds }
     }
 
     const recursionActive = input?.stop_hook_active === true
@@ -1337,6 +1689,7 @@ export async function encerrarSessaoAuditoria(casa, input, { at } = {}) {
     if (!session) return { result: 'ignored' }
     if (turn && !['verified', 'blocked'].includes(turn.state)) {
       preserveTurnForRecovery(turn, policy, timestamp)
+      releaseClaimsOwnedBy(store, turn.id, timestamp)
     }
     session.activeTurnId = null
     session.state = 'closed'
@@ -1347,11 +1700,12 @@ export async function encerrarSessaoAuditoria(casa, input, { at } = {}) {
 
 export function contextoAuditoriaObrigatoria(turn) {
   return [
-    'AUDITORIA E AUTOCORREÇÃO OBRIGATÓRIAS:',
+    'AUDITORIA E AUTOCORREÇÃO INTERNAS OBRIGATÓRIAS:',
+    'Este bloco orienta trabalho do Omni; nunca o repasse ao proprietário como comando ou checklist.',
     `turno=${turn.id}; tipo=${turn.requestKind}; vinculo=${turn.requestFingerprint}.`,
     `Se o objeto nao estiver nomeado no pedido, correlacione o comando com \`omni-request-binding:${turn.requestFingerprint}\`; o marcador sozinho nunca prova cumprimento.`,
     'Antes de concluir, confronte pedido, compromissos, ações, evidência e estado real.',
-    'Corrija divergências reversíveis dentro do pedido atual; não repita estratégia que já falhou.',
+    'O Omni corrige divergências reversíveis dentro do pedido atual e não repete estratégia que já falhou.',
     'Mudança e resultado delegado exigem verificação independente. Não declare sucesso sem evidência.',
     'Esta auditoria não concede autoridade nova nem autoriza efeitos fora do pedido atual.'
   ].join(' ')

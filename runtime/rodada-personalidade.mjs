@@ -1,9 +1,10 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdir, open, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises'
+import { readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { avaliarResposta, validarSuite } from './eval-personalidade.mjs'
+import { acquireLocalFileLock } from '../dist/adapters/local-json/node-local-file-lock.js'
 
 const raiz = dirname(dirname(fileURLToPath(import.meta.url)))
 const HASH_SHA256 = /^[a-f0-9]{64}$/i
@@ -519,22 +520,14 @@ export async function lerHistoricoPersonalidade(casa) {
 async function adquirirLock(casa) {
   const directory = join(casa, 'evals')
   const path = join(directory, 'personality-history.lock')
-  await mkdir(directory, { recursive: true })
-  for (let attempt = 0; attempt < 40; attempt += 1) {
-    try {
-      const handle = await open(path, 'wx')
-      return async () => {
-        await handle.close()
-        await unlink(path).catch(() => undefined)
-      }
-    } catch (error) {
-      if (error?.code !== 'EEXIST') throw error
-      const age = Date.now() - (await stat(path).catch(() => ({ mtimeMs: Date.now() }))).mtimeMs
-      if (age > 10_000) await unlink(path).catch(() => undefined)
-      await new Promise((resolvePromise) => setTimeout(resolvePromise, 50))
-    }
-  }
-  throw new Error('Historico local de personalidade ocupado por outra escrita.')
+  const lock = await acquireLocalFileLock(path, {
+    acquisitionTimeoutMs: 2_000,
+    retryDelayMs: 50,
+    staleLockMs: 10_000,
+    heartbeatMs: 2_500,
+    timeoutMessage: 'Historico local de personalidade ocupado por outra escrita.'
+  })
+  return () => lock.release()
 }
 
 export async function registrarRodadaPersonalidade(casa, input) {

@@ -84,9 +84,11 @@ export async function localizarClaudeCli({ env = process.env, run = executarProc
     const probe = run(candidate, ['--version'])
     if (probe?.status === 0) return candidate
   }
-  throw new Error(
-    'Claude Code CLI não encontrado. Instale o CLI ou defina OMNI_CLAUDE_CLI com o caminho do executável.'
+  const error = new Error(
+    'Claude Code CLI não foi localizado automaticamente; a atualização não foi executada. Retomada automática não confirmada: falta um executor disponível.'
   )
+  error.code = 'CLAUDE_CLI_UNAVAILABLE'
+  throw error
 }
 
 async function versaoCarregada(pluginRoot) {
@@ -136,11 +138,13 @@ export function resumirAtualizacaoPublica(update) {
     changes: (update.changes ?? []).map((item) => item.change)
   }
   if (update.reloadRequired) {
-    summary.reload = {
-      vscode: '/plugin → Restart',
-      terminal: '/reload-plugins',
-      preservesSession: true
-    }
+    summary.reloadWork = {
+          status: 'awaiting-host-initialization',
+          owner: 'omni',
+          ownerActionRequired: false,
+          currentProcessCanReloadItself: false,
+          completionEvidence: 'loaded-runtime-readback-on-session-start'
+        }
   }
   return summary
 }
@@ -249,7 +253,7 @@ export async function atualizarPlugin({
     throw new Error(`A versão ${after.version} foi instalada sem registrar o que mudou.`)
   }
   return {
-    status: changed ? 'updated' : reloadRequired ? 'awaiting-reload' : 'current',
+    status: reloadRequired ? 'awaiting-reload' : changed ? 'updated' : 'current',
     plugin: PLUGIN_ID,
     repository: REPOSITORIO,
     loadedVersion,
@@ -268,11 +272,13 @@ export async function atualizarPlugin({
       operationalArtifacts: operationalReadback.verified ?? 0
     },
     reloadRequired,
-    applyInstructions: reloadRequired
+    reloadWork: reloadRequired
       ? {
-          vscode: { command: '/plugin', action: 'Clique em Restart.' },
-          terminal: { command: '/reload-plugins' },
-          preservesSession: true
+          status: 'awaiting-host-initialization',
+          owner: 'omni',
+          ownerActionRequired: false,
+          currentProcessCanReloadItself: false,
+          completionEvidence: 'loaded-runtime-readback-on-session-start'
         }
       : null
   }

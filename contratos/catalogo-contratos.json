@@ -1,0 +1,388 @@
+{
+  "schemaVersion": 1,
+  "contract": "omni-contract-catalog-v1",
+  "roots": [
+    "contratos",
+    "src"
+  ],
+  "entries": [
+    {
+      "path": "contratos/aprendizado/atalhos.json",
+      "kind": "policy",
+      "owner": "runtime/atalhos.mjs",
+      "validation": { "mode": "manual", "decoder": "runtime/atalhos.mjs", "schema": null, "parityTest": "testes/atalhos.test.mjs" },
+      "privacy": { "classification": "internal-config", "rawUserData": false },
+      "payload": { "mode": "direct", "target": null },
+      "provenance": null
+    },
+    {
+      "path": "contratos/aprendizado/atalhos.schema.json",
+      "kind": "schema",
+      "owner": "runtime/atalhos.mjs",
+      "validation": { "mode": "json-schema", "decoder": "runtime/atalhos.mjs", "schema": "contratos/aprendizado/atalhos.schema.json", "parityTest": "testes/atalhos.test.mjs" },
+      "privacy": { "classification": "public-contract", "rawUserData": false },
+      "payload": { "mode": "direct", "target": null },
+      "provenance": { "schemaId": "https://github.com/Weriton-DataOps/Omni-Agent/contratos/aprendizado/atalhos.schema.json", "canonicalSha256": "d5da0a7ed5390ce93b2bfe66f1050013189fb561bc94de2c3481aa385fbe124a", "typeMode": "runtime-structural", "typeSource": "runtime/atalhos.mjs", "bindingSource": null, "parityTest": "testes/atalhos.test.mjs" }
+    },
+    {
+      "path": "contratos/aprendizado/autoaperfeicoamento.json",
+      "kind": "policy",
+      "owner": "runtime/autoaperfeicoamento.mjs",
+      "validation": { "mode": "manual", "decoder": "runtime/autoaperfeicoamento.mjs", "schema": null, "parityTest": "testes/autoaperfeicoamento.test.mjs" },
+      "privacy": { "classification": "internal-config", "rawUserData": false },
+      "payload": { "mode": "direct", "target": null },
+      "provenance": null
+    },
+    {
+      "path": "contratos/aprendizado/autoaperfeicoamento.schema.json",
+      "kind": "schema",
+      "owner": "runtime/autoaperfeicoamento.mjs",
+      "validation": { "mode": "json-schema", "decoder": "runtime/autoaperfeicoamento.mjs", "schema": "contratos/aprendizado/autoaperfeicoamento.schema.json", "parityTest": "testes/autoaperfeicoamento.test.mjs" },
+      "privacy": { "classification": "public-contract", "rawUserData": false },
+      "payload": { "mode": "direct", "target": null },
+      "provenance": { "schemaId": "https://github.com/Weriton-DataOps/Omni-Agent/contratos/aprendizado/autoaperfeicoamento.schema.json", "canonicalSha256": "13c2f12238bded8fbad2164fa06037386a51a77a2ed6ab190e81462e7978393e", "typeMode": "runtime-structural", "typeSource": "runtime/autoaperfeicoamento.mjs", "bindingSource": null, "parityTest": "testes/autoaperfeicoamento.test.mjs" }
+    },
+    {
+      "path": "contratos/aprendizado/falhas.json",
+      "kind": "policy",
+      "owner": "runtime/automacao-falhas.mjs",
+      "validation": { "mode": "manual", "decoder": "runtime/automacao-falhas.mjs", "schema": null, "parityTest": "testes/automacao-falhas.test.mjs" },
+      "privacy": { "classification": "internal-config", "rawUserData": false },
+      "payload": { "mode": "direct", "target": null },
+      "provenance": null
+    },
+    {
+      "path": "contratos/aprendizado/falhas.schema.json",
+      "kind": "schema",
+      "owner": "runtime/automacao-falhas.mjs",
+      "validation": { "mode": "json-schema", "decoder": "runtime/automacao-falhas.mjs", "schema": "contratos/aprendizado/falhas.schema.json", "parityTest": "testes/automacao-falhas.test.mjs" },
+      "privacy": { "classification": "public-contract", "rawUserData": false },
+      "payload": { "mode": "direct", "target": null },
+      "provenance": { "schemaId": "https://github.com/Weriton-DataOps/Omni-Agent/contratos/aprendizado/falhas.schema.json", "canonicalSha256": "dd3667276b4f2a48e3e40ae19e31f0019ef380fba345feb13235f67ab7a82f8e", "typeMode": "runtime-structural", "typeSource": "runtime/automacao-falhas.mjs", "bindingSource": null, "parityTest": "testes/automacao-falhas.test.mjs" }
+    },
+    {
+      "path": "contratos/aprendizado/promocoes/learned-recuperar-executar-fielmente-o-pedido-atual.json",
+      "kind": "store",
+      "owner": "runtime/autoaperfeicoamento.mjs",
+      "validation": { "mode": "none", "decoder": null, "schema": null, "parityTest": null },
+      "privacy": { "classification": "derived-store", "rawUserData": false },
+      "payload": { "mode": "direct", "target": null },
+      "provenance": null
+    },
+    {
+      "path": "contratos/aprendizado/varredura-diaria.json",
+      "kind": "policy",
+      "owner": "runtime/varredura-diaria.mjs",
+      "validation": { "mode": "manual", "decoder": "runtime/varredura-diaria.mjs", "schema": null, "parityTest": "testes/varredura-diaria.test.mjs" },
+      "privacy": { "classification": "internal-config", "rawUserData": false },
+      "payload": { "mode": "direct", "target": null },
+      "provenance": null
+    },
+    {
+      "path": "contratos/arquitetura/escopo.json",
+      "kind": "policy",
+      "owner": "docs/arquitetura-ativa.md",
+      "validation": { "mode": "none", "decoder": null, "schema": null, "parityTest": null },
+      "privacy": { "classification": "internal-config", "rawUserData": false },
+      "payload": { "mode": "direct", "target": null },
+      "provenance": null
+    },
+    {
+      "path": "contratos/arquitetura/invariantes.json",
+      "kind": "policy",
+      "owner": "docs/arquitetura-ativa.md",
+      "validation": { "mode": "none", "decoder": null, "schema": null, "parityTest": null },
+      "privacy": { "classification": "internal-config", "rawUserData": false },
+      "payload": { "mode": "direct", "target": null },
+      "provenance": null
+    },
+    {
+      "path": "contratos/atualizacao/integridade.json",
+      "kind": "policy",
+      "owner": "runtime/integridade-release.mjs",
+      "validation": { "mode": "manual", "decoder": "runtime/integridade-release.mjs", "schema": null, "parityTest": "testes/integridade-release.test.mjs" },
+      "privacy": { "classification": "internal-config", "rawUserData": false },
+      "payload": { "mode": "excluded", "target": null },
+      "provenance": null
+    },
+    {
+      "path": "contratos/atualizacao/releases.json",
+      "kind": "store",
+      "owner": "runtime/release-autonoma.mjs",
+      "validation": { "mode": "manual", "decoder": "runtime/release-autonoma.mjs", "schema": null, "parityTest": "testes/release-autonoma.test.mjs" },
+      "privacy": { "classification": "derived-store", "rawUserData": false },
+      "payload": { "mode": "excluded", "target": null },
+      "provenance": null
+    },
+    {
+      "path": "contratos/capacidades/catalogo.json",
+      "kind": "policy",
+      "owner": "runtime/contexto.mjs",
+      "validation": { "mode": "manual", "decoder": "runtime/contexto.mjs", "schema": null, "parityTest": "testes/contexto.test.mjs" },
+      "privacy": { "classification": "internal-config", "rawUserData": false },
+      "payload": { "mode": "direct", "target": null },
+      "provenance": null
+    },
+    {
+      "path": "contratos/catalogo-contratos.json",
+      "kind": "policy",
+      "owner": "scripts/check-contract-catalog.mjs",
+      "validation": { "mode": "manual", "decoder": "scripts/check-contract-catalog.mjs", "schema": null, "parityTest": null },
+      "privacy": { "classification": "public-contract", "rawUserData": false },
+      "payload": { "mode": "direct", "target": null },
+      "provenance": null
+    },
+    {
+      "path": "contratos/contexto/orcamento.json",
+      "kind": "policy",
+      "owner": "runtime/contexto.mjs",
+      "validation": { "mode": "manual", "decoder": "runtime/contexto.mjs", "schema": null, "parityTest": "testes/contexto.test.mjs" },
+      "privacy": { "classification": "internal-config", "rawUserData": false },
+      "payload": { "mode": "direct", "target": null },
+      "provenance": null
+    },
+    {
+      "path": "contratos/contexto/persistencia.json",
+      "kind": "policy",
+      "owner": "runtime/persistencia-contexto.mjs",
+      "validation": { "mode": "manual", "decoder": "runtime/persistencia-contexto.mjs", "schema": null, "parityTest": "testes/persistencia-contexto.test.mjs" },
+      "privacy": { "classification": "internal-config", "rawUserData": false },
+      "payload": { "mode": "direct", "target": null },
+      "provenance": null
+    },
+    {
+      "path": "contratos/contexto/persistencia.schema.json",
+      "kind": "schema",
+      "owner": "runtime/persistencia-contexto.mjs",
+      "validation": { "mode": "json-schema", "decoder": "runtime/persistencia-contexto.mjs", "schema": "contratos/contexto/persistencia.schema.json", "parityTest": "testes/persistencia-contexto.test.mjs" },
+      "privacy": { "classification": "public-contract", "rawUserData": false },
+      "payload": { "mode": "direct", "target": null },
+      "provenance": { "schemaId": "https://github.com/Weriton-DataOps/Omni-Agent/contratos/contexto/persistencia.schema.json", "canonicalSha256": "95f190d25e188b4f4dc6d4eb72fbaffeb711c85427417a0134b1cfa05b20ad52", "typeMode": "runtime-structural", "typeSource": "runtime/persistencia-contexto.mjs", "bindingSource": null, "parityTest": "testes/persistencia-contexto.test.mjs" }
+    },
+    {
+      "path": "contratos/contexto/recuperacao.json",
+      "kind": "policy",
+      "owner": "runtime/recuperacao.mjs",
+      "validation": { "mode": "manual", "decoder": "runtime/recuperacao.mjs", "schema": null, "parityTest": "testes/recuperacao.test.mjs" },
+      "privacy": { "classification": "internal-config", "rawUserData": false },
+      "payload": { "mode": "direct", "target": null },
+      "provenance": null
+    },
+    {
+      "path": "contratos/contexto/schema.json",
+      "kind": "schema",
+      "owner": "runtime/contexto.mjs",
+      "validation": { "mode": "json-schema", "decoder": "runtime/contexto.mjs", "schema": "contratos/contexto/schema.json", "parityTest": "testes/contexto.test.mjs" },
+      "privacy": { "classification": "public-contract", "rawUserData": false },
+      "payload": { "mode": "direct", "target": null },
+      "provenance": { "schemaId": "https://github.com/Weriton-DataOps/Omni-Agent/contratos/contexto/schema.json", "canonicalSha256": "ad0213e20ed55b48d38e924dd8a3ebacb4c879acf922a0150eb55ed330364bf3", "typeMode": "runtime-structural", "typeSource": "runtime/contexto.mjs", "bindingSource": null, "parityTest": "testes/contexto.test.mjs" }
+    },
+    {
+      "path": "contratos/eval/casos-aprendidos.json",
+      "kind": "store",
+      "owner": "runtime/evolucao.mjs",
+      "validation": { "mode": "manual", "decoder": "runtime/evolucao.mjs", "schema": null, "parityTest": "testes/evolucao.test.mjs" },
+      "privacy": { "classification": "derived-store", "rawUserData": false },
+      "payload": { "mode": "direct", "target": null },
+      "provenance": null
+    },
+    {
+      "path": "contratos/eval/comportamento-real.json",
+      "kind": "fixture",
+      "owner": "runtime/eval-comportamental.mjs",
+      "validation": { "mode": "manual", "decoder": "runtime/eval-comportamental.mjs", "schema": null, "parityTest": "testes/eval-comportamental.test.mjs" },
+      "privacy": { "classification": "synthetic-fixture", "rawUserData": false },
+      "payload": { "mode": "direct", "target": null },
+      "provenance": null
+    },
+    {
+      "path": "contratos/eval/execucao-automatica.json",
+      "kind": "policy",
+      "owner": "runtime/executor-eval-personalidade.mjs",
+      "validation": { "mode": "manual", "decoder": "runtime/executor-eval-personalidade.mjs", "schema": null, "parityTest": "testes/executor-eval-personalidade.test.mjs" },
+      "privacy": { "classification": "internal-config", "rawUserData": false },
+      "payload": { "mode": "direct", "target": null },
+      "provenance": null
+    },
+    {
+      "path": "contratos/eval/historico.schema.json",
+      "kind": "schema",
+      "owner": "runtime/historico-evals.mjs",
+      "validation": { "mode": "json-schema", "decoder": "runtime/historico-evals.mjs", "schema": "contratos/eval/historico.schema.json", "parityTest": "testes/historico-evals.test.mjs" },
+      "privacy": { "classification": "public-contract", "rawUserData": false },
+      "payload": { "mode": "direct", "target": null },
+      "provenance": { "schemaId": "https://github.com/Weriton-DataOps/Omni-Agent/contratos/eval/historico.schema.json", "canonicalSha256": "21f3339e8f147f68f83f754a78ae64d2761cc67f5ea1b56e4f193ea0f31dd9d7", "typeMode": "runtime-structural", "typeSource": "runtime/historico-evals.mjs", "bindingSource": null, "parityTest": "testes/historico-evals.test.mjs" }
+    },
+    {
+      "path": "contratos/eval/omni-core.json",
+      "kind": "fixture",
+      "owner": "runtime/historico-evals.mjs",
+      "validation": { "mode": "manual", "decoder": "runtime/historico-evals.mjs", "schema": null, "parityTest": "testes/historico-evals.test.mjs" },
+      "privacy": { "classification": "synthetic-fixture", "rawUserData": false },
+      "payload": { "mode": "direct", "target": null },
+      "provenance": null
+    },
+    {
+      "path": "contratos/eval/personalidade.json",
+      "kind": "fixture",
+      "owner": "runtime/rodada-personalidade.mjs",
+      "validation": { "mode": "manual", "decoder": "runtime/rodada-personalidade.mjs", "schema": null, "parityTest": "testes/rodada-personalidade.test.mjs" },
+      "privacy": { "classification": "synthetic-fixture", "rawUserData": false },
+      "payload": { "mode": "direct", "target": null },
+      "provenance": null
+    },
+    {
+      "path": "contratos/eval/resultado-personalidade.schema.json",
+      "kind": "schema",
+      "owner": "runtime/rodada-personalidade.mjs",
+      "validation": { "mode": "json-schema", "decoder": "runtime/rodada-personalidade.mjs", "schema": "contratos/eval/resultado-personalidade.schema.json", "parityTest": "testes/rodada-personalidade.test.mjs" },
+      "privacy": { "classification": "public-contract", "rawUserData": false },
+      "payload": { "mode": "direct", "target": null },
+      "provenance": { "schemaId": "https://github.com/Weriton-DataOps/Omni-Agent/contratos/eval/resultado-personalidade.schema.json", "canonicalSha256": "9c7573687729f284f98485c6aa4723f8315664d71ca29163d83c940259fcf846", "typeMode": "runtime-structural", "typeSource": "runtime/rodada-personalidade.mjs", "bindingSource": null, "parityTest": "testes/rodada-personalidade.test.mjs" }
+    },
+    {
+      "path": "contratos/integracao/delegacao.schema.json",
+      "kind": "schema",
+      "owner": "runtime/porta-delegacao.mjs",
+      "validation": { "mode": "json-schema", "decoder": "runtime/porta-delegacao.mjs", "schema": "contratos/integracao/delegacao.schema.json", "parityTest": "testes/porta-delegacao.test.mjs" },
+      "privacy": { "classification": "public-contract", "rawUserData": false },
+      "payload": { "mode": "direct", "target": null },
+      "provenance": { "schemaId": "https://github.com/Weriton-DataOps/Omni-Agent/contratos/integracao/delegacao.schema.json", "canonicalSha256": "7448a6fa0986ce42da13c498e2b6ca103c182cb52dd5cb9e0e45567e63e344b5", "typeMode": "runtime-structural", "typeSource": "runtime/porta-delegacao.mjs", "bindingSource": null, "parityTest": "testes/porta-delegacao.test.mjs" }
+    },
+    {
+      "path": "contratos/memoria/garbage-collection.json",
+      "kind": "policy",
+      "owner": "runtime/memoria.mjs",
+      "validation": { "mode": "manual", "decoder": "runtime/memoria.mjs", "schema": null, "parityTest": "testes/manutencao-memoria.test.mjs" },
+      "privacy": { "classification": "internal-config", "rawUserData": false },
+      "payload": { "mode": "direct", "target": null },
+      "provenance": null
+    },
+    {
+      "path": "contratos/memoria/migrations.json",
+      "kind": "policy",
+      "owner": "runtime/memoria.mjs",
+      "validation": { "mode": "manual", "decoder": "runtime/memoria.mjs", "schema": null, "parityTest": "testes/memoria.test.mjs" },
+      "privacy": { "classification": "internal-config", "rawUserData": false },
+      "payload": { "mode": "direct", "target": null },
+      "provenance": null
+    },
+    {
+      "path": "contratos/memoria/schema.json",
+      "kind": "schema",
+      "owner": "runtime/memoria.mjs",
+      "validation": { "mode": "json-schema", "decoder": "runtime/memoria.mjs", "schema": "contratos/memoria/schema.json", "parityTest": "testes/memoria.test.mjs" },
+      "privacy": { "classification": "public-contract", "rawUserData": false },
+      "payload": { "mode": "direct", "target": null },
+      "provenance": { "schemaId": "https://github.com/Weriton-DataOps/Omni-Agent/contratos/memoria/schema.json", "canonicalSha256": "c224c4a6b04de4f809cae498468a4dd1d8b5c26eb5e34904e54fa597031bbf72", "typeMode": "runtime-structural", "typeSource": "runtime/memoria.mjs", "bindingSource": null, "parityTest": "testes/memoria.test.mjs" }
+    },
+    {
+      "path": "contratos/operacao/auditoria-autocorrecao.json",
+      "kind": "policy",
+      "owner": "runtime/auditoria-autocorrecao.mjs",
+      "validation": { "mode": "manual", "decoder": "runtime/auditoria-autocorrecao.mjs", "schema": null, "parityTest": "testes/auditoria-autocorrecao.test.mjs" },
+      "privacy": { "classification": "internal-config", "rawUserData": false },
+      "payload": { "mode": "direct", "target": null },
+      "provenance": null
+    },
+    {
+      "path": "contratos/operacao/auditoria-sistema.json",
+      "kind": "policy",
+      "owner": "runtime/auditoria-sistema.mjs",
+      "validation": { "mode": "manual", "decoder": "runtime/auditoria-sistema.mjs", "schema": null, "parityTest": "testes/auditoria-sistema.test.mjs" },
+      "privacy": { "classification": "internal-config", "rawUserData": false },
+      "payload": { "mode": "direct", "target": null },
+      "provenance": null
+    },
+    {
+      "path": "contratos/operacao/automacao-melhorias.json",
+      "kind": "policy",
+      "owner": "runtime/automacao-melhorias.mjs",
+      "validation": { "mode": "manual", "decoder": "runtime/automacao-melhorias.mjs", "schema": null, "parityTest": "testes/automacao-melhorias.test.mjs" },
+      "privacy": { "classification": "internal-config", "rawUserData": false },
+      "payload": { "mode": "direct", "target": null },
+      "provenance": null
+    },
+    {
+      "path": "contratos/operacao/autoridade.json",
+      "kind": "policy",
+      "owner": "runtime/ciclo-operacional.mjs",
+      "validation": { "mode": "manual", "decoder": "runtime/ciclo-operacional.mjs", "schema": null, "parityTest": "testes/ciclo-operacional.test.mjs" },
+      "privacy": { "classification": "internal-config", "rawUserData": false },
+      "payload": { "mode": "direct", "target": null },
+      "provenance": null
+    },
+    {
+      "path": "contratos/operacao/ciclo.json",
+      "kind": "policy",
+      "owner": "runtime/ciclo-operacional.mjs",
+      "validation": { "mode": "manual", "decoder": "runtime/ciclo-operacional.mjs", "schema": null, "parityTest": "testes/ciclo-operacional.test.mjs" },
+      "privacy": { "classification": "internal-config", "rawUserData": false },
+      "payload": { "mode": "direct", "target": null },
+      "provenance": null
+    },
+    {
+      "path": "contratos/operacao/credenciais.json",
+      "kind": "policy",
+      "owner": "runtime/guardiao.mjs",
+      "validation": { "mode": "none", "decoder": null, "schema": null, "parityTest": null },
+      "privacy": { "classification": "internal-config", "rawUserData": false },
+      "payload": { "mode": "direct", "target": null },
+      "provenance": null
+    },
+    {
+      "path": "contratos/operacao/procedimentos-aprendidos.json",
+      "kind": "store",
+      "owner": "runtime/evolucao.mjs",
+      "validation": { "mode": "manual", "decoder": "runtime/evolucao.mjs", "schema": null, "parityTest": "testes/evolucao.test.mjs" },
+      "privacy": { "classification": "derived-store", "rawUserData": false },
+      "payload": { "mode": "direct", "target": null },
+      "provenance": null
+    },
+    {
+      "path": "contratos/operacao/regras-aprendidas.json",
+      "kind": "store",
+      "owner": "runtime/evolucao.mjs",
+      "validation": { "mode": "manual", "decoder": "runtime/evolucao.mjs", "schema": null, "parityTest": "testes/evolucao.test.mjs" },
+      "privacy": { "classification": "derived-store", "rawUserData": false },
+      "payload": { "mode": "direct", "target": null },
+      "provenance": null
+    },
+    {
+      "path": "contratos/personalidade/ajustes-aprendidos.json",
+      "kind": "store",
+      "owner": "runtime/ajustes-personalidade.mjs",
+      "validation": { "mode": "manual", "decoder": "runtime/ajustes-personalidade.mjs", "schema": null, "parityTest": "testes/personalidade.test.mjs" },
+      "privacy": { "classification": "derived-store", "rawUserData": false },
+      "payload": { "mode": "direct", "target": null },
+      "provenance": null
+    },
+    {
+      "path": "contratos/personalidade/manifest.json",
+      "kind": "policy",
+      "owner": "runtime/personalidade.mjs",
+      "validation": { "mode": "manual", "decoder": "runtime/personalidade.mjs", "schema": null, "parityTest": "testes/personalidade.test.mjs" },
+      "privacy": { "classification": "public-contract", "rawUserData": false },
+      "payload": { "mode": "direct", "target": null },
+      "provenance": null
+    },
+    {
+      "path": "src/adapters/overcore/contracts/authorization-decision-v1.schema.json",
+      "kind": "schema",
+      "owner": "src/adapters/overcore/authorization.ts",
+      "validation": { "mode": "generated", "decoder": "src/adapters/overcore/authorization.ts", "schema": "src/adapters/overcore/contracts/authorization-decision-v1.schema.json", "parityTest": "testes/authority-provider.typescript.test.ts" },
+      "privacy": { "classification": "public-contract", "rawUserData": false },
+      "payload": { "mode": "compiled", "target": "dist/adapters/overcore/contracts/authorization-decision-v1.schema.json" },
+      "provenance": { "schemaId": "urn:overcore:contracts:authorization-decision:v1", "canonicalSha256": "5e8b0827ee35377395dda872bde8d1794672a90329f20dc4f57c148b81e617a5", "typeMode": "typescript-derived", "typeSource": "src/core/authority/types.ts", "bindingSource": "src/adapters/overcore/contracts/schemas.ts", "parityTest": "testes/authority-provider.typescript.test.ts" }
+    },
+    {
+      "path": "src/adapters/overcore/contracts/authorization-request-v1.schema.json",
+      "kind": "schema",
+      "owner": "src/adapters/overcore/authorization.ts",
+      "validation": { "mode": "generated", "decoder": "src/adapters/overcore/authorization.ts", "schema": "src/adapters/overcore/contracts/authorization-request-v1.schema.json", "parityTest": "testes/authority-provider.typescript.test.ts" },
+      "privacy": { "classification": "public-contract", "rawUserData": false },
+      "payload": { "mode": "compiled", "target": "dist/adapters/overcore/contracts/authorization-request-v1.schema.json" },
+      "provenance": { "schemaId": "urn:overcore:contracts:authorization-request:v1", "canonicalSha256": "0289ed8e713cbb1d8a9e143c5c6fa164fc98c824353a75ab6fc46a8258ab3e99", "typeMode": "typescript-derived", "typeSource": "src/core/authority/types.ts", "bindingSource": "src/adapters/overcore/contracts/schemas.ts", "parityTest": "testes/authority-provider.typescript.test.ts" }
+    }
+  ]
+}

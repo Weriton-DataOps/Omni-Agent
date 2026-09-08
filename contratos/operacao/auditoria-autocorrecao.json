@@ -46,7 +46,26 @@
     "terminalizeOnSessionEnd": false,
     "legacyBlockedTurnsBecomeRepairing": true,
     "resumeAutomaticallyWhenCauseClears": true,
-    "survivesSessionAndReleaseBoundary": true
+    "survivesSessionAndReleaseBoundary": true,
+    "durableClaimLedger": true,
+    "claimRequiresCurrentRequestFingerprint": true,
+    "reexecuteWithoutActionReference": false,
+    "terminalFindingStates": [
+      "owner-reconfirmation-required",
+      "historical-unverifiable",
+      "superseded"
+    ],
+    "historicalFindingPolicy": {
+      "requested-action-not-executed": "owner-reconfirmation-required",
+      "authorized-work-returned-to-owner": "owner-reconfirmation-required",
+      "turn-interrupted-recovery": "owner-reconfirmation-required",
+      "mutation-without-readback": "historical-unverifiable",
+      "delegation-still-running": "historical-unverifiable",
+      "delegation-without-independent-verification": "historical-unverifiable",
+      "unresolved-tool-failure": "historical-unverifiable",
+      "repeated-failed-strategy": "historical-unverifiable",
+      "completion-claim-without-evidence": "superseded"
+    }
   },
   "objectiveBinding": {
     "algorithm": "omni-authority-objective-v1",

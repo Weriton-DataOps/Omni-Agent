@@ -1,5 +1,18 @@
 {
   "schemaVersion": 1,
   "contract": "omni-learned-rules-v1",
-  "rules": []
+  "rules": [
+    {
+      "id": "improvement-77c4bb27-621d-40d0-a606-ba8ecd591482",
+      "category": "owner-correction",
+      "destination": "operational-rule",
+      "text": "Trate correcao explicita do proprietario, especialmente em CAIXA ALTA, como sinal de alta severidade: interrompa imediatamente a estrategia errada, preserve o pedido literal como autoridade, invalide qualquer procedimento conflitante e faca readback do estado real antes de retomar ou declarar correcao.",
+      "evidence": {
+        "occurrences": 2,
+        "fingerprint": "19e5e09290eefc7fe31d1b5f85d442062ae5ded8a662a0bf022719fa269153d9"
+      },
+      "status": "active",
+      "learnedAt": "2026-08-31T14:30:42.119Z"
+    }
+  ]
 }

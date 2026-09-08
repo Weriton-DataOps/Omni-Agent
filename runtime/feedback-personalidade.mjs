@@ -1,7 +1,11 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdir, open, readFile, rename, unlink, writeFile } from 'node:fs/promises'
+import { readFile, rename, unlink, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+
+import { acquireLocalFileLock } from '../dist/adapters/local-json/node-local-file-lock.js'
+import { observePersonalityContinuity, readPersonalityContinuity } from '../dist/adapters/local-json/personality-continuity-store.js'
+import { hasContinuityComplaint, normalizeOwnerText } from '../dist/core/personality/owner-feedback.js'
 
 export const PERSONALITY_FEEDBACK_SCHEMA_VERSION = 1
 
@@ -265,20 +269,15 @@ async function load(casa) {
 async function acquireLock(casa) {
   const directory = join(casa, 'feedback')
   const path = join(directory, 'personality-feedback.lock')
-  await mkdir(directory, { recursive: true })
-  for (let attempt = 0; attempt < 40; attempt += 1) {
-    try {
-      const handle = await open(path, 'wx')
-      return async () => {
-        await handle.close()
-        await unlink(path).catch(() => undefined)
-      }
-    } catch (error) {
-      if (error?.code !== 'EEXIST') throw error
-      await new Promise((resolvePromise) => setTimeout(resolvePromise, 50))
-    }
-  }
-  throw new Error('Feedback local de personalidade ocupado por outra escrita.')
+  const lock = await acquireLocalFileLock(path, {
+    acquisitionTimeoutMs: 2_000,
+    retryDelayMs: 50,
+    staleLockMs: 10_000,
+    heartbeatMs: 2_500,
+    recoverStaleLocks: false,
+    timeoutMessage: 'Feedback local de personalidade ocupado por outra escrita.'
+  })
+  return () => lock.release()
 }
 
 async function save(casa, store, at = now()) {
@@ -312,8 +311,11 @@ function hasNearby(value, first, second) {
 }
 
 export function classificarFeedbackPersonalidade(value) {
-  const text = normalize(value)
+  const text = normalizeOwnerText(String(value ?? ''))
   if (!text || text.length > 100_000) return null
+  if (hasContinuityComplaint(text)) {
+    return { polarity: 'negative', dimensions: ['distinctiveness'], reasonCodes: ['personality-absent'] }
+  }
 
   const metalinguagemOuInstrucao = [
     /^(?:explique|defina|compare|analise|descreva)\b/,
@@ -337,13 +339,15 @@ export function classificarFeedbackPersonalidade(value) {
     /\b(?:faltou|sumiu|nada da|cade a)\b.{0,100}\b(?:personalidade|humor|sarcasmo|ironia|analogia|analogias|metafora|metaforas|inteligencia|raciocinio|perspicacia)\b/,
     /\b(?:humor|sarcasmo|ironia|analogia|analogias|metafora|metaforas|inteligencia|raciocinio|perspicacia)\b.{0,80}\b(?:funcionou|encaixou|ficou|foi|apareceu|sumiu|faltou|falta|nao apareceu|nao funcionou)\b/,
     /\b(?:quero mais|precisa de mais|preciso de mais)\b.{0,100}\b(?:personalidade|humor|sarcasmo|ironia|analogia|analogias|metafora|metaforas|inteligencia|raciocinio|perspicacia)\b.{0,100}\b(?:no seu jeito|na sua resposta|nesta resposta|nessa resposta|na conversa|no dialogo)\b/,
-    /\bpersonalidade\b.{0,80}\b(?:apareceu|entrou|funcionou|nao apareceu|nao entrou|nao pegou|sumiu|esta ausente|esta presente)\b/
+    /\bpersonalidade\b.{0,80}\b(?:apareceu|entrou|funcionou|nao apareceu|nao entrou|nao pegou|sumiu|esta ausente|esta presente)\b/,
+    /\b(?:nao|nem)\s+parece\b.{0,80}\b(?:o\s+)?omni\b/,
+    /(?:\b(?:resposta|voz|jeito|omni|voce|vc)\b.{0,80}\btodo\s+zoad[oa]\b|\btodo\s+zoad[oa]\b.{0,80}\b(?:resposta|voz|jeito|omni|voce|vc)\b)/
   ].some((pattern) => pattern.test(text))
   if (!retrospective) return null
 
   const stateVerb = '(?:esta|ta|ficou|continua|segue|soa|parece)'
   const goodAdjective = '(?:otim[oa]|excelente|perfeit[oa]|bo[ma]|natural|vivo|viva|marcante|inteligente)'
-  const badAdjective = '(?:ruim|pessim[oa]|fraco|fraca|seco|seca|frio|fria|generico|generica|robotico|robotica|sem vida)'
+  const badAdjective = '(?:ruim|pessim[oa]|fraco|fraca|seco|seca|frio|fria|generico|generica|robotico|robotica|zoad[oa]|sem vida)'
   const negatedGoodPattern = new RegExp(
     `\\bnao\\s+${stateVerb}\\s+(?:muito\\s+)?${goodAdjective}(?:\\s+nem\\s+${goodAdjective})*\\b`,
     'g'
@@ -354,14 +358,14 @@ export function classificarFeedbackPersonalidade(value) {
   )
   const negatedBadSequences = text.match(negatedBadPattern) ?? []
   const positiveEvidence = text
-    .replace(/\bnao\s+(?:gostei|curti|aprovei|apareceu|entrou|pegou|funcionou)\b/g, '')
+    .replace(/\b(?:nao|nem)\s+(?:sequer\s+)?(?:gostei|curti|aprovei|apareceu|entrou|pegou|funcionou)\b/g, '')
     .replace(negatedGoodPattern, '')
   const negativeEvidence = text
     .replace(negatedBadPattern, '')
     .replace(/\bnao\s+(?:faltou|falta|sumiu)\b/g, '')
 
   const good = '(?:otim[oa]|excelente|perfeit[oa]|bo[ma]|natural|vivo|viva|marcante|inteligente)'
-  const bad = '(?:ruim|pessim[oa]|fraco|fraca|seco|seca|frio|fria|generico|generica|robotico|robotica)'
+  const bad = '(?:ruim|pessim[oa]|fraco|fraca|seco|seca|frio|fria|generico|generica|robotico|robotica|zoad[oa])'
   const positive = []
   const negative = []
 
@@ -397,6 +401,9 @@ export function classificarFeedbackPersonalidade(value) {
   if (/\bpersonalidade\b.{0,60}\b(?:nao apareceu|nao entrou|nao pegou|nao funciona|nao funcionou|sumiu|esta ausente)\b|\b(?:faltou|falta|nada da|cade a|sem sinal de)\b.{0,60}\bpersonalidade\b/.test(text)) {
     negative.push('personality-absent')
   }
+  if (/\b(?:nao|nem)\s+parece\b.{0,80}\b(?:o\s+)?omni\b/.test(text)) {
+    negative.push('personality-absent')
+  }
 
   const dimensionSignals = [
     ['humor', '(?:humor|piada|graca)', 'humor-effective', 'humor-missing'],
@@ -411,7 +418,7 @@ export function classificarFeedbackPersonalidade(value) {
     ) positive.push(positiveCode)
     if (
       new RegExp(`\\b(?:faltou|falta|sumiu|cade|quero mais|precisa de mais|preciso de mais|pouco|pouca|sem)\\b.{0,100}\\b${dimension}\\b`).test(negativeEvidence) ||
-      new RegExp(`\\b${dimension}\\b.{0,70}\\b(?:faltou|falta|sumiu|nao apareceu|nao funcionou|fraco|fraca)\\b`).test(negativeEvidence)
+      new RegExp(`\\b${dimension}\\b.{0,70}\\b(?:faltou|falta|sumiu|nao apareceu|(?:nao|nem) (?:sequer )?funcionou|fraco|fraca)\\b`).test(negativeEvidence)
     ) negative.push(negativeCode)
   }
 
@@ -545,17 +552,29 @@ function persistentAdjustment(store) {
   }
 }
 
-function snapshot(store) {
+async function snapshot(store, casa) {
+  const continuity = await readPersonalityContinuity(casa)
+  const adjustment = persistentAdjustment(store)
   return {
     counts: summarize(store),
     candidates: store.candidates,
-    persistentAdjustment: persistentAdjustment(store)
+    persistentAdjustment: continuity.length ? {
+      ...(adjustment ?? { scope: 'owner-continuity-correction', reversible: true, candidateIds: [] }),
+      directives: [...new Set([...(adjustment?.directives ?? []), ...continuity])]
+    } : adjustment
   }
 }
 
-function immediateAdjustment(vote) {
+function directivesFor(reasonCodes) {
   const directives = new Set()
-  for (const reason of vote.reasonCodes) directives.add(DIRECTIVE_BY_REASON[reason])
+  for (const reason of reasonCodes) {
+    const directive = DIRECTIVE_BY_REASON[reason]
+    if (directive) directives.add(directive)
+  }
+  return [...directives]
+}
+
+function immediateAdjustment(vote) {
   return {
     scope: 'next-response',
     reversible: true,
@@ -563,7 +582,19 @@ function immediateAdjustment(vote) {
     sourceVoteId: vote.id,
     turnFingerprint: vote.turnFingerprint,
     answerFingerprint: vote.answerFingerprint,
-    directives: [...directives]
+    directives: directivesFor(vote.reasonCodes)
+  }
+}
+
+function unboundImmediateAdjustment(classification) {
+  return {
+    scope: 'next-response',
+    reversible: true,
+    expiresAfterTurns: 1,
+    sourceVoteId: null,
+    turnFingerprint: null,
+    answerFingerprint: null,
+    directives: directivesFor(classification.reasonCodes)
   }
 }
 
@@ -573,7 +604,7 @@ export async function lerFeedbackPersonalidade(casa) {
 
 export async function resumirFeedbackPersonalidade(casa) {
   const store = await load(casa)
-  return snapshot(store)
+  return snapshot(store, casa)
 }
 
 export async function registrarUltimaRespostaPersonalidade(casa, input, options = {}) {
@@ -632,6 +663,7 @@ export async function observarVotoPersonalidade(casa, input, options = {}) {
     return { result: 'neutral', vote: null, adjustment: null, candidateSignals: [], ...summary }
   }
 
+  await observePersonalityContinuity(casa, feedback, options.at)
   const release = await acquireLock(casa)
   try {
     const store = await load(casa)
@@ -641,9 +673,9 @@ export async function observarVotoPersonalidade(casa, input, options = {}) {
       return {
         result: 'unbound',
         vote: null,
-        adjustment: null,
+        adjustment: unboundImmediateAdjustment(classification),
         candidateSignals: [],
-        ...snapshot(store)
+        ...await snapshot(store, casa)
       }
     }
     const feedbackFingerprint = hash(normalize(feedback))
@@ -658,7 +690,7 @@ export async function observarVotoPersonalidade(casa, input, options = {}) {
         vote: duplicate,
         adjustment: immediateAdjustment(duplicate),
         candidateSignals: candidateSignals(duplicate, store.candidates),
-        ...snapshot(store)
+        ...await snapshot(store, casa)
       }
     }
     const at = now(options.at)
@@ -686,7 +718,7 @@ export async function observarVotoPersonalidade(casa, input, options = {}) {
       vote,
       adjustment: immediateAdjustment(vote),
       candidateSignals: candidateSignals(vote, store.candidates),
-      ...snapshot(store)
+      ...await snapshot(store, casa)
     }
   } finally {
     await release()

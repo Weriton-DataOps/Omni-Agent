@@ -30,7 +30,7 @@ interface real após recarga e qualidade dos evals produzidos por observação d
 | AUD-09 | instalação e cache do plugin | passou | versão instalada comparada à fonte |
 | AUD-10 | detecção de versão desatualizada | passou | estado `current` na versão 0.19.0 antes do fechamento |
 | AUD-11 | atualização com saída mínima | passou | somente anterior, instalada, mudanças e recarga quando aplicável |
-| AUD-12 | mecanismo correto de recarga | passou no contrato; pendente na sessão real | VS Code usa `/plugin` → **Restart** |
+| AUD-12 | mecanismo correto de recarga | evidência histórica, substituída pelo contrato atual | instalação fica `awaiting-reload` no worker até `SessionStart` da nova raiz |
 
 ## Auditorias de identidade, conversa e contexto
 
@@ -200,8 +200,9 @@ Depois do caso inicial, o roteiro resumido que deve ser retomado é:
 4. conferir se memória, falhas, atalhos, evals e varredura registraram somente evidência válida, sem
    duplicar contadores, guardar conversa bruta ou enviar memória pessoal ao Git.
 
-O início da rodada deve primeiro executar `/plugin` → **Restart**, registrar o estado anterior e então
-enviar o diálogo acima ao Omni. O roteiro detalhado e os campos de evidência continuam em
+O início da rodada depende primeiro do readback `loaded-verified` produzido pelo worker interno em
+um `SessionStart` da nova raiz; nenhum comando de recarga é transferido ao proprietário. Depois disso,
+o diálogo de avaliação pode ser conduzido. O roteiro detalhado e os campos de evidência continuam em
 [`definition-of-done-2026-08-27.md`](definition-of-done-2026-08-27.md).
 
 ## Fechamento desta rodada
@@ -215,7 +216,8 @@ enviar o diálogo acima ao Omni. O roteiro detalhado e os campos de evidência c
 - eval: primeiro baseline determinístico parcial registrado, com 16 casos, 100% de sucesso, score
   médio 1, latência média observada de 165,375 ms e custo zero;
 - privacidade: histórico manteve apenas fingerprints da evidência;
-- versão 0.19.1 publicada no `origin/main`, instalada e validada; a sessão aberta ainda precisa de
-  **Restart** para passar a usar os hooks novos.
+- versão 0.19.1 publicada no `origin/main`, instalada e validada; na época deste registro, a sessão
+  aberta ainda não possuía readback carregado. O contrato atual preserva esse estado no worker como
+  `awaiting-reload`, sem gerar instrução operacional ao proprietário.
 
 O protocolo repetível está em [`ciclo-auditoria-7-dias.md`](ciclo-auditoria-7-dias.md).

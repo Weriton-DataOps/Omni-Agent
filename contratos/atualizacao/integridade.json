@@ -3,7 +3,9 @@
   "contract": "omni-release-integrity-v1",
   "algorithm": "sha256-canonical-text-v1",
   "payloadRoots": [
+    "adaptadores",
     "contratos",
+    "dist",
     "hooks",
     "runtime",
     "scripts",
@@ -12,12 +14,13 @@
   "excluded": [
     "contratos/atualizacao/integridade.json",
     "contratos/atualizacao/releases.json",
-    ".claude-plugin/plugin.json"
+    ".claude-plugin/plugin.json",
+    "runtime/postgresql-5433/**"
   ],
   "identity": {
-    "version": "0.22.0",
-    "releaseFingerprint": "ceaede53c6ebcf457063e58e61b8ca51df9ab9fa7f76731063adc52a7a24fc56",
-    "releaseAuditScopeStartedAt": "2026-08-29T13:10:36.888Z",
+    "version": "0.22.1",
+    "releaseFingerprint": "72a16e055cd4479e443a36fdc126b8c1cfae0fd80c4d163a57e0bc7a685cb88d",
+    "releaseAuditScopeStartedAt": "2026-08-31T14:38:18.725Z",
     "required": [
       "version",
       "releaseFingerprint",

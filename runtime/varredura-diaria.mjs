@@ -56,7 +56,7 @@ async function contrato() {
     value.requestedWorkflow?.requireGreenGatesBeforeCommit !== true ||
     value.requestedWorkflow?.requireOriginMainConfirmation !== true ||
     value.localMaterialization?.attemptReadyCandidates !== true ||
-    value.localMaterialization?.effectiveOnlyAfter !== 'installed-verified' ||
+    value.localMaterialization?.effectiveOnlyAfter !== 'loaded-verified' ||
     value.localMaterialization?.countsAsRelease !== false ||
     value.localMaterialization?.countsAsPublication !== false ||
     !Array.isArray(value.localMaterialization?.reportedResults) ||

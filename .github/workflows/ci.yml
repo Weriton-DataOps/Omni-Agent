@@ -1,0 +1,70 @@
+name: Omni CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: omni-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-primary:
+    name: Windows / Node 22 / full verification
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Use Node 22
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install pinned dependencies
+        run: npm ci
+
+      - name: Verify source, contracts, package and tests
+        run: npm run verify
+
+  linux-core:
+    name: Linux / Node 22 / portable core
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Use Node 22
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install pinned dependencies
+        run: npm ci
+
+      - name: Check contracts and architecture
+        run: |
+          npm run contracts:check
+          npm run architecture:check
+          npm run typecheck
+
+      - name: Exercise productive dist
+        run: npm run test:dist
+
+      - name: Compile portable TypeScript tests
+        run: npm run build:test:ts
+
+      - name: Test portable core boundaries
+        run: >-
+          node --test
+          .test-dist/testes/authority-provider.typescript.test.js
+          .test-dist/testes/local-json-store.typescript.test.js
+          .test-dist/testes/typescript-architecture.test.js

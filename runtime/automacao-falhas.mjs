@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { geracaoPadraoFalha, lerFalhas } from './falhas.mjs'
 import { pareceConterSegredo } from './memoria.mjs'
 import { criarSolicitacaoDelegacao } from './porta-delegacao.mjs'
+import { atualizarDelegacao, lerCicloOperacional } from './ciclo-operacional.mjs'
 
 export const FAILURE_AUTOMATION_SCHEMA_VERSION = 4
 
@@ -14,6 +15,7 @@ const POLICY_PATH = new URL('../contratos/aprendizado/falhas.json', import.meta.
 const STATES = new Set(['queued', 'running', 'needs-owner', 'completed', 'superseded'])
 const DISPATCH_STATES = new Set(['not-requested', 'requested'])
 const REASON_CLASSES = new Set([null, 'retryable', 'owner-authority', 'legacy-unverified', 'lease-expired'])
+const TERMINAL_DELEGATION_STATES = new Set(['closed', 'failed', 'cancelled', 'archived'])
 const HASH = /^[a-f0-9]{64}$/
 
 function now(value) {
@@ -96,6 +98,40 @@ function clearDispatch(job, { preserveAuthority = false } = {}) {
   job.leaseUntil = null
   job.executorFingerprint = null
   job.stopBlocksIssued = 0
+}
+
+async function terminalizarDelegacaoVinculada(casa, delegationId, {
+  state,
+  reason,
+  at
+}) {
+  if (delegationId === null) return { result: 'not-bound', delegation: null }
+  const cycle = await lerCicloOperacional(casa)
+  const delegation = cycle.delegations.find((item) => item.id === delegationId) ?? null
+  if (!delegation) return { result: 'not-found', delegation: null }
+  if (TERMINAL_DELEGATION_STATES.has(delegation.state) || delegation.state === 'verified') {
+    return { result: 'already-terminal', delegation }
+  }
+  const targetState = state === 'archived' && delegation.state !== 'reported'
+    ? delegation.state === 'running' ? 'failed' : 'cancelled'
+    : state
+  return atualizarDelegacao(casa, delegationId, targetState, {
+    reason,
+    evidence: `failure-automation-terminal:${delegationId}:${targetState}:${reason}`
+  }, { at })
+}
+
+async function clearDispatchAfterTerminal(casa, job, {
+  state = 'cancelled',
+  reason,
+  at,
+  preserveAuthority = false
+}) {
+  const delegationId = job.delegationId
+  if (delegationId !== null) {
+    await terminalizarDelegacaoVinculada(casa, delegationId, { state, reason, at })
+  }
+  clearDispatch(job, { preserveAuthority })
 }
 
 function migrateLegacy(store) {
@@ -320,6 +356,80 @@ function newJob(pattern, generationFingerprint, timestamp) {
   }
 }
 
+function correlationFingerprintFor(job, attempt) {
+  return hash(`failure-dispatch:${job.id}:attempt-${attempt}`)
+}
+
+async function reconciliarBindingsDelegacoesFalha(casa, store, contract, timestamp) {
+  const cycle = await lerCicloOperacional(casa)
+  const bound = new Set(store.jobs.map((job) => job.delegationId).filter(Boolean))
+  const managed = cycle.delegations.filter((item) => item.target === contract.executorCapability)
+  let reattached = 0
+  let terminalized = 0
+
+  for (const delegation of managed) {
+    if (bound.has(delegation.id) || TERMINAL_DELEGATION_STATES.has(delegation.state) || delegation.state === 'verified') {
+      continue
+    }
+    const recoverable = ['prepared', 'visible'].includes(delegation.state)
+      ? store.jobs.find((job) =>
+          job.state === 'queued' && job.dispatchState === 'not-requested' &&
+          delegation.correlationFingerprint === correlationFingerprintFor(job, job.attempts + 1)
+        ) ?? null
+      : null
+    const dispatchExpiresAt = new Date(
+      Date.parse(delegation.createdAt) + contract.dispatchTimeoutMinutes * 60_000
+    ).toISOString()
+    if (recoverable && Date.parse(dispatchExpiresAt) > Date.parse(timestamp)) {
+      recoverable.dispatchState = 'requested'
+      recoverable.dispatchRequestedAt = delegation.createdAt
+      recoverable.dispatchExpiresAt = dispatchExpiresAt
+      recoverable.dispatchSessionFingerprint = delegation.sessionFingerprint
+      recoverable.delegationId = delegation.id
+      recoverable.authorityFingerprint = delegation.authorityFingerprint
+      recoverable.startedAt = null
+      recoverable.leaseUntil = null
+      recoverable.executorFingerprint = null
+      recoverable.stopBlocksIssued = 0
+      recoverable.updatedAt = timestamp
+      bound.add(delegation.id)
+      reattached += 1
+      continue
+    }
+
+    const ageMs = Date.parse(timestamp) - Date.parse(delegation.updatedAt)
+    const dispatchLeaseMs = contract.dispatchTimeoutMinutes * 60_000
+    const executionLeaseMs = contract.leaseMinutes * 60_000
+    let terminal = null
+    if (['prepared', 'visible'].includes(delegation.state) && ageMs >= dispatchLeaseMs) {
+      terminal = {
+        state: 'cancelled',
+        reason: 'Despacho de validacao expirou sem binding ativo recuperavel.'
+      }
+    } else if (delegation.state === 'running' && ageMs >= executionLeaseMs) {
+      terminal = {
+        state: 'failed',
+        reason: 'Executor de validacao perdeu o binding ativo durante o lease.'
+      }
+    } else if (delegation.state === 'reported' && ageMs >= executionLeaseMs) {
+      terminal = {
+        state: 'archived',
+        reason: 'Relato historico sem prova independente compativel para verificacao.'
+      }
+    } else if (delegation.state === 'blocked' && ageMs >= executionLeaseMs) {
+      terminal = {
+        state: 'cancelled',
+        reason: 'Delegacao bloqueada sem job ativo ao fim do lease operacional.'
+      }
+    }
+    if (terminal) {
+      await terminalizarDelegacaoVinculada(casa, delegation.id, { ...terminal, at: timestamp })
+      terminalized += 1
+    }
+  }
+  return { reattached, terminalized }
+}
+
 export async function sincronizarAutomacaoFalhas(casa, { at } = {}) {
   const [failures, contract] = await Promise.all([lerFalhas(casa), policy()])
   const timestamp = now(at)
@@ -329,7 +439,11 @@ export async function sincronizarAutomacaoFalhas(casa, { at } = {}) {
     for (const job of store.jobs) {
       if (job.state === 'running' && Date.parse(job.leaseUntil) <= Date.parse(timestamp)) {
         job.state = 'queued'
-        clearDispatch(job)
+        await clearDispatchAfterTerminal(casa, job, {
+          state: 'failed',
+          reason: 'Lease do executor expirou antes da conclusao verificavel.',
+          at: timestamp
+        })
         job.reasonClass = 'lease-expired'
         job.reasonFingerprint = hash(`lease-expired:${job.id}:${job.attempts}`)
         job.nextAttemptAt = timestamp
@@ -338,7 +452,11 @@ export async function sincronizarAutomacaoFalhas(casa, { at } = {}) {
         job.state === 'queued' && job.dispatchState === 'requested' &&
         Date.parse(job.dispatchExpiresAt) <= Date.parse(timestamp)
       ) {
-        clearDispatch(job)
+        await clearDispatchAfterTerminal(casa, job, {
+          state: 'cancelled',
+          reason: 'Despacho expirou antes do evento real de inicio.',
+          at: timestamp
+        })
         job.updatedAt = timestamp
       }
     }
@@ -348,7 +466,11 @@ export async function sincronizarAutomacaoFalhas(casa, { at } = {}) {
       const pattern = patternsById.get(job.patternId)
       if (!pattern) {
         job.state = 'superseded'
-        clearDispatch(job)
+        await clearDispatchAfterTerminal(casa, job, {
+          state: 'cancelled',
+          reason: 'Job substituido porque o padrao de falha deixou de existir.',
+          at: timestamp
+        })
         job.updatedAt = timestamp
         continue
       }
@@ -357,7 +479,11 @@ export async function sincronizarAutomacaoFalhas(casa, { at } = {}) {
         // execução só fecha por concluirAutomacaoFalha, com evidência própria.
         if (job.state === 'running') continue
         job.state = 'completed'
-        clearDispatch(job)
+        await clearDispatchAfterTerminal(casa, job, {
+          state: 'cancelled',
+          reason: 'Job encerrado por avaliacao ja comprovada fora deste despacho.',
+          at: timestamp
+        })
         job.evidenceFingerprint = hash(
           `evaluation:${pattern.id}:${job.generationFingerprint}:${pattern.evaluation?.evaluatedAt ?? 'unknown'}`
         )
@@ -370,7 +496,11 @@ export async function sincronizarAutomacaoFalhas(casa, { at } = {}) {
       }
       if (!eligible(pattern, contract) || job.generationFingerprint !== generation(pattern)) {
         job.state = 'superseded'
-        clearDispatch(job)
+        await clearDispatchAfterTerminal(casa, job, {
+          state: 'cancelled',
+          reason: 'Job substituido por geracao ou elegibilidade mais recente.',
+          at: timestamp
+        })
         job.updatedAt = timestamp
       }
     }
@@ -388,13 +518,19 @@ export async function sincronizarAutomacaoFalhas(casa, { at } = {}) {
         for (const duplicate of active) {
           if (duplicate.id === keeper.id) continue
           duplicate.state = 'superseded'
-          clearDispatch(duplicate)
+          await clearDispatchAfterTerminal(casa, duplicate, {
+            state: 'cancelled',
+            reason: 'Job duplicado foi substituido pelo binding canonico.',
+            at: timestamp
+          })
           duplicate.updatedAt = timestamp
         }
       }
       if (sameGeneration.some((item) => item.state !== 'superseded')) continue
       store.jobs.push(newJob(pattern, generationFingerprint, timestamp))
     }
+
+    await reconciliarBindingsDelegacoesFalha(casa, store, contract, timestamp)
 
     const activeJobs = store.jobs.filter((item) => ['queued', 'running', 'needs-owner'].includes(item.state))
     const terminalJobs = store.jobs.filter((item) => !['queued', 'running', 'needs-owner'].includes(item.state)).slice(-200)
@@ -533,7 +669,11 @@ export async function prepararDespachoAutomaticoFalha(casa, input, { at } = {}) 
           delegationResult: neutral.result
         }
       }
-      clearDispatch(pending)
+      await clearDispatchAfterTerminal(casa, pending, {
+        state: 'cancelled',
+        reason: 'Despacho perdeu o padrao de falha antes do inicio.',
+        at: timestamp
+      })
       pending.updatedAt = timestamp
     }
 
@@ -555,7 +695,11 @@ export async function prepararDespachoAutomaticoFalha(casa, input, { at } = {}) 
       const current = failures.patterns.find((item) => item.id === candidate.patternId)
       if (!current || !eligible(current, contract) || generation(current) !== candidate.generationFingerprint) {
         candidate.state = 'superseded'
-        clearDispatch(candidate)
+        await clearDispatchAfterTerminal(casa, candidate, {
+          state: 'cancelled',
+          reason: 'Job substituido durante a selecao do proximo despacho.',
+          at: timestamp
+        })
         candidate.updatedAt = timestamp
         continue
       }
@@ -693,7 +837,7 @@ export async function exigirInicioDespachoAntesDaParada(casa, input, { at } = {}
         '[failure-dispatch-not-started] A automação proativa ainda não recebeu prova real de início.',
         `Trabalho: ${job.id}.`,
         `Delegação: ${job.delegationId}.`,
-        'Inicie agora o executor pelo adaptador; somente o evento neutro `started` libera este gate.'
+        'O adaptador interno deve iniciar agora o executor; somente o evento neutro `started` libera este gate.'
       ].join(' '),
       job
     }
@@ -714,7 +858,11 @@ async function complete(casa, id, evidenceId, { at } = {}) {
     const pattern = failures.patterns.find((item) => item.id === job.patternId)
     if (!pattern || generation(pattern) !== job.generationFingerprint) {
       job.state = 'superseded'
-      clearDispatch(job)
+      await clearDispatchAfterTerminal(casa, job, {
+        state: 'cancelled',
+        reason: 'Geracao de evidencia substituida durante a execucao.',
+        at: timestamp
+      })
       job.reasonFingerprint = hash('geracao de evidencia substituida durante a execucao')
       job.updatedAt = timestamp
       await save(casa, store)
@@ -742,7 +890,11 @@ async function complete(casa, id, evidenceId, { at } = {}) {
     }
     if (job.state !== 'running') return { result: 'not-running', job }
     job.state = 'completed'
-    clearDispatch(job)
+    await clearDispatchAfterTerminal(casa, job, {
+      state: 'archived',
+      reason: 'Job comprovado, mas a delegacao nao possui verificacao independente compativel.',
+      at: timestamp
+    })
     job.evidenceFingerprint = hash(safe)
     job.reasonFingerprint = null
     job.reasonClass = null
@@ -781,7 +933,11 @@ export async function bloquearAutomacaoFalha(casa, id, reason, options = {}) {
       const strategyFingerprint = hash(strategy)
       if (job.strategyFingerprints.includes(strategyFingerprint)) return { result: 'strategy-repeated', job }
       job.state = 'queued'
-      clearDispatch(job)
+      await clearDispatchAfterTerminal(casa, job, {
+        state: 'failed',
+        reason: 'Tentativa falhou e foi reagendada com estrategia diferente.',
+        at: timestamp
+      })
       job.reasonClass = 'retryable'
       job.reasonFingerprint = hash(`${safeReason}|${evidenceId}`)
       job.requiredEffectFingerprint = null
@@ -798,7 +954,12 @@ export async function bloquearAutomacaoFalha(casa, id, reason, options = {}) {
     if (!contract.ownerAuthorityEffects.includes(effect)) throw new Error(`Efeito fora da taxonomia de autoridade: ${effect}`)
     if (job.authorityFingerprint === null) throw new Error('Expansão de autoridade sem envelope de origem verificável.')
     job.state = 'needs-owner'
-    clearDispatch(job, { preserveAuthority: true })
+    await clearDispatchAfterTerminal(casa, job, {
+      state: 'cancelled',
+      reason: 'Execucao interrompida por expansao material de autoridade.',
+      at: timestamp,
+      preserveAuthority: true
+    })
     job.reasonClass = 'owner-authority'
     job.reasonFingerprint = hash(safeReason)
     job.requiredEffectFingerprint = hash(effect)

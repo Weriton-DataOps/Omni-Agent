@@ -10,6 +10,7 @@ import {
   caminhoDaAuditoriaAutocorrecao,
   encerrarSessaoAuditoria,
   lerAuditoriaAutocorrecao,
+  reconciliarTurnosPendentesAuditoria,
   registrarAcaoAuditoria,
   registrarDelegacaoAuditoria
 } from '../runtime/auditoria-autocorrecao.mjs'
@@ -49,7 +50,8 @@ test('ledger guarda pedido, compromissos e fingerprints sem texto bruto', async 
       'perform-requested-work',
       'verify-real-state'
     ])
-    assert.match(opened.context, /AUDITORIA E AUTOCORREÇÃO OBRIGATÓRIAS/)
+    assert.match(opened.context, /AUDITORIA E AUTOCORREÇÃO INTERNAS OBRIGATÓRIAS/)
+    assert.match(opened.context, /nunca o repasse ao proprietário como comando ou checklist/i)
 
     await registrarAcaoAuditoria(casa, tool(session, {
       id: 'private-write',
@@ -74,7 +76,13 @@ test('formas naturais de ordem em português abrem compromisso executável', asy
     ['faça uma verificação', 'inspection'],
     ['pode verificar o estado agora', 'inspection'],
     ['quero que implemente o ajuste', 'mutation'],
+    ['quero isso corrigido', 'mutation'],
+    ['quero o projeto hub corrigido', 'mutation'],
     ['já pode implementar o ajuste', 'mutation'],
+    ['faz as correções mapeadas', 'mutation'],
+    ['abre o VS Code do projeto hub', 'execution'],
+    ['roda os testes do projeto', 'execution'],
+    ['precis fazer algumas correções do Omni', 'mutation'],
     ['então verifique o resultado', 'inspection'],
     ['leve isso em consideração para fazer a correção', 'mutation'],
     ['pedi pra ele mesmo fazer uma autoavaliação, leve em consideração isso também pra fazer a correção', 'mutation'],
@@ -83,7 +91,7 @@ test('formas naturais de ordem em português abrem compromisso executável', asy
   try {
     for (const [text, kind] of cases) {
       const opened = await abrirTurnoAuditoria(casa, prompt(`sessao-${kind}-${text.length}`, text))
-      assert.equal(opened.turn.requestKind, kind)
+      assert.equal(opened.turn.requestKind, kind, text)
       assert.ok(opened.turn.commitments.some((item) => item.kind === 'verify-real-state'))
     }
   } finally {
@@ -348,9 +356,272 @@ test('novo prompt e SessionEnd preservam turno interrompido como trabalho recupe
       assert.ok(turn.findings.some((item) => item.code === 'turn-interrupted-recovery' && item.state === 'open'))
       assert.ok(turn.corrections.some((item) => item.state === 'requested'))
       assert.ok(turn.commitments.every((item) => item.state === 'open'))
+      assert.equal(turn.recovery.state, 'queued')
+      assert.equal(
+        turn.findings.filter((item) => item.code === 'turn-interrupted-recovery').length,
+        1
+      )
     }
     const stored = await readFile(caminhoDaAuditoriaAutocorrecao(casa), 'utf8')
     assert.equal(stored.includes(privateMarker), false)
+  } finally {
+    await rm(casa, { recursive: true, force: true })
+  }
+})
+
+test('formas factuais próximas dos verbos operacionais continuam conversa', async () => {
+  const casa = await home()
+  const cases = [
+    'quero entender como isso foi corrigido',
+    'faz sentido usar TypeScript nessa arquitetura?',
+    'o VS Code abre o projeto automaticamente?',
+    'o build roda em Windows?',
+    'qual comando abre o VS Code?'
+  ]
+  try {
+    for (const [index, text] of cases.entries()) {
+      const opened = await abrirTurnoAuditoria(casa, prompt(`sessao-factual-${index}`, text))
+      assert.equal(opened.turn.requestKind, 'conversation', text)
+      assert.deepEqual(opened.turn.commitments.map((item) => item.kind), ['answer-current-request'])
+    }
+  } finally {
+    await rm(casa, { recursive: true, force: true })
+  }
+})
+
+test('gate recusa devolver ao proprietário trabalho operacional já autorizado', async () => {
+  const casa = await home()
+  const answers = [
+    'Execute os testes e abra o VS Code para conferir.',
+    'Pendências:\n- Rode os testes\n- Abra o VS Code.',
+    'Roda os testes e abre o VS Code.',
+    'Faça as correções restantes.',
+    'Faz as correções restantes.',
+    'Você pode executar os testes agora.',
+    'Você deve abrir o VS Code para conferir.',
+    'Você precisa rodar os testes.',
+    'Você tem que verificar a instalação.',
+    'Agora é só rodar os testes.'
+  ]
+  try {
+    for (const [index, answer] of answers.entries()) {
+      const session = `sessao-trabalho-devolvido-ao-dono-${index}`
+      await abrirTurnoAuditoria(casa, prompt(session, 'corrija o contrato e confira o resultado'))
+      await registrarAcaoAuditoria(casa, tool(session, {
+        id: `edit-owner-transfer-${index}`,
+        name: 'Edit',
+        input: { file_path: 'contrato.json', old_string: 'a', new_string: 'b' }
+      }))
+      await registrarAcaoAuditoria(casa, tool(session, {
+        id: `read-owner-transfer-${index}`,
+        name: 'Read',
+        input: { file_path: 'contrato.json' }
+      }))
+
+      const result = await auditarParada(casa, {
+        session_id: session,
+        last_assistant_message: answer
+      })
+      assert.equal(result.decision, 'block', answer)
+      assert.ok(
+        result.turn.findings.some((item) => item.code === 'authorized-work-returned-to-owner'),
+        answer
+      )
+      assert.match(result.reason, /o Omni retoma o trabalho já autorizado/i)
+      assert.match(result.reason, /nunca deve virar comando ou checklist para o proprietário/i)
+    }
+  } finally {
+    await rm(casa, { recursive: true, force: true })
+  }
+})
+
+test('gate não confunde descrição de estado com ordem ao proprietário', async () => {
+  const casa = await home()
+  const answers = [
+    'O worker roda os testes e abre o VS Code; eu verifico o resultado.',
+    'Faz sentido manter esse comportamento; a correção foi verificada.'
+  ]
+  try {
+    for (const [index, answer] of answers.entries()) {
+      const session = `sessao-sem-falso-imperativo-${index}`
+      await abrirTurnoAuditoria(casa, prompt(session, 'corrija o contrato e confira o resultado'))
+      await registrarAcaoAuditoria(casa, tool(session, {
+        id: `edit-sem-falso-${index}`,
+        name: 'Edit',
+        input: { file_path: 'contrato.json', old_string: 'a', new_string: 'b' }
+      }))
+      await registrarAcaoAuditoria(casa, tool(session, {
+        id: `read-sem-falso-${index}`,
+        name: 'Read',
+        input: { file_path: 'contrato.json' }
+      }))
+      const result = await auditarParada(casa, {
+        session_id: session,
+        last_assistant_message: answer
+      })
+      assert.equal(result.result, 'verified', answer)
+      assert.equal(result.decision, null, answer)
+    }
+  } finally {
+    await rm(casa, { recursive: true, force: true })
+  }
+})
+
+test('SessionStart reconcilia turno orfao sem fingir que fingerprints permitem reexecutar a acao', async () => {
+  const casa = await home()
+  const session = 'sessao-interrompida-reconciliacao'
+  try {
+    await abrirTurnoAuditoria(casa, prompt(session, 'corrija o arquivo contrato.json'))
+    await registrarAcaoAuditoria(casa, tool(session, {
+      id: 'write-before-session-end',
+      name: 'Write',
+      input: { file_path: 'contrato.json', content: '{}' }
+    }))
+    await auditarParada(casa, {
+      session_id: session,
+      last_assistant_message: 'A alteracao foi aplicada.'
+    })
+    await encerrarSessaoAuditoria(casa, { session_id: session })
+
+    const reconciled = await reconciliarTurnosPendentesAuditoria(casa, {
+      hook_event_name: 'SessionStart',
+      session_id: 'sessao-nova-reconciliacao'
+    }, { at: '2026-08-31T15:00:00.000Z' })
+    assert.equal(reconciled.result, 'reconciled')
+    assert.ok(reconciled.summary.historicalUnverifiable >= 1)
+    assert.ok(reconciled.summary.ownerReconfirmationRequired >= 1)
+
+    const stored = await lerAuditoriaAutocorrecao(casa)
+    const historical = stored.turns[0]
+    assert.equal(historical.state, 'blocked')
+    assert.equal(historical.recovery.state, 'owner-reconfirmation-required')
+    assert.equal(historical.actions.length, 1)
+    assert.equal(
+      historical.findings.find((item) => item.code === 'mutation-without-readback').state,
+      'historical-unverifiable'
+    )
+    assert.equal(
+      historical.findings.find((item) => item.code === 'turn-interrupted-recovery').state,
+      'owner-reconfirmation-required'
+    )
+    assert.equal(
+      historical.findings.filter((item) => item.code === 'turn-interrupted-recovery').length,
+      1
+    )
+    assert.ok(historical.findings.every((item) => !['open', 'unresolved'].includes(item.state)))
+
+    const repeated = await reconciliarTurnosPendentesAuditoria(casa, {
+      hook_event_name: 'SessionStart',
+      session_id: 'sessao-nova-reconciliacao'
+    }, { at: '2026-08-31T15:01:00.000Z' })
+    assert.equal(repeated.result, 'unchanged')
+    assert.equal(repeated.summary.terminalized, 0)
+  } finally {
+    await rm(casa, { recursive: true, force: true })
+  }
+})
+
+test('migracao consolida marcadores legados duplicados de interrupcao sem perder a pendencia canonica', async () => {
+  const casa = await home()
+  try {
+    await abrirTurnoAuditoria(casa, prompt('sessao-interrupcao-duplicada', 'execute o build'))
+    await encerrarSessaoAuditoria(casa, { session_id: 'sessao-interrupcao-duplicada' })
+    const path = caminhoDaAuditoriaAutocorrecao(casa)
+    const legacy = JSON.parse(await readFile(path, 'utf8'))
+    const turn = legacy.turns[0]
+    const canonical = turn.findings.find((item) => item.code === 'turn-interrupted-recovery')
+    const duplicate = {
+      ...canonical,
+      id: 'audit-finding-legacy-duplicate',
+      fingerprint: 'a'.repeat(64),
+      detectedAt: '2026-08-30T10:00:00.000Z',
+      updatedAt: '2026-08-30T10:00:00.000Z'
+    }
+    turn.findings.unshift(duplicate)
+    turn.corrections.unshift({
+      ...turn.corrections.find((item) => item.findingFingerprint === canonical.fingerprint),
+      id: 'audit-correction-legacy-duplicate',
+      findingFingerprint: duplicate.fingerprint,
+      createdAt: duplicate.detectedAt,
+      updatedAt: duplicate.updatedAt
+    })
+    await writeFile(path, `${JSON.stringify(legacy, null, 2)}\n`, 'utf8')
+
+    const migrated = await lerAuditoriaAutocorrecao(casa)
+    const interruptions = migrated.turns[0].findings.filter((item) =>
+      item.code === 'turn-interrupted-recovery'
+    )
+    assert.equal(interruptions.length, 2)
+    assert.equal(interruptions.filter((item) => ['open', 'unresolved'].includes(item.state)).length, 1)
+    assert.equal(interruptions.filter((item) => item.state === 'superseded').length, 1)
+  } finally {
+    await rm(casa, { recursive: true, force: true })
+  }
+})
+
+test('pedido repetido reivindica pendencia duravel e so a supersede apos nova verificacao', async () => {
+  const casa = await home()
+  const value = 'confira o manifesto plugin.json'
+  try {
+    await abrirTurnoAuditoria(casa, prompt('sessao-original', value))
+    await auditarParada(casa, {
+      session_id: 'sessao-original',
+      last_assistant_message: 'Ainda nao conferi.'
+    })
+    await encerrarSessaoAuditoria(casa, { session_id: 'sessao-original' })
+    await reconciliarTurnosPendentesAuditoria(casa, {
+      hook_event_name: 'SessionStart',
+      session_id: 'sessao-retomada'
+    })
+
+    const opened = await abrirTurnoAuditoria(casa, prompt('sessao-retomada', value))
+    assert.equal(opened.recovery.claimed.length, 1)
+    assert.match(opened.context, /RETOMADA DURAVEL/)
+    assert.match(opened.context, /nunca vira ordem ou checklist para o proprietario/i)
+    assert.equal(opened.turn.actions.length, 0)
+
+    let stored = await lerAuditoriaAutocorrecao(casa)
+    const historical = stored.turns.find((item) => item.id === opened.recovery.claimed[0].turnId)
+    assert.equal(historical.recovery.state, 'claimed')
+    assert.equal(historical.state, 'blocked')
+
+    await registrarAcaoAuditoria(casa, tool('sessao-retomada', {
+      id: 'fresh-readback',
+      name: 'Read',
+      input: { file_path: 'plugin.json' }
+    }))
+    const verified = await auditarParada(casa, {
+      session_id: 'sessao-retomada',
+      last_assistant_message: 'Manifesto conferido no estado real.'
+    })
+    assert.equal(verified.result, 'verified')
+    assert.deepEqual(verified.supersededRecoveryTurnIds, [historical.id])
+
+    stored = await lerAuditoriaAutocorrecao(casa)
+    const superseded = stored.turns.find((item) => item.id === historical.id)
+    assert.equal(superseded.recovery.state, 'superseded')
+    assert.ok(superseded.findings.every((item) =>
+      ['corrected', 'superseded'].includes(item.state)
+    ))
+  } finally {
+    await rm(casa, { recursive: true, force: true })
+  }
+})
+
+test('pedido diferente nao reivindica nem reabre pendencia que exige o proprietario', async () => {
+  const casa = await home()
+  try {
+    await abrirTurnoAuditoria(casa, prompt('sessao-antiga', 'execute o build'))
+    await auditarParada(casa, { session_id: 'sessao-antiga', last_assistant_message: 'Nao executei.' })
+    await encerrarSessaoAuditoria(casa, { session_id: 'sessao-antiga' })
+    await reconciliarTurnosPendentesAuditoria(casa, { session_id: 'sessao-nova' })
+
+    const opened = await abrirTurnoAuditoria(casa, prompt('sessao-nova', 'execute os testes'))
+    assert.deepEqual(opened.recovery.claimed, [])
+    const stored = await lerAuditoriaAutocorrecao(casa)
+    const historical = stored.turns[0]
+    assert.equal(historical.recovery.state, 'owner-reconfirmation-required')
+    assert.ok(historical.findings.every((item) => !['open', 'unresolved'].includes(item.state)))
   } finally {
     await rm(casa, { recursive: true, force: true })
   }
@@ -463,7 +734,7 @@ test('hook injeta a auditoria e usa o gate de Stop sem segundo bloqueio', async 
       prompt: 'corrija o arquivo de teste',
       cwd: raiz
     }, env)
-    assert.match(submit.hookSpecificOutput.additionalContext, /AUDITORIA E AUTOCORREÇÃO OBRIGATÓRIAS/)
+    assert.match(submit.hookSpecificOutput.additionalContext, /AUDITORIA E AUTOCORREÇÃO INTERNAS OBRIGATÓRIAS/)
 
     await tratarHook(tool(session_id, { id: 'edit-hook', name: 'Edit' }), env)
     const first = await tratarHook({
@@ -528,6 +799,36 @@ test('turno bloqueado legado com pendencia migra para reparo retomavel', async (
     assert.ok(migrated.turns[0].commitments.every((item) => item.state === 'open'))
     assert.ok(migrated.turns[0].findings.every((item) => item.state === 'open'))
     assert.ok(migrated.turns[0].corrections.every((item) => item.state === 'requested'))
+    assert.equal(migrated.turns[0].recovery.state, 'queued')
+  } finally {
+    await rm(casa, { recursive: true, force: true })
+  }
+})
+
+test('turno legado sem algoritmo do objetivo termina como historico nao verificavel', async () => {
+  const casa = await home()
+  try {
+    await abrirTurnoAuditoria(casa, prompt('sessao-legada-sem-binding', 'execute a tarefa antiga'))
+    await auditarParada(casa, {
+      session_id: 'sessao-legada-sem-binding',
+      last_assistant_message: 'A tarefa nao foi executada.'
+    })
+    await encerrarSessaoAuditoria(casa, { session_id: 'sessao-legada-sem-binding' })
+
+    const path = caminhoDaAuditoriaAutocorrecao(casa)
+    const legacy = JSON.parse(await readFile(path, 'utf8'))
+    delete legacy.turns[0].requestFingerprintAlgorithm
+    delete legacy.turns[0].recovery
+    await writeFile(path, `${JSON.stringify(legacy, null, 2)}\n`, 'utf8')
+
+    const reconciled = await reconciliarTurnosPendentesAuditoria(casa, {
+      hook_event_name: 'SessionStart',
+      session_id: 'sessao-depois-do-legado'
+    })
+    assert.equal(reconciled.result, 'reconciled')
+    const stored = await lerAuditoriaAutocorrecao(casa)
+    assert.equal(stored.turns[0].recovery.state, 'historical-unverifiable')
+    assert.ok(stored.turns[0].findings.every((item) => item.state === 'historical-unverifiable'))
   } finally {
     await rm(casa, { recursive: true, force: true })
   }

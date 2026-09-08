@@ -1,20 +1,36 @@
 import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { mkdir, mkdtemp, readFile, rm, utimes, writeFile } from 'node:fs/promises'
+import { cp, mkdir, mkdtemp, readFile, realpath, rm, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import test from 'node:test'
+import { fileURLToPath } from 'node:url'
 
 import {
   caminhoDoEstadoReleaseAutonoma,
+  confirmarReleasesCarregadas,
+  confirmarRuntimeCarregado,
+  descreverPreparacaoMelhoriaOperacional,
   instalarEConfirmarPadrao,
   prepararReleaseAutonomaPersonalidade
 } from '../runtime/release-autonoma.mjs'
 import { calcularFingerprintPayload } from '../runtime/integridade-release.mjs'
+import { tratarHookReleaseLoaded } from '../runtime/hook-release-loaded.mjs'
 
 const COMMIT = 'a'.repeat(40)
 const BRANCH = createHash('sha256').update('main').digest('hex')
 const REMOTE_REF = createHash('sha256').update('refs/heads/main').digest('hex')
+const SOURCE_PLUGIN_ROOT = dirname(dirname(fileURLToPath(import.meta.url)))
+
+test('descricao pre-gates da melhoria operacional nao antecipa instalacao nem readback', () => {
+  const fingerprint = 'f'.repeat(64)
+  const description = descreverPreparacaoMelhoriaOperacional(fingerprint)
+
+  assert.match(description, new RegExp(`auditada ${fingerprint.slice(0, 12)} para validacao da release`))
+  assert.match(description, /gates, publicacao, instalacao e readback permanecem pendentes neste estagio/)
+  assert.doesNotMatch(description, /com gates e readback instalado|publicada|instalada/i)
+})
 
 test('readback padrão usa a raiz carregada e confere o fingerprint instalado', async () => {
   const expectedFingerprint = 'f'.repeat(64)
@@ -29,6 +45,7 @@ test('readback padrão usa a raiz carregada e confere o fingerprint instalado', 
       return {
         installedVersion: '0.22.0',
         installedFingerprint: expectedFingerprint,
+        installedRoot: 'C:\\omni-instalado',
         latestVersion: '0.22.0',
         reloadRequired: true,
         verifiedBy: [
@@ -43,6 +60,7 @@ test('readback padrão usa a raiz carregada e confere o fingerprint instalado', 
   assert.deepEqual(received, { casa: 'C:\\omni-test' })
   assert.equal(result.verified, true)
   assert.equal(result.installedFingerprint, expectedFingerprint)
+  assert.equal(result.loadedReadback, null)
 
   await assert.rejects(
     instalarEConfirmarPadrao({
@@ -68,7 +86,7 @@ async function fixture() {
   const casa = await mkdtemp(join(tmpdir(), 'omni-autonomous-release-home-'))
   for (const directory of [
     '.git', '.claude-plugin', 'contratos/atualizacao', 'contratos/personalidade',
-    'contratos/eval/resultados', 'hooks', 'runtime', 'scripts', 'skills'
+    'contratos/eval/resultados', 'dist', 'hooks', 'runtime', 'scripts', 'skills'
   ]) await mkdir(join(root, directory), { recursive: true })
   await writeFile(join(root, 'package.json'), JSON.stringify({ name: 'omni-agent', version: '0.21.2' }))
   await writeFile(join(root, '.claude-plugin', 'plugin.json'), JSON.stringify({ name: 'omni', version: '0.21.2' }))
@@ -192,15 +210,25 @@ function gatesFixture(calls) {
   }
 }
 
-function installFixture(calls, { fail = 0, mismatch = 0 } = {}) {
-  return async ({ version, releaseFingerprint }) => {
+function installFixture(calls, { fail = 0, mismatch = 0, loaded = true } = {}) {
+  return async ({ version, releaseFingerprint, sourceRepository }) => {
     calls.count += 1
     if (calls.count <= fail) throw new Error('FALHA-INSTALACAO-COM-TEXTO-BRUTO')
+    const fingerprint = calls.count <= mismatch ? 'f'.repeat(64) : releaseFingerprint
     return {
       verified: true,
       installedVersion: version,
-      installedFingerprint: calls.count <= mismatch ? 'f'.repeat(64) : releaseFingerprint,
-      verificationFingerprint: '6'.repeat(64)
+      installedFingerprint: fingerprint,
+      installedRoot: sourceRepository,
+      verificationFingerprint: '6'.repeat(64),
+      loadedReadback: loaded ? {
+        verified: true,
+        root: sourceRepository,
+        version,
+        fingerprint,
+        verificationFingerprint: '7'.repeat(64),
+        verifiedAt: '2026-08-29T12:05:00.000Z'
+      } : null
     }
   }
 }
@@ -208,6 +236,343 @@ function installFixture(calls, { fail = 0, mismatch = 0 } = {}) {
 async function cleanup(...paths) {
   await Promise.all(paths.map((path) => rm(path, { recursive: true, force: true })))
 }
+
+function awaitingTransaction(key, root, {
+  version = '1.2.3',
+  fingerprint = 'e'.repeat(64),
+  updatedAt = '2032-01-01T00:00:00.000Z'
+} = {}) {
+  return {
+    stage: 'awaiting-reload',
+    runFingerprint: key,
+    repositoryFingerprint: createHash('sha256').update(`repo:${key}`).digest('hex'),
+    version,
+    releaseFingerprint: fingerprint,
+    evidenceFingerprint: null,
+    gatesFingerprint: null,
+    commitSha: COMMIT,
+    branchFingerprint: BRANCH,
+    remoteCommitSha: COMMIT,
+    installedReadback: {
+      root,
+      version,
+      fingerprint,
+      verificationFingerprint: '6'.repeat(64),
+      verifiedAt: updatedAt
+    },
+    loadedReadback: null,
+    attempts: { prepare: 1, push: 1, install: 1 },
+    lastFailure: null,
+    updatedAt
+  }
+}
+
+async function writeReleaseState(casa, releases) {
+  const statePath = caminhoDoEstadoReleaseAutonoma(casa)
+  await mkdir(join(casa, 'runtime'), { recursive: true })
+  await writeFile(statePath, `${JSON.stringify({
+    schemaVersion: 1,
+    contract: 'omni-autonomous-release-state-v1',
+    releases
+  }, null, 2)}\n`, 'utf8')
+  return statePath
+}
+
+test('readback carregado exige raiz, versao e fingerprint da mesma release', async () => {
+  const pluginRoot = await mkdtemp(join(tmpdir(), 'omni-loaded-proof-'))
+  try {
+    const fingerprint = 'd'.repeat(64)
+    const receipt = await confirmarRuntimeCarregado({
+      pluginRoot,
+      version: '1.2.3',
+      payloadFingerprint: fingerprint,
+      verifyLoadedIntegrity: async () => ({
+        status: 'verified',
+        versionMatchesManifest: true,
+        releaseVersion: '1.2.3',
+        fingerprint,
+        declaredFingerprint: fingerprint
+      }),
+      at: '2032-01-01T00:00:00.000Z'
+    })
+    assert.equal(receipt.root, await realpath(pluginRoot))
+    assert.equal(receipt.version, '1.2.3')
+    assert.equal(receipt.fingerprint, fingerprint)
+    await assert.rejects(
+      confirmarRuntimeCarregado({
+        pluginRoot,
+        version: '1.2.4',
+        payloadFingerprint: fingerprint,
+        verifyLoadedIntegrity: async () => ({
+          status: 'verified', versionMatchesManifest: true, releaseVersion: '1.2.3',
+          fingerprint, declaredFingerprint: fingerprint
+        })
+      }),
+      /nao corresponde a raiz, versao e fingerprint/
+    )
+  } finally {
+    await cleanup(pluginRoot)
+  }
+})
+
+test('SessionStart carregado fecha awaiting-reload; fonte e instalacao sozinhas nao fecham', async () => {
+  const casa = await mkdtemp(join(tmpdir(), 'omni-loaded-hook-home-'))
+  const sourceRoot = await mkdtemp(join(tmpdir(), 'omni-loaded-hook-source-'))
+  const installedRootRaw = await mkdtemp(join(tmpdir(), 'omni-loaded-hook-installed-'))
+  const installedRoot = await realpath(installedRootRaw)
+  const fingerprint = 'e'.repeat(64)
+  const key = '9'.repeat(64)
+  const statePath = caminhoDoEstadoReleaseAutonoma(casa)
+  await mkdir(join(casa, 'runtime'), { recursive: true })
+  await writeFile(statePath, `${JSON.stringify({
+    schemaVersion: 1,
+    contract: 'omni-autonomous-release-state-v1',
+    releases: {
+      [key]: {
+        stage: 'awaiting-reload',
+        runFingerprint: key,
+        repositoryFingerprint: '8'.repeat(64),
+        version: '1.2.3',
+        releaseFingerprint: fingerprint,
+        evidenceFingerprint: null,
+        gatesFingerprint: null,
+        commitSha: COMMIT,
+        branchFingerprint: BRANCH,
+        remoteCommitSha: COMMIT,
+        installedReadback: {
+          root: installedRoot,
+          version: '1.2.3',
+          fingerprint,
+          verificationFingerprint: '6'.repeat(64),
+          verifiedAt: '2032-01-01T00:00:00.000Z'
+        },
+        loadedReadback: null,
+        attempts: { prepare: 1, push: 1, install: 1 },
+        lastFailure: null,
+        updatedAt: '2032-01-01T00:00:00.000Z'
+      }
+    }
+  }, null, 2)}\n`, 'utf8')
+  const confirmCalls = []
+  const operationalCalls = []
+  const confirmLoaded = async (input) => {
+    confirmCalls.push(input)
+    return {
+      verified: true,
+      root: installedRoot,
+      version: '1.2.3',
+      fingerprint,
+      verificationFingerprint: '7'.repeat(64),
+      verifiedAt: '2032-01-01T00:01:00.000Z'
+    }
+  }
+  try {
+    const fromSource = await confirmarReleasesCarregadas({
+      casa,
+      pluginRoot: sourceRoot,
+      confirmLoaded,
+      recordOperationalLoaded: async () => undefined
+    })
+    assert.equal(fromSource.confirmed, 0)
+    assert.equal(JSON.parse(await readFile(statePath, 'utf8')).releases[key].stage, 'awaiting-reload')
+    assert.equal(confirmCalls.length, 0)
+
+    const loaded = await confirmarReleasesCarregadas({
+      casa,
+      pluginRoot: installedRoot,
+      confirmLoaded,
+      recordOperationalLoaded: async (...args) => operationalCalls.push(args),
+      at: '2032-01-01T00:01:00.000Z'
+    })
+    assert.equal(loaded.result, 'loaded-releases-confirmed')
+    assert.equal(loaded.confirmed, 1)
+    assert.equal(operationalCalls.length, 1)
+    const persisted = JSON.parse(await readFile(statePath, 'utf8')).releases[key]
+    assert.equal(persisted.stage, 'loaded-verified')
+    assert.equal(persisted.loadedReadback.root, installedRoot)
+
+    let wired = null
+    const hook = await tratarHookReleaseLoaded(
+      { hook_event_name: 'SessionStart' },
+      { OMNI_HOME: casa },
+      {
+        pluginRoot: installedRoot,
+        confirmarReleasesCarregadas: async (input) => {
+          wired = input
+          return {
+            result: 'no-loaded-release-match', confirmed: 0, rejected: 0,
+            loadedRootFingerprint: 'a'.repeat(64)
+          }
+        }
+      }
+    )
+    assert.equal(wired.casa, casa)
+    assert.equal(wired.pluginRoot, installedRoot)
+    assert.equal(hook.suppressOutput, true)
+  } finally {
+    await cleanup(casa, sourceRoot, installedRootRaw)
+  }
+})
+
+test('handshakes concorrentes preservam duas chaves e nao regridem a mesma chave', async () => {
+  const casa = await mkdtemp(join(tmpdir(), 'omni-release-cas-home-'))
+  const firstRoot = await realpath(await mkdtemp(join(tmpdir(), 'omni-release-cas-first-')))
+  const secondRoot = await realpath(await mkdtemp(join(tmpdir(), 'omni-release-cas-second-')))
+  const firstKey = '1'.repeat(64)
+  const secondKey = '2'.repeat(64)
+  const fingerprint = 'e'.repeat(64)
+  const statePath = await writeReleaseState(casa, {
+    [firstKey]: awaitingTransaction(firstKey, firstRoot, { fingerprint }),
+    [secondKey]: awaitingTransaction(secondKey, secondRoot, { fingerprint })
+  })
+  try {
+    let arrivals = 0
+    let releaseBarrier
+    const barrier = new Promise((resolveBarrier) => { releaseBarrier = resolveBarrier })
+    const confirmLoaded = async ({ pluginRoot, version, payloadFingerprint }) => {
+      arrivals += 1
+      if (arrivals === 2) releaseBarrier()
+      await barrier
+      return {
+        verified: true,
+        root: pluginRoot,
+        version,
+        fingerprint: payloadFingerprint,
+        verificationFingerprint: '7'.repeat(64),
+        verifiedAt: '2032-01-01T00:01:00.000Z'
+      }
+    }
+    const distinct = await Promise.all([
+      confirmarReleasesCarregadas({
+        casa, pluginRoot: firstRoot, confirmLoaded, recordOperationalLoaded: async () => undefined
+      }),
+      confirmarReleasesCarregadas({
+        casa, pluginRoot: secondRoot, confirmLoaded, recordOperationalLoaded: async () => undefined
+      })
+    ])
+    assert.deepEqual(distinct.map((item) => item.confirmed).sort(), [1, 1])
+    let state = JSON.parse(await readFile(statePath, 'utf8'))
+    assert.equal(state.releases[firstKey].stage, 'loaded-verified')
+    assert.equal(state.releases[secondKey].stage, 'loaded-verified')
+
+    await writeReleaseState(casa, {
+      [firstKey]: awaitingTransaction(firstKey, firstRoot, { fingerprint })
+    })
+    arrivals = 0
+    let releaseSameBarrier
+    const sameBarrier = new Promise((resolveBarrier) => { releaseSameBarrier = resolveBarrier })
+    const sameConfirm = async ({ pluginRoot, version, payloadFingerprint }) => {
+      arrivals += 1
+      if (arrivals === 2) releaseSameBarrier()
+      await sameBarrier
+      return {
+        verified: true,
+        root: pluginRoot,
+        version,
+        fingerprint: payloadFingerprint,
+        verificationFingerprint: '8'.repeat(64),
+        verifiedAt: '2032-01-01T00:02:00.000Z'
+      }
+    }
+    const same = await Promise.all([
+      confirmarReleasesCarregadas({
+        casa, pluginRoot: firstRoot, confirmLoaded: sameConfirm,
+        recordOperationalLoaded: async () => undefined
+      }),
+      confirmarReleasesCarregadas({
+        casa, pluginRoot: firstRoot, confirmLoaded: sameConfirm,
+        recordOperationalLoaded: async () => undefined
+      })
+    ])
+    assert.equal(same.reduce((sum, item) => sum + item.confirmed, 0), 1)
+    assert.equal(same.reduce((sum, item) => sum + item.concurrentSkipped, 0), 1)
+    state = JSON.parse(await readFile(statePath, 'utf8'))
+    assert.equal(state.releases[firstKey].stage, 'loaded-verified')
+    assert.equal(state.releases[firstKey].loadedReadback.root, firstRoot)
+  } finally {
+    await cleanup(casa, firstRoot, secondRoot)
+  }
+})
+
+test('store adulterado nao contorna o reducer canonico para declarar loaded', async () => {
+  const casa = await mkdtemp(join(tmpdir(), 'omni-release-tamper-home-'))
+  const installedRoot = await realpath(await mkdtemp(join(tmpdir(), 'omni-release-tamper-installed-')))
+  const wrongRoot = await realpath(await mkdtemp(join(tmpdir(), 'omni-release-tamper-wrong-')))
+  const key = '3'.repeat(64)
+  const transaction = awaitingTransaction(key, installedRoot)
+  transaction.stage = 'loaded-verified'
+  transaction.loadedReadback = {
+    ...transaction.installedReadback,
+    root: wrongRoot,
+    verifiedAt: '2032-01-01T00:01:00.000Z'
+  }
+  try {
+    await writeReleaseState(casa, { [key]: transaction })
+    await assert.rejects(
+      confirmarReleasesCarregadas({
+        casa,
+        pluginRoot: installedRoot,
+        confirmLoaded: async () => { throw new Error('nao deve verificar store terminal adulterado') },
+        recordOperationalLoaded: async () => undefined
+      }),
+      /contornar o reducer canonico/
+    )
+  } finally {
+    await cleanup(casa, installedRoot, wrongRoot)
+  }
+})
+
+test('E2E SessionStart carrega hook de copia instalada e verifica integridade real', async () => {
+  const casa = await mkdtemp(join(tmpdir(), 'omni-release-e2e-home-'))
+  const installedRootRaw = await mkdtemp(join(tmpdir(), 'omni-release-e2e-installed-'))
+  try {
+    for (const path of [
+      '.claude-plugin', 'adaptadores', 'contratos', 'dist', 'hooks', 'runtime', 'scripts', 'skills'
+    ]) {
+      await cp(join(SOURCE_PLUGIN_ROOT, path), join(installedRootRaw, path), { recursive: true })
+    }
+    await cp(join(SOURCE_PLUGIN_ROOT, 'package.json'), join(installedRootRaw, 'package.json'))
+    const installedRoot = await realpath(installedRootRaw)
+    const manifest = JSON.parse(
+      await readFile(join(installedRoot, '.claude-plugin', 'plugin.json'), 'utf8')
+    )
+    const payload = await calcularFingerprintPayload(installedRoot)
+    const integrityPath = join(installedRoot, 'contratos', 'atualizacao', 'integridade.json')
+    const integrity = JSON.parse(await readFile(integrityPath, 'utf8'))
+    integrity.identity.version = manifest.version
+    integrity.identity.releaseFingerprint = payload.fingerprint
+    await writeFile(integrityPath, `${JSON.stringify(integrity, null, 2)}\n`, 'utf8')
+    const key = '4'.repeat(64)
+    const statePath = await writeReleaseState(casa, {
+      [key]: awaitingTransaction(key, installedRoot, {
+        version: manifest.version,
+        fingerprint: payload.fingerprint
+      })
+    })
+    const input = `${JSON.stringify({ hook_event_name: 'SessionStart' })}\n`
+    const sourceHook = spawnSync(
+      process.execPath,
+      [join(SOURCE_PLUGIN_ROOT, 'runtime', 'hook-release-loaded.mjs')],
+      { input, encoding: 'utf8', windowsHide: true, env: { ...process.env, OMNI_HOME: casa } }
+    )
+    assert.equal(sourceHook.status, 0, sourceHook.stderr)
+    assert.equal(JSON.parse(await readFile(statePath, 'utf8')).releases[key].stage, 'awaiting-reload')
+
+    const installedHook = spawnSync(
+      process.execPath,
+      [join(installedRoot, 'runtime', 'hook-release-loaded.mjs')],
+      { input, encoding: 'utf8', windowsHide: true, env: { ...process.env, OMNI_HOME: casa } }
+    )
+    assert.equal(installedHook.status, 0, installedHook.stderr)
+    assert.equal(JSON.parse(installedHook.stdout).handshake, 'loaded-releases-confirmed')
+    const loaded = JSON.parse(await readFile(statePath, 'utf8')).releases[key]
+    assert.equal(loaded.stage, 'loaded-verified')
+    assert.equal(loaded.loadedReadback.root, installedRoot)
+    assert.equal(loaded.loadedReadback.fingerprint, payload.fingerprint)
+  } finally {
+    await cleanup(casa, installedRootRaw)
+  }
+})
 
 test('eval aprovado publica, instala e fecha somente depois do readback exato', async () => {
   const { root, casa, evaluatedPayloadFingerprint } = await fixture()
@@ -224,10 +589,11 @@ test('eval aprovado publica, instala e fecha somente depois do readback exato', 
       installAndReadback: installFixture(installCalls),
       at: '2026-08-29T12:05:00.000Z'
     })
-    assert.equal(result.result, 'published-installed-verified')
+    assert.equal(result.result, 'published-loaded-verified')
     assert.equal(result.version, '0.21.3')
     assert.equal(result.publication, 'remote-commit-verified')
     assert.equal(result.installedReadback, true)
+    assert.equal(result.loadedReadback, true)
     assert.equal(git.calls.commit, 1)
     assert.equal(git.calls.push, 1)
     assert.equal(gateCalls.count, 1)
@@ -242,9 +608,10 @@ test('eval aprovado publica, instala e fecha somente depois do readback exato', 
     const transaction = Object.values(state.releases)[0]
     assert.equal(pkg.version, '0.21.3')
     assert.equal(manifest.status, 'approved')
-    assert.equal(transaction.stage, 'installed-verified')
+    assert.equal(transaction.stage, 'loaded-verified')
     assert.equal(transaction.installedReadback.version, '0.21.3')
     assert.equal(transaction.installedReadback.fingerprint, result.releaseFingerprint)
+    assert.equal(transaction.loadedReadback.fingerprint, result.releaseFingerprint)
     assert.doesNotMatch(stateRaw, /personality-auto-release-test|SEGREDO|FALHA-/)
     assert.match(Object.keys(state.releases)[0], /^[a-f0-9]{64}$/)
 
@@ -256,7 +623,7 @@ test('eval aprovado publica, instala e fecha somente depois do readback exato', 
       runGates: gatesFixture(gateCalls),
       installAndReadback: installFixture(installCalls)
     })
-    assert.equal(again.result, 'already-published-installed-verified')
+    assert.equal(again.result, 'already-published-loaded-verified')
     assert.equal(git.calls.commit, 1)
     assert.equal(git.calls.push, 1)
     assert.equal(installCalls.count, 1)
@@ -285,7 +652,7 @@ test('push transitorio retoma o mesmo commit sem nova versao ou novo gate', asyn
       casa, sourceRepository: root, run: passedRun(evaluatedPayloadFingerprint), repository: git.adapter,
       runGates: gatesFixture(gateCalls), installAndReadback: installFixture(installCalls)
     })
-    assert.equal(second.result, 'published-installed-verified')
+    assert.equal(second.result, 'published-loaded-verified')
     assert.equal(second.version, '0.21.3')
     assert.equal(git.calls.commit, 1)
     assert.equal(git.calls.push, 2)
@@ -321,7 +688,7 @@ test('instalacao ou readback divergente retoma depois do push sem republicar', a
       runGates: gatesFixture(gateCalls),
       installAndReadback: installFixture(installCalls)
     })
-    assert.equal(second.result, 'published-installed-verified')
+    assert.equal(second.result, 'published-loaded-verified')
     assert.equal(git.calls.commit, 1)
     assert.equal(git.calls.push, 1)
     assert.equal(gateCalls.count, 1)
@@ -354,7 +721,7 @@ test('falha transitoria da instalacao preserva o push e retoma somente a instala
       casa, sourceRepository: root, run: passedRun(evaluatedPayloadFingerprint), repository: git.adapter,
       runGates: gatesFixture(gateCalls), installAndReadback: installFixture(installCalls)
     })
-    assert.equal(second.result, 'published-installed-verified')
+    assert.equal(second.result, 'published-loaded-verified')
     assert.equal(git.calls.commit, 1)
     assert.equal(git.calls.push, 1)
     assert.equal(gateCalls.count, 1)
@@ -468,7 +835,7 @@ test('lock orfao vencido e recuperado sem bloquear a release', async () => {
       runGates: gatesFixture(gateCalls),
       installAndReadback: installFixture(installCalls)
     })
-    assert.equal(result.result, 'published-installed-verified')
+    assert.equal(result.result, 'published-loaded-verified')
     assert.equal(git.calls.commit, 1)
     await assert.rejects(readFile(lockPath), (error) => error.code === 'ENOENT')
   } finally {

@@ -21,6 +21,10 @@ import {
   confirmarInicioAutomacaoFalha,
   prepararDespachoAutomaticoFalha
 } from '../runtime/automacao-falhas.mjs'
+import {
+  abrirProjetoNoVscode,
+  resolverAlvoProjetoVscode
+} from '../runtime/workspace-vscode.mjs'
 
 const cli = fileURLToPath(new URL('../runtime/cli.mjs', import.meta.url))
 
@@ -29,6 +33,131 @@ function executar(args, env) {
   assert.equal(run.status, 0, run.stderr)
   return JSON.parse(run.stdout)
 }
+
+const vscodeWrapper = 'C:\\VSCode\\bin\\code.cmd'
+const vscodeExecutable = 'C:\\VSCode\\Code.exe'
+const vscodeCli = 'C:\\VSCode\\stable\\resources\\app\\out\\cli.js'
+const vscodeWrapperContent = [
+  '@echo off',
+  'set VSCODE_DEV=',
+  'set ELECTRON_RUN_AS_NODE=1',
+  '"%~dp0..\\Code.exe" "%~dp0..\\stable\\resources\\app\\out\\cli.js" %*'
+].join('\r\n')
+
+function dependenciasVscode(run) {
+  return {
+    platform: 'win32',
+    env: { OMNI_VSCODE_CLI: vscodeWrapper },
+    stat: () => ({ isDirectory: () => true }),
+    exists: (path) => [vscodeWrapper, vscodeExecutable, vscodeCli].includes(path),
+    readText: () => vscodeWrapperContent,
+    run
+  }
+}
+
+test('porta do VS Code resolve Hub explicitamente e nunca usa o cwd do Omni', () => {
+  const stat = () => ({ isDirectory: () => true })
+  const target = resolverAlvoProjetoVscode('Hub', {
+    platform: 'win32',
+    env: {},
+    stat
+  })
+  assert.equal(target.canonicalPath.toLowerCase(), 'c:\\hub-wp')
+  assert.equal(target.resolution, 'explicit-alias')
+  assert.equal(target.cwdFallbackUsed, false)
+  assert.throws(
+    () => resolverAlvoProjetoVscode('projeto-sem-alias', { platform: 'win32', env: {}, stat }),
+    /cwd nunca e usado como fallback/i
+  )
+})
+
+test('abertura do Hub interpreta code.cmd e executa Code.exe sem shell', () => {
+  const calls = []
+  const result = abrirProjetoNoVscode(
+    { literalTarget: 'Hub' },
+    dependenciasVscode((executable, args, options) => {
+      calls.push({ executable, args, options })
+      return args.at(-1) === '--status'
+        ? { status: 0, stdout: 'Window (C:\\hub-wp)\n', stderr: '' }
+        : { status: 0, stdout: '', stderr: '' }
+    })
+  )
+  assert.equal(result.state, 'workspace-opened')
+  assert.equal(result.success, true)
+  assert.equal(result.canonicalPath.toLowerCase(), 'c:\\hub-wp')
+  assert.equal(result.claudePanelOpened, false)
+  assert.equal(result.sessionVisible, false)
+  assert.equal(result.briefingDelivered, false)
+  assert.equal(result.executable, vscodeExecutable)
+  assert.deepEqual(result.prefixArgs, [vscodeCli])
+  assert.deepEqual(calls.map((item) => item.args), [
+    [vscodeCli, '--new-window', 'C:\\hub-wp'],
+    [vscodeCli, '--status']
+  ])
+  assert.ok(calls.every((item) =>
+    item.executable === vscodeExecutable &&
+    !item.executable.endsWith('.cmd') &&
+    item.options.shell === false &&
+    item.options.env.ELECTRON_RUN_AS_NODE === '1' &&
+    item.options.env.VSCODE_DEV === ''
+  ))
+  assert.doesNotMatch(JSON.stringify(calls), /powershell|claude|Documents[\\/]Omni/i)
+})
+
+test('porta distingue pedido enviado, painel Claude e sessao; não fabrica readback de outra janela', () => {
+  const dependencies = dependenciasVscode(
+    (_executable, args) => args.at(-1) === '--status'
+      ? { status: 0, stdout: 'Window (C:\\Users\\wp.santos\\Documents\\Omni)\n', stderr: '' }
+      : { status: 0, stdout: '', stderr: '' }
+  )
+  const requested = abrirProjetoNoVscode({ literalTarget: 'Hub' }, dependencies)
+  assert.equal(requested.state, 'workspace-open-requested')
+  assert.equal(requested.success, false)
+  assert.equal(requested.verification, 'code-status-without-exact-path')
+  const blocked = abrirProjetoNoVscode({ literalTarget: 'Hub', startClaudeSession: true }, dependencies)
+  assert.equal(blocked.state, 'blocked')
+  assert.equal(blocked.lastVerifiedState, 'target-resolved')
+  assert.match(blocked.reason, /supported-vscode-integration/)
+
+  const prefixOnly = abrirProjetoNoVscode({ literalTarget: 'Hub' }, {
+    ...dependencies,
+    run: (_executable, args) => args.at(-1) === '--status'
+      ? { status: 0, stdout: 'Window (C:\\hub-wp-old)\n', stderr: '' }
+      : { status: 0, stdout: '', stderr: '' }
+  })
+  assert.equal(prefixOnly.state, 'workspace-open-requested')
+  assert.equal(prefixOnly.success, false)
+})
+
+test('expectedRepository precisa corresponder ao alvo antes de chamar o VS Code', () => {
+  const calls = []
+  const dependencies = dependenciasVscode(
+    (...args) => {
+      calls.push(args)
+      return { status: 0, stdout: '', stderr: '' }
+    }
+  )
+  const verified = abrirProjetoNoVscode({
+    literalTarget: 'Hub',
+    expectedRepository: 'C:\\hub-wp'
+  }, {
+    ...dependencies,
+    run: (_executable, args) => args.at(-1) === '--status'
+      ? { status: 0, stdout: 'Window (C:\\hub-wp)', stderr: '' }
+      : { status: 0, stdout: '', stderr: '' }
+  })
+  assert.equal(verified.expectedRepositoryVerified, true)
+  assert.equal(verified.success, true)
+
+  const refused = abrirProjetoNoVscode({
+    literalTarget: 'Hub',
+    expectedRepository: 'C:\\Users\\wp.santos\\Documents\\Omni'
+  }, dependencies)
+  assert.equal(refused.state, 'blocked')
+  assert.equal(refused.success, false)
+  assert.equal(refused.reason, 'target-does-not-match-expected-repository')
+  assert.equal(calls.length, 0)
+})
 
 async function registrarVerificacaoCli(casa, suffix, at, command = 'node --test testes/falhas.test.mjs') {
   const sessionId = `cli-failure-verification-${suffix}`
@@ -145,7 +274,7 @@ test('operador expoe plano e historico da rodada de personalidade', async () => 
   try {
     const plan = executar(['eval-personalidade-plano'], env)
     assert.equal(plan.evaluation.candidate, 'omni-persona-v3-candidate')
-    assert.equal(plan.evaluation.cases.length, 26)
+    assert.equal(plan.evaluation.cases.length, 28)
     assert.deepEqual(plan.evaluation.pendingLearnedCandidates, [])
 
     const history = executar(['eval-personalidade-historico'], env)

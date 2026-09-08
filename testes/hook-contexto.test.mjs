@@ -7,11 +7,19 @@ import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 
 import { caminhoDaAutomacaoFalhas } from '../runtime/automacao-falhas.mjs'
-import { contextoAdicional, tratarHook } from '../runtime/hook-contexto.mjs'
+import {
+  contextoAdicional,
+  limitarContextoAdicional,
+  tratarHook
+} from '../runtime/hook-contexto.mjs'
 import { lembrarExplicitamente, lerMemoria } from '../runtime/memoria.mjs'
 import { caminhoDaCoberturaAoVivo } from '../runtime/varredura-diaria.mjs'
 import { registrarFalha } from '../runtime/falhas.mjs'
-import { registrarUltimaRespostaPersonalidade } from '../runtime/feedback-personalidade.mjs'
+import { lerAuditoriaAutocorrecao } from '../runtime/auditoria-autocorrecao.mjs'
+import {
+  lerFeedbackPersonalidade,
+  registrarUltimaRespostaPersonalidade
+} from '../runtime/feedback-personalidade.mjs'
 import {
   atualizarDelegacao,
   lerCicloOperacional,
@@ -26,6 +34,7 @@ test('contexto adicional preserva todos os blocos nomeados na ordem sem coercao 
     projection: 'SENTINEL_PROJECTION',
     persistentDirection: 'SENTINEL_PERSISTENT_DIRECTION',
     turnAdjustment: 'SENTINEL_TURN_ADJUSTMENT',
+    ownerCorrection: 'SENTINEL_OWNER_CORRECTION',
     automation: 'SENTINEL_AUTOMATION',
     audit: 'SENTINEL_AUDIT',
     systemAudit: 'SENTINEL_SYSTEM_AUDIT',
@@ -36,6 +45,7 @@ test('contexto adicional preserva todos os blocos nomeados na ordem sem coercao 
     sentinels.persona,
     sentinels.persistentDirection,
     sentinels.turnAdjustment,
+    sentinels.ownerCorrection,
     sentinels.degradation,
     sentinels.automation,
     sentinels.audit,
@@ -73,6 +83,28 @@ async function ambiente() {
     }
   }
 }
+
+test('hook valida a entrada unknown antes de tocar estado ou ecoar campos privados', async () => {
+  const { raiz, env } = await ambiente()
+  try {
+    const invalida = await tratarHook({
+      hook_event_name: 'UserPromptSubmit',
+      session_id: { valor: 'nao-e-string' },
+      cwd: join(raiz, 'caminho-privado'),
+      prompt: '/omni:omni'
+    }, env)
+    assert.deepEqual(invalida, { suppressOutput: true })
+    assert.doesNotMatch(JSON.stringify(invalida), /caminho-privado|nao-e-string/)
+
+    const desconhecida = await tratarHook({
+      hook_event_name: 'EventoFuturoNaoContratado',
+      session_id: 'sessao-invalida'
+    }, env)
+    assert.deepEqual(desconhecida, { suppressOutput: true })
+  } finally {
+    await rm(raiz, { recursive: true, force: true })
+  }
+})
 
 test('sessao Omni recebe personalidade e memoria relevante em cada novo turno', async () => {
   const { raiz, env } = await ambiente()
@@ -168,6 +200,103 @@ test('hook não afeta sessão nunca ativada e preserva o estado da sessão ao fe
   }
 })
 
+test('limite inline preserva projeção recuperada mesmo quando blocos anteriores estouram o orçamento', () => {
+  const projection = [
+    '# OMNI CONTEXT V1 - DEEP',
+    '## RULES',
+    '- SENTINEL_REGRA_RECUPERADA',
+    '## RELEVANT CONFIRMED MEMORY',
+    '- SENTINEL_MEMORIA_RECUPERADA'
+  ].join('\n')
+  const contexto = contextoAdicional({
+    persona: `PERSONA_${'p'.repeat(7_000)}`,
+    audit: `AUDITORIA_${'a'.repeat(5_000)}`,
+    systemAudit: `SISTEMA_${'s'.repeat(3_000)}`,
+    projection
+  })
+  const limitado = limitarContextoAdicional(contexto, 'SENTINEL_ENCERRAMENTO_CRITICO')
+
+  assert.ok(limitado.length <= 9_500)
+  assert.match(limitado, /CONTEXTO AUXILIAR TRUNCADO/)
+  assert.match(limitado, /PERSONA_p{100}/)
+  assert.match(limitado, /CONTEXTO RECUPERADO PARA ESTE TURNO/)
+  assert.match(limitado, /SENTINEL_REGRA_RECUPERADA/)
+  assert.match(limitado, /SENTINEL_MEMORIA_RECUPERADA/)
+  assert.doesNotMatch(limitado, /AUDITORIA_|SISTEMA_/)
+  assert.ok(limitado.endsWith('SENTINEL_ENCERRAMENTO_CRITICO'))
+})
+
+test('ativação persiste por cwd apenas para sessões principais do mesmo escopo', async () => {
+  const { raiz, env } = await ambiente()
+  const cwdCentral = join(raiz, 'conversa-central')
+  try {
+    await tratarHook({
+      hook_event_name: 'UserPromptSubmit',
+      session_id: 'sessao-escopo-origem',
+      cwd: cwdCentral,
+      prompt: '/omni:omni'
+    }, env)
+
+    for (const secondaryFields of [
+      { isSidechain: true },
+      { agent_id: 'executor-reutilizando-sessao', agent_type: 'executor' }
+    ]) {
+      const secondary = await tratarHook({
+        hook_event_name: 'UserPromptSubmit',
+        session_id: 'sessao-escopo-origem',
+        cwd: cwdCentral,
+        prompt: '/omni:omni',
+        ...secondaryFields
+      }, env)
+      assert.equal(secondary.hookSpecificOutput, undefined)
+    }
+
+    for (const source of ['startup', 'clear']) {
+      const novaSessao = await tratarHook({
+        hook_event_name: 'SessionStart',
+        session_id: `sessao-escopo-${source}`,
+        source,
+        cwd: cwdCentral
+      }, env)
+      assert.equal(novaSessao.hookSpecificOutput?.hookEventName, 'SessionStart')
+      assert.match(novaSessao.hookSpecificOutput?.additionalContext, /Omni acaba de ser ativado nesta sessão/i)
+      assert.match(novaSessao.hookSpecificOutput?.additionalContext, /Inventor Cúmplice/)
+    }
+
+    const fallbackSemSessionStart = await tratarHook({
+      hook_event_name: 'UserPromptSubmit',
+      session_id: 'sessao-escopo-fallback',
+      cwd: cwdCentral,
+      prompt: 'retome o contexto deste projeto'
+    }, env)
+    assert.match(fallbackSemSessionStart.hookSpecificOutput?.additionalContext, /CONTEXTO RECUPERADO PARA ESTE TURNO/)
+
+    const outroEscopo = await tratarHook({
+      hook_event_name: 'SessionStart',
+      session_id: 'sessao-outro-escopo',
+      source: 'startup',
+      cwd: join(raiz, 'executor-externo')
+    }, env)
+    assert.equal(outroEscopo.hookSpecificOutput, undefined)
+
+    for (const input of [
+      { isSidechain: true },
+      { agent_id: 'subagente-1', agent_type: 'executor' }
+    ]) {
+      const executor = await tratarHook({
+        hook_event_name: 'SessionStart',
+        session_id: `sessao-neutra-${Object.keys(input)[0]}`,
+        source: 'startup',
+        cwd: cwdCentral,
+        ...input
+      }, env)
+      assert.equal(executor.hookSpecificOutput, undefined)
+    }
+  } finally {
+    await rm(raiz, { recursive: true, force: true })
+  }
+})
+
 test('sessão ativada preserva a personalidade ao sair para resume e ao retomar', async () => {
   const { raiz, env } = await ambiente()
   const session_id = 'sessao-retomada'
@@ -258,7 +387,7 @@ test('compactação reinjeta a personalidade somente em sessão ativada', async 
 test('retomada recupera ativação perdida somente do comando humano da própria sessão', async () => {
   const { raiz, env } = await ambiente()
   const session_id = 'sessao-recuperada-do-transcript'
-  const transcript_path = join(raiz, 'sessao-recuperada.jsonl')
+  const transcript_path = join(raiz, `${session_id}.jsonl`)
   try {
     await writeFile(transcript_path, `${JSON.stringify({
       type: 'user',
@@ -416,7 +545,11 @@ test('contexto deep permanece inline e preserva personalidade e ajuste explícit
     assert.match(contexto, /AJUSTE EXPLÍCITO DO PROPRIETÁRIO PARA ESTA RESPOSTA/)
     assert.match(contexto, /mais humor nascido deste contexto/)
     assert.match(contexto, /analogia forte que ajude a entender/)
-    assert.match(contexto, /CONTEXTO AUXILIAR TRUNCADO/)
+    assert.doesNotMatch(contexto, /CONTEXTO AUXILIAR TRUNCADO/)
+    assert.ok(contexto.length < 9_500)
+    assert.match(contexto, /CONTEXTO RECUPERADO PARA ESTE TURNO/)
+    assert.match(contexto, /RELEVANT CONFIRMED MEMORY/)
+    assert.match(contexto, /evidência detalhada/i)
     assert.match(contexto, /REGRA CRÍTICA DE PRECEDÊNCIA E ENTREGA/)
     assert.match(contexto, /Responda ao pedido atual como Omni/)
     assert.ok(contexto.trimEnd().endsWith('</omni-contexto-interno>'))
@@ -448,7 +581,8 @@ test('ferramenta reforça âncora compacta sem reinjetar o núcleo inteiro', asy
     assert.match(contexto, /Inventor Cúmplice/)
     assert.match(contexto, /(?:analogia|imagem) científica (?:\/|ou )geek/i)
     assert.doesNotMatch(contexto, /PERSONALIDADE CANÔNICA:/)
-    assert.ok(contexto.length < 1_200)
+    assert.match(contexto, /AMOSTRA DE VOZ/)
+    assert.ok(contexto.length < 1_650)
   } finally {
     await rm(raiz, { recursive: true, force: true })
   }
@@ -479,6 +613,39 @@ test('feedback explícito do proprietário ajusta a resposta seguinte sem reescr
     assert.match(contexto, /analogia forte que ajude a entender/)
     assert.match(contexto, /afaste-se do assistente genérico/)
     assert.match(contexto, /vale para esta resposta/)
+  } finally {
+    await rm(raiz, { recursive: true, force: true })
+  }
+})
+
+test('queixas reais de voz e trabalho devolvido corrigem o mesmo turno', async () => {
+  const { raiz, env } = await ambiente()
+  const session_id = 'sessao-correcao-imediata-real'
+  try {
+    await tratarHook(
+      { hook_event_name: 'UserPromptSubmit', session_id, prompt: '/omni:omni' },
+      env
+    )
+    const voice = await tratarHook({
+      hook_event_name: 'UserPromptSubmit',
+      session_id,
+      origin: 'owner-live',
+      prompt: 'ta todo zoado, nem parece que é o Omni'
+    }, env)
+    assert.match(voice.hookSpecificOutput?.additionalContext, /AJUSTE EXPLÍCITO DO PROPRIETÁRIO/)
+    assert.match(voice.hookSpecificOutput?.additionalContext, /aumente a intensidade da personalidade/i)
+    assert.equal((await lerFeedbackPersonalidade(env.OMNI_HOME)).votes.length, 0)
+
+    const ownership = await tratarHook({
+      hook_event_name: 'UserPromptSubmit',
+      session_id,
+      origin: 'owner-live',
+      prompt: 'mais uma vez ele me mandando fazer coisas'
+    }, env)
+    const context = ownership.hookSpecificOutput?.additionalContext
+    assert.match(context, /CORREÇÃO OPERACIONAL EXPLÍCITA DO PROPRIETÁRIO PARA ESTE TURNO/)
+    assert.match(context, /O Omni investiga as capacidades disponíveis, age/i)
+    assert.match(context, /sem transformar a correção em instruções para o proprietário/i)
   } finally {
     await rm(raiz, { recursive: true, force: true })
   }
@@ -713,11 +880,17 @@ test('candidata exige despacho ate SubagentStart confirmar o inicio real', async
     )
     const context = turn.hookSpecificOutput.additionalContext
     assert.match(context, /AUTOMAÇÃO DE FALHAS/)
+    assert.match(context, /PERSONALIDADE omni-persona-v3-candidate/)
+    assert.match(context, /ADAPTADOR DO CANAL ESCRITO/)
+    assert.match(context, /AUDITORIA E AUTOCORREÇÃO INTERNAS OBRIGATÓRIAS/)
+    assert.match(context, /CONTEXTO RECUPERADO PARA ESTE TURNO/)
+    assert.match(context, /OMNI CONTEXT V1 - FAST/)
+    assert.ok(context.length <= 9_500)
     assert.match(context, /subagente.*segundo plano/i)
     assert.match(context, /failure-dispatch-required/i)
     assert.match(context, /delegação .* está visível/i)
     assert.match(context, /attempts continua em zero.*não alega execução/i)
-    assert.match(context, /não peça nova autorização ao proprietário/i)
+    assert.match(context, /sem repassar esta etapa nem pedir nova autorização ao proprietário/i)
     assert.match(context, /Entregue ao Omni: causa comprovada.*expansão concreta de autoridade/i)
     assert.match(context, /<\/failure-dispatch-briefing>/)
     const automation = JSON.parse(await readFile(caminhoDaAutomacaoFalhas(env.OMNI_HOME), 'utf8'))
@@ -745,6 +918,9 @@ test('candidata exige despacho ate SubagentStart confirmar o inicio real', async
     assert.equal(blocked.decision, 'block')
     assert.match(blocked.reason, /failure-dispatch-not-started/)
     assert.match(blocked.reason, new RegExp(automation.jobs[0].id))
+    assert.match(blocked.reason, /BLOQUEIO OPERACIONAL INTERNO/)
+    assert.match(blocked.reason, /nunca deve ser repetido como ordem ou checklist para o proprietário/i)
+    assert.doesNotMatch(blocked.reason, /(?:^|\n)Inicie agora o executor/mi)
 
     await tratarHook({
       hook_event_name: 'SubagentStart',
@@ -819,6 +995,28 @@ test('terceira falha de ferramenta dispara o despacho sem esperar outro pedido',
   }
 })
 
+test('segundo Stop com despacho pendente preserva a falha auditada sem bloquear em loop', async () => {
+  for (const hook_event_name of ['Stop', 'StopFailure']) {
+    const { raiz, env } = await ambiente()
+    const session_id = `recursao-${hook_event_name}`
+    try {
+      await tratarHook({ hook_event_name: 'UserPromptSubmit', session_id, prompt: '/omni:omni' }, env)
+      for (let index = 1; index <= 3; index += 1) {
+        await registrarFalha(env.OMNI_HOME, { agent: 'omni', action: 'executar Bash', failureClass: 'permission', signature: 'permissao negada ao executar teste local', evidenceId: `recursao-${index}` })
+      }
+      await tratarHook({ hook_event_name: 'UserPromptSubmit', session_id, prompt: 'corrija o arquivo alvo.md' }, env)
+      const blocked = await tratarHook({ hook_event_name, session_id }, env)
+      assert.equal(blocked.decision, 'block')
+      assert.match(blocked.reason, /failure-dispatch-not-started/)
+      const second = await tratarHook({ hook_event_name, session_id, stop_hook_active: true, last_assistant_message: 'Por favor, rode os testes.' }, env)
+      assert.notEqual(second.decision, 'block')
+      const audit = await lerAuditoriaAutocorrecao(env.OMNI_HOME)
+      assert.ok(audit.turns.some(turn => turn.findings.some(finding => finding.code === 'authorized-work-returned-to-owner')), hook_event_name)
+      assert.notEqual(audit.turns.at(-1).state, 'verified')
+    } finally { await rm(raiz, { recursive: true, force: true }) }
+  }
+})
+
 test('StopFailure executa o mesmo gate de auditoria antes de encerrar', async () => {
   const { raiz, env } = await ambiente()
   const session_id = 'sessao-stop-failure-auditado'
@@ -840,6 +1038,7 @@ test('StopFailure executa o mesmo gate de auditoria antes de encerrar', async ()
     assert.match(result.reason, /requested-action-not-executed/)
     assert.match(result.reason, /Inventor Cúmplice/)
     assert.match(result.reason, /servir para qualquer assistente genérico/)
+    assert.match(result.reason, /nunca mande o proprietário executar comandos/i)
   } finally {
     await rm(raiz, { recursive: true, force: true })
   }
@@ -865,6 +1064,8 @@ test('Stop bloqueado preserva a voz da v3 durante a autocorreção', async () =>
     assert.match(result.reason, /requested-action-not-executed/)
     assert.match(result.reason, /Inventor Cúmplice/)
     assert.match(result.reason, /autocorreção não vira memorando corporativo/)
+    assert.match(result.reason, /BLOQUEIO OPERACIONAL INTERNO/)
+    assert.match(result.reason, /nunca mande o proprietário executar comandos/i)
   } finally {
     await rm(raiz, { recursive: true, force: true })
   }

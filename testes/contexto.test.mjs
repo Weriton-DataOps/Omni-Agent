@@ -58,6 +58,25 @@ test('papel operacional e limite do habitat governam fast e deep', async () => {
   }
 })
 
+test('procedimento relevante de VS Code preserva alvo literal e estados verificáveis', async () => {
+  const casa = await mkdtemp(join(tmpdir(), 'omni-plugin-vscode-context-'))
+  try {
+    const context = await montarContexto(casa, {
+      intent: 'abra a sessão do projeto C:\\hub-wp no VS Code'
+    })
+    for (const projection of Object.values(context.projections)) {
+      assert.match(projection.text, /caminho literal prevalece/i)
+      assert.match(projection.text, /code\.cmd --status/i)
+      assert.match(projection.text, /janela aberta.*painel\/sessao Claude.*ListAgents.*briefing entregue/i)
+      assert.match(projection.text, /nunca `MainWindowTitle`/)
+      assert.doesNotMatch(projection.text, /Quando Bash falhar/)
+    }
+    assert.equal(context.sources.find((source) => source.name === 'learned-procedures').items, 1)
+  } finally {
+    await rm(casa, { recursive: true, force: true })
+  }
+})
+
 test('roteamento escolhe fast para conversa direta e deep para análise', async () => {
   const casa = await mkdtemp(join(tmpdir(), 'omni-plugin-routing-'))
   try {

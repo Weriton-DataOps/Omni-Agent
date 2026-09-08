@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
@@ -39,6 +39,23 @@ test('correção do proprietário alimenta falha e melhoria automaticamente', as
     assert.equal(cycle.improvementCandidates[0].destination, 'operational-rule')
   } finally {
     await rm(casa, { recursive: true, force: true })
+  }
+})
+
+test('correção imediata sobrevive mesmo quando a persistência está indisponível', async () => {
+  const raiz = await home()
+  const arquivo = join(raiz, 'bloqueia-diretorio')
+  try {
+    await writeFile(arquivo, 'não é diretório')
+    const observed = await observarPrompt(join(arquivo, 'omni-home'), {
+      session_id: 's-correcao-sem-store',
+      origin: 'owner-live',
+      prompt: 'mais uma vez ele me mandando fazer coisas'
+    })
+    assert.ok(observed.immediateCorrectionIds.includes('premature-refusal'))
+    assert.equal(observed.observationFailure.result, 'failed')
+  } finally {
+    await rm(raiz, { recursive: true, force: true })
   }
 })
 

@@ -8,7 +8,7 @@ import {
   abrirTurnoAuditoria,
   registrarDelegacaoAuditoria
 } from '../runtime/auditoria-autocorrecao.mjs'
-import { lerCicloOperacional } from '../runtime/ciclo-operacional.mjs'
+import { atualizarDelegacao, lerCicloOperacional } from '../runtime/ciclo-operacional.mjs'
 import {
   CONTRATO_PORTA_DELEGACAO,
   criarSolicitacaoDelegacao,
@@ -254,6 +254,34 @@ test('evento atrasado nao regride relato e evento fora de ordem nao pula visibil
   }
 })
 
+test('evento tardio de executor nao reabre delegacao historica arquivada', async () => {
+  const casa = await home()
+  const sessionId = 'neutral-session-archived'
+  try {
+    await abrirTurno(casa, sessionId)
+    const created = await criarSolicitacaoDelegacao(casa, solicitacao(sessionId, 'archived'))
+    const id = created.request.delegationId
+    await atualizarDelegacao(casa, id, 'visible', { evidence: 'visible-archived' })
+    await atualizarDelegacao(casa, id, 'running', { evidence: 'running-archived' })
+    await atualizarDelegacao(casa, id, 'reported', {
+      evidence: 'reported-archived',
+      summary: 'Relato sem prova independente recuperavel.'
+    })
+    await atualizarDelegacao(casa, id, 'archived', {
+      evidence: 'archive-archived',
+      reason: 'Historico sem prova independente.'
+    })
+
+    const late = await receberEventoDelegacao(casa, evento(id, 'started', 'archived-late'))
+    assert.equal(late.result, 'ignored-stale')
+    const cycle = await lerCicloOperacional(casa)
+    assert.equal(cycle.delegations[0].state, 'archived')
+    assert.equal(cycle.delegations[0].finalOutcome, 'historical-unverifiable')
+  } finally {
+    await rm(casa, { recursive: true, force: true })
+  }
+})
+
 test('execucao prepare-and-proceed exige checkpoint e compensacao antes de running', async () => {
   const casa = await home()
   const sessionId = 'neutral-session-checkpoint'
@@ -312,7 +340,7 @@ test('schema da porta e neutro, fechado e reserva verificacao ao Omni', async ()
     await readFile(new URL('../contratos/operacao/ciclo.json', import.meta.url), 'utf8')
   )
   assert.equal(cycle.delegation.executorReportProduces, 'reported')
-  assert.deepEqual(cycle.delegation.inboundCannotProduce, ['verified', 'closed'])
+  assert.deepEqual(cycle.delegation.inboundCannotProduce, ['verified', 'closed', 'archived'])
   assert.equal(cycle.delegation.externalCorrelation, 'delegation-id')
   assert.equal(cycle.delegation.adapterCorrelation.requiresExplicitDelegationId, true)
   assert.equal(cycle.delegation.adapterCorrelation.uncorrelatedEvent, 'rejected-no-state')

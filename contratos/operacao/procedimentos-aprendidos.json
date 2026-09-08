@@ -25,6 +25,18 @@
       },
       "status": "active",
       "learnedAt": "2026-08-27T00:24:25.432Z"
+    },
+    {
+      "id": "improvement-143e3495-ae3a-4a58-837d-0e6eabdc9da2",
+      "category": "project-session-opening",
+      "destination": "procedure",
+      "text": "Ao abrir projeto/sessao no VS Code, o caminho literal prevalece: nunca o substitua por outro projeto nem abra terminal externo. Abra o alvo e verifique todas as janelas com `code.cmd --status`, nunca `MainWindowTitle`. Separe e prove: janela aberta; painel/sessao Claude iniciado; sessao no `ListAgents`; briefing entregue. Alegue so o estado comprovado e execute, sem devolver ao proprietario, cada etapa suportada pela integracao.",
+      "evidence": {
+        "occurrences": 2,
+        "fingerprint": "4aec29ec3cf64147ac31c802cee3404acca1efc57104ca304a7d7399f313e273"
+      },
+      "status": "active",
+      "learnedAt": "2026-08-31T14:30:42.119Z"
     }
   ]
 }

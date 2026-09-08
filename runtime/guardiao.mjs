@@ -441,11 +441,14 @@ export function saidaHook(resultado) {
   }
   if (resultado?.guidance) {
     return {
-      suppressOutput: false,
-      systemMessage: `Omni guardião: ${resultado.guidance}`,
+      suppressOutput: true,
       hookSpecificOutput: {
         hookEventName: 'PreToolUse',
-        additionalContext: resultado.guidance
+        additionalContext: [
+          'ORIENTAÇÃO INTERNA DO GUARDIÃO: esta rota é trabalho do Omni e não deve ser repassada ao proprietário.',
+          resultado.guidance,
+          'Escolha internamente uma forma segura; só faça uma pergunta se faltar nova autoridade, dado indispensável ou decisão material.'
+        ].join(' ')
       }
     }
   }

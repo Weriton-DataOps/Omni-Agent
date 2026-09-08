@@ -1,6 +1,6 @@
 {
   "name": "omni-agent",
-  "version": "0.22.0",
+  "version": "0.22.1",
   "private": true,
   "type": "module",
   "description": "Nucleo cognitivo e plugin do Omni",
@@ -8,10 +8,33 @@
     "node": ">=22"
   },
   "scripts": {
-    "precheck": "node --check runtime/rodada-personalidade.mjs && node --check runtime/executor-eval-personalidade.mjs && node --check runtime/release-autonoma.mjs && node --check runtime/release-gate.mjs",
+    "precheck": "node --check runtime/rodada-personalidade.mjs && node --check runtime/executor-eval-personalidade.mjs && node --check runtime/release-autonoma.mjs && node --check runtime/release-gate.mjs && node --check runtime/sincronizacao-missoes-duraveis.mjs",
     "prepack": "npm run check && npm test && node runtime/release-gate.mjs",
     "release:gate": "node runtime/release-gate.mjs",
-    "check": "node --check runtime/cli.mjs && node --check runtime/memoria.mjs && node --check runtime/contexto.mjs && node --check runtime/recuperacao.mjs && node --check runtime/pipeline-memoria.mjs && node --check runtime/personalidade.mjs && node --check runtime/ajustes-personalidade.mjs && node --check runtime/feedback-personalidade.mjs && node --check runtime/eval-personalidade.mjs && node --check runtime/executor-eval-personalidade.mjs && node --check runtime/release-autonoma.mjs && node --check runtime/eval-comportamental.mjs && node --check runtime/historico-evals.mjs && node --check runtime/persistencia-contexto.mjs && node --check runtime/atalhos.mjs && node --check runtime/falhas.mjs && node --check runtime/automacao-falhas.mjs && node --check runtime/automacao-melhorias.mjs && node --check runtime/autoaperfeicoamento.mjs && node --check runtime/ciclo-operacional.mjs && node --check runtime/porta-delegacao.mjs && node --check runtime/adaptador-claude-delegacao.mjs && node --check runtime/observador.mjs && node --check runtime/evolucao.mjs && node --check runtime/varredura-diaria.mjs && node --check runtime/integridade-release.mjs && node --check runtime/versao.mjs && node --check runtime/atualizacao.mjs && node --check runtime/auditoria-autocorrecao.mjs && node --check runtime/auditoria-sistema.mjs && node --check runtime/passe.mjs && node --check runtime/guardiao.mjs && node --check runtime/hook-contexto.mjs && node --check runtime/hook-varredura.mjs",
-    "test": "node --test testes/*.test.mjs"
+    "typecheck": "tsc -p tsconfig.json",
+    "clean:build": "node scripts/clean-build.mjs",
+    "clean:dist": "node scripts/clean-build.mjs --dist",
+    "clean:test:dist": "node scripts/clean-build.mjs --tests",
+    "generate:authority": "node scripts/generate-authority-contract.mjs --write",
+    "verify:generated": "node scripts/generate-authority-contract.mjs",
+    "contracts:check": "node scripts/check-contract-catalog.mjs",
+    "architecture:check": "node scripts/check-architecture.mjs",
+    "package:check": "node scripts/check-package.mjs",
+    "build:ts": "npm run clean:dist && tsc -p tsconfig.build.json",
+    "build": "npm run build:ts",
+    "build:test:ts": "npm run clean:test:dist && tsc -p tsconfig.test.json",
+    "check": "npm run verify:generated && npm run contracts:check && npm run architecture:check && npm run typecheck && node --check runtime/cli.mjs && node --check runtime/memoria.mjs && node --check runtime/contexto.mjs && node --check runtime/recuperacao.mjs && node --check runtime/pipeline-memoria.mjs && node --check runtime/sincronizacao-memoria-duravel.mjs && node --check runtime/personalidade.mjs && node --check runtime/ajustes-personalidade.mjs && node --check runtime/feedback-personalidade.mjs && node --check runtime/eval-personalidade.mjs && node --check runtime/executor-eval-personalidade.mjs && node --check runtime/release-autonoma.mjs && node --check runtime/eval-comportamental.mjs && node --check runtime/historico-evals.mjs && node --check runtime/persistencia-contexto.mjs && node --check runtime/atalhos.mjs && node --check runtime/falhas.mjs && node --check runtime/automacao-falhas.mjs && node --check runtime/automacao-melhorias.mjs && node --check runtime/autoaperfeicoamento.mjs && node --check runtime/ciclo-operacional.mjs && node --check runtime/porta-delegacao.mjs && node --check runtime/adaptador-claude-delegacao.mjs && node --check runtime/observador.mjs && node --check runtime/evolucao.mjs && node --check runtime/varredura-diaria.mjs && node --check runtime/integridade-release.mjs && node --check runtime/versao.mjs && node --check runtime/atualizacao.mjs && node --check runtime/auditoria-autocorrecao.mjs && node --check runtime/auditoria-sistema.mjs && node --check runtime/telemetria-autocorrecao.mjs && node --check runtime/passe.mjs && node --check runtime/guardiao.mjs && node --check runtime/hook-contexto.mjs && node --check runtime/hook-reconciliacao.mjs && node --check runtime/hook-varredura.mjs",
+    "pretest": "npm run build:ts && npm run build:test:ts",
+    "test": "node --test --test-concurrency=1 testes/*.test.mjs && node --test --test-concurrency=1 .test-dist/testes/*.test.js",
+    "test:ts": "npm run build:ts && npm run build:test:ts && node --test .test-dist/testes/*.test.js",
+    "test:dist": "npm run build:ts && node --test testes/dist-production.test.mjs",
+    "verify:build": "node scripts/verify-deterministic-build.mjs",
+    "verify": "npm run contracts:check && npm run architecture:check && npm run check && npm run build:ts && npm run package:check && npm test && npm run test:dist && npm run verify:build"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.1",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
+    "typescript": "7.0.2"
   }
 }

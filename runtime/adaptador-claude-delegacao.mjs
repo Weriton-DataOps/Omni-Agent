@@ -19,6 +19,8 @@ import {
   receberEventoDelegacao
 } from './porta-delegacao.mjs'
 
+const TERMINAL_DELEGATION_STATES = new Set(['verified', 'closed', 'failed', 'cancelled', 'archived'])
+
 function hash(value) {
   return createHash('sha256').update(String(value ?? ''), 'utf8').digest('hex')
 }
@@ -109,7 +111,7 @@ export async function contextoAutomacaoFalhasClaude(
     `[failure-dispatch-required] AUTOMAÇÃO DE FALHAS: o trabalho ${dispatch.job.id} continua obrigatório até o adaptador registrar um início real.`,
     `Delegação explícita: ${dispatch.request.delegationId}. O briefing está visível abaixo.`,
     'O runtime registrou `dispatch-required`; attempts continua em zero e isso não alega execução.',
-    'Inicie agora um subagente em segundo plano com o briefing integral abaixo. Não peça nova autorização ao proprietário:',
+    'O adaptador interno deve iniciar agora um subagente em segundo plano com o briefing integral abaixo, sem repassar esta etapa nem pedir nova autorização ao proprietário:',
     '<failure-dispatch-briefing>',
     dispatch.prompt,
     '</failure-dispatch-briefing>'
@@ -129,7 +131,7 @@ export async function contextoAutomacaoMelhoriasClaude(
   return [
     `[implementation-dispatch-required] AUTOCORRECAO OPERACIONAL: o trabalho ${dispatch.job.id} permanece aberto ate patch, testes, recibo auditado e release instalada.`,
     `Delegacao explicita: ${dispatch.request.delegationId}. O briefing integral esta visivel abaixo.`,
-    'Inicie agora um subagente em segundo plano. A autoridade permanente cobre somente correcao reversivel no repositorio canonico do Omni; nao peca nova aprovacao.',
+    'O adaptador interno deve iniciar agora um subagente em segundo plano. A autoridade permanente cobre somente correcao reversivel no repositorio canonico do Omni; esta etapa nao deve ser repassada nem pedir nova aprovacao ao proprietario.',
     '<operational-improvement-dispatch-briefing>',
     dispatch.prompt,
     '</operational-improvement-dispatch-briefing>'
@@ -212,6 +214,15 @@ export async function adaptarInicioSubagenteClaude(casa, input, { at } = {}) {
   if (delegation.sessionFingerprint !== hash(input?.session_id ?? 'session-unknown')) {
     throw new Error('Inicio Claude nao corresponde a delegacao da sessao atual.')
   }
+  if (TERMINAL_DELEGATION_STATES.has(delegation.state)) {
+    return {
+      result: 'ignored-stale',
+      delegation,
+      audit: null,
+      automation: null,
+      correlationSource: binding.source
+    }
+  }
 
   const transition = await receberEventoDelegacao(casa, evento({
     delegationId: binding.delegationId,
@@ -281,6 +292,9 @@ export async function adaptarFimSubagenteClaude(casa, input, { at } = {}) {
   const delegation = cycle.delegations.find((item) => item.id === delegationId)
   if (!delegation || delegation.sessionFingerprint !== hash(input?.session_id ?? 'session-unknown')) {
     throw new Error('Relato Claude nao corresponde a delegacao da sessao atual.')
+  }
+  if (TERMINAL_DELEGATION_STATES.has(delegation.state)) {
+    return { result: 'ignored-stale', delegation, audit: null, automation: null }
   }
 
   const audit = await registrarDelegacaoAuditoria(casa, input, 'reported', { at })

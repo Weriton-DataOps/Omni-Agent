@@ -84,7 +84,10 @@ test('formas historicamente ruins abstêm com orientação e nunca negam', () =>
     assert.ok(resultado.guidance)
     const saida = saidaHook(resultado)
     assert.equal(saida.hookSpecificOutput.permissionDecision, undefined)
-    assert.match(saida.systemMessage, /Omni guardião/)
+    assert.equal(saida.suppressOutput, true)
+    assert.equal(saida.systemMessage, undefined)
+    assert.match(saida.hookSpecificOutput.additionalContext, /ORIENTAÇÃO INTERNA DO GUARDIÃO/)
+    assert.match(saida.hookSpecificOutput.additionalContext, /não deve ser repassada ao proprietário/i)
   }
 })
 

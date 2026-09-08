@@ -8,6 +8,9 @@ import test from 'node:test'
 import {
   calcularFingerprintPayload,
   lerIdentidadeRelease,
+  listarArquivosDoPayload,
+  listarEntrypointsReferenciados,
+  verificarCoberturaEntrypoints,
   verificarIntegridadeRelease,
   verificarIntegridadePayload
 } from '../runtime/integridade-release.mjs'
@@ -16,7 +19,7 @@ const root = dirname(dirname(fileURLToPath(import.meta.url)))
 
 async function fixture() {
   const path = await mkdtemp(join(tmpdir(), 'omni-integrity-'))
-  for (const area of ['contratos', 'hooks', 'runtime', 'scripts', 'skills']) {
+  for (const area of ['contratos', 'dist', 'hooks', 'runtime', 'scripts', 'skills']) {
     await mkdir(join(path, area), { recursive: true })
     await writeFile(join(path, area, 'arquivo.txt'), `${area}\n`, 'utf8')
   }
@@ -35,6 +38,90 @@ test('fingerprint é determinístico e detecta qualquer drift do payload', async
     const drift = await verificarIntegridadePayload(path, first.fingerprint)
     assert.equal(drift.status, 'drifted')
     assert.notEqual(drift.fingerprint, first.fingerprint)
+  } finally {
+    await rm(path, { recursive: true, force: true })
+  }
+})
+
+test('payload cobre executáveis em adaptadores e no emit TypeScript dist', async () => {
+  const path = await fixture()
+  try {
+    await mkdir(join(path, 'adaptadores'), { recursive: true })
+    await mkdir(join(path, 'dist', 'entrypoints'), { recursive: true })
+    await writeFile(join(path, 'adaptadores', 'legacy.mjs'), 'export const legacy = true\n', 'utf8')
+    await writeFile(join(path, 'dist', 'entrypoints', 'hook.js'), 'export const hook = true\n', 'utf8')
+    const files = await listarArquivosDoPayload(path)
+    assert.ok(files.includes('adaptadores/legacy.mjs'))
+    assert.ok(files.includes('dist/entrypoints/hook.js'))
+    await rm(join(path, 'dist'), { recursive: true, force: true })
+    await assert.rejects(listarArquivosDoPayload(path), /Raiz obrigatoria do payload ausente: dist/)
+  } finally {
+    await rm(path, { recursive: true, force: true })
+  }
+})
+
+test('gate enumera entrypoints dos hooks, scripts, package e executáveis auto declarados', async () => {
+  const path = await fixture()
+  try {
+    await mkdir(join(path, 'adaptadores'), { recursive: true })
+    await mkdir(join(path, 'dist', 'entrypoints'), { recursive: true })
+    await mkdir(join(path, '.claude-plugin'), { recursive: true })
+    await writeFile(
+      join(path, 'runtime', 'cli.mjs'),
+      "import '../dist/entrypoints/hook.js'\nexport const cli = true\n",
+      'utf8'
+    )
+    await writeFile(
+      join(path, 'adaptadores', 'authority.mjs'),
+      "if (process.argv[1]) process.stdout.write('ready')\n",
+      'utf8'
+    )
+    await writeFile(join(path, 'dist', 'entrypoints', 'hook.js'), 'export const hook = true\n', 'utf8')
+    await writeFile(
+      join(path, 'hooks', 'hooks.json'),
+      JSON.stringify({
+        hooks: {
+          SessionStart: [{
+            matcher: '',
+            hooks: [{
+              type: 'command',
+              command: 'node',
+              args: ['${CLAUDE_PLUGIN_ROOT}/dist/entrypoints/hook.js']
+            }]
+          }]
+        }
+      }),
+      'utf8'
+    )
+    await writeFile(
+      join(path, 'package.json'),
+      JSON.stringify({ scripts: { check: 'node --check runtime/cli.mjs' } }),
+      'utf8'
+    )
+    await writeFile(
+      join(path, 'scripts', 'omni.ps1'),
+      "$cli = Join-Path $raiz 'runtime\\cli.mjs'\n",
+      'utf8'
+    )
+    const entrypoints = await listarEntrypointsReferenciados(path)
+    assert.deepEqual(entrypoints.map((item) => item.path), [
+      'adaptadores/authority.mjs',
+      'dist/entrypoints/hook.js',
+      'runtime/cli.mjs'
+    ])
+    assert.deepEqual(
+      entrypoints.find((item) => item.path === 'dist/entrypoints/hook.js').sources,
+      ['hooks/hooks.json', 'import:runtime/cli.mjs']
+    )
+    assert.equal((await verificarCoberturaEntrypoints(path)).ok, true)
+
+    const hooks = JSON.parse(await readFile(join(path, 'hooks', 'hooks.json'), 'utf8'))
+    hooks.hooks.SessionStart[0].hooks[0].args[0] = '${CLAUDE_PLUGIN_ROOT}/dist/entrypoints/missing.js'
+    await writeFile(join(path, 'hooks', 'hooks.json'), JSON.stringify(hooks), 'utf8')
+    const broken = await verificarCoberturaEntrypoints(path)
+    assert.deepEqual(broken.missing, ['dist/entrypoints/missing.js'])
+    assert.deepEqual(broken.outsidePayload, ['dist/entrypoints/missing.js'])
+    assert.equal(broken.ok, false)
   } finally {
     await rm(path, { recursive: true, force: true })
   }

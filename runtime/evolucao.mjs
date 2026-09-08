@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { access, mkdir, open, readFile, realpath, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import { isAbsolute, join, resolve, sep } from 'node:path'
 
+import { deriveOperationalArtifacts } from '../dist/core/release/release-state.js'
 import {
   fingerprintSemanticoMelhoria,
   lerCicloOperacional,
@@ -27,7 +28,7 @@ const SOURCE_CHANGE_DESTINATIONS = {
   'runtime-fix': 'runtime',
   capability: 'skills e contratos/capacidades/catalogo.json'
 }
-const PAYLOAD_ROOTS = new Set(['contratos', 'hooks', 'runtime', 'scripts', 'skills'])
+const PAYLOAD_ROOTS = new Set(['adaptadores', 'contratos', 'dist', 'hooks', 'runtime', 'scripts', 'skills', 'src'])
 
 function hash(value) {
   return createHash('sha256').update(String(value ?? ''), 'utf8').digest('hex')
@@ -40,7 +41,7 @@ function agora(value) {
 function caminhoPortatil(value) {
   const path = String(value ?? '').replace(/\\/g, '/').replace(/^\.\//, '')
   if (!path || isAbsolute(path) || path.split('/').includes('..') || !PAYLOAD_ROOTS.has(path.split('/')[0])) {
-    throw new Error('O artefato precisa usar caminho portatil dentro do payload do Omni.')
+    throw new Error('O artefato precisa usar caminho portatil dentro das fontes ou do payload do Omni.')
   }
   return path
 }
@@ -359,11 +360,16 @@ export async function registrarImplementacaoOperacional(casa, id, repoRoot, arti
 
 async function localizarEntradaInstalada(pluginRoot, candidate) {
   const reference = candidate.artifactRef
-  const target = await resolverArtefato(pluginRoot, caminhoPortatil(reference.path))
+  const sourcePath = caminhoPortatil(reference.path)
+  const installedPath = reference.kind === 'source-file' && sourcePath.startsWith('src/')
+    ? deriveOperationalArtifacts(sourcePath).find((path) => path !== sourcePath)
+    : sourcePath
+  if (!installedPath) return null
+  const target = await resolverArtefato(pluginRoot, caminhoPortatil(installedPath))
   if (reference.kind === 'source-file') {
     if (!reference.implementationReceipt) return null
     const raw = await readFile(target)
-    if (hash(raw) !== reference.contentFingerprint) return null
+    if (installedPath === sourcePath && hash(raw) !== reference.contentFingerprint) return null
     return { fingerprint: hash(raw), entry: null }
   }
   const document = JSON.parse(await readFile(target, 'utf8'))
@@ -465,18 +471,15 @@ export async function registrarReadbackOperacionalInstalado(casa, {
   }
   const cycle = await lerCicloOperacional(casa)
   let verified = 0
-  let superseded = 0
   const verifiedAt = agora(now)
   const installedByCandidate = new Map()
-  const installedCandidateIds = new Set()
   for (const candidate of cycle.improvementCandidates) {
-    if (!candidate.artifactRef || !['materialized-pending-release', 'installed-verified'].includes(candidate.status)) {
+    if (!candidate.artifactRef || !['materialized-pending-release', 'installed-verified', 'loaded-verified'].includes(candidate.status)) {
       continue
     }
     const installed = await localizarEntradaInstalada(pluginRoot, candidate)
     if (!installed) continue
     installedByCandidate.set(candidate.id, installed)
-    installedCandidateIds.add(candidate.id)
   }
   for (const candidate of cycle.improvementCandidates) {
     if (candidate.status !== 'materialized-pending-release' || !candidate.artifactRef) continue
@@ -494,15 +497,74 @@ export async function registrarReadbackOperacionalInstalado(casa, {
     }, { at: now })
     verified += 1
   }
+  return { result: 'checked-installed', verified, superseded: 0, version, payloadFingerprint }
+}
+
+export async function registrarReadbackOperacionalCarregado(casa, {
+  pluginRoot,
+  version,
+  payloadFingerprint,
+  verificationFingerprint,
+  now
+} = {}) {
+  if (!isAbsolute(pluginRoot ?? '')) throw new Error('O runtime carregado precisa usar caminho absoluto.')
+  if (typeof version !== 'string' || !version.trim()) throw new Error('A versao carregada e obrigatoria.')
+  if (!/^[a-f0-9]{64}$/.test(payloadFingerprint ?? '') || !/^[a-f0-9]{64}$/.test(verificationFingerprint ?? '')) {
+    throw new Error('O readback carregado exige fingerprints SHA-256 do payload e da verificacao.')
+  }
+  const loadedRoot = await realpath(resolve(pluginRoot))
+  const integrity = await verificarIntegridadeRelease(loadedRoot)
+  if (
+    integrity.status !== 'verified' ||
+    integrity.versionMatchesManifest !== true ||
+    integrity.releaseVersion !== version ||
+    integrity.fingerprint !== payloadFingerprint ||
+    integrity.declaredFingerprint !== payloadFingerprint
+  ) throw new Error('O runtime carregado nao corresponde a release instalada integra.')
+
+  const cycle = await lerCicloOperacional(casa)
+  const verifiedAt = agora(now)
+  const loadedByCandidate = new Map()
+  const loadedCandidateIds = new Set()
+  let verified = 0
+  let superseded = 0
   for (const candidate of cycle.improvementCandidates) {
-    if (candidate.status !== 'materialized-pending-release' || !candidate.artifactRef) continue
-    if (installedByCandidate.has(candidate.id)) continue
+    if (!candidate.artifactRef || !['installed-verified', 'loaded-verified'].includes(candidate.status)) continue
+    const loaded = await localizarEntradaInstalada(loadedRoot, candidate)
+    if (!loaded) continue
+    if (
+      candidate.installedReadback?.version !== version ||
+      candidate.installedReadback?.payloadFingerprint !== payloadFingerprint ||
+      candidate.installedReadback?.artifactFingerprint !== loaded.fingerprint
+    ) continue
+    loadedByCandidate.set(candidate.id, loaded)
+    loadedCandidateIds.add(candidate.id)
+    if (candidate.status === 'installed-verified') {
+      await marcarMelhoriaOperacional(casa, candidate.id, {
+        status: 'loaded-verified',
+        loadedReadback: {
+          verified: true,
+          root: loadedRoot,
+          version,
+          payloadFingerprint,
+          artifactFingerprint: loaded.fingerprint,
+          verificationFingerprint,
+          verifiedAt
+        }
+      }, { at: now })
+      verified += 1
+    }
+  }
+
+  for (const candidate of cycle.improvementCandidates) {
+    if (!['materialized-pending-release', 'installed-verified'].includes(candidate.status) || !candidate.artifactRef) continue
+    if (loadedByCandidate.has(candidate.id)) continue
     const supersededBy = await localizarSupersessaoInstalada(
-      pluginRoot,
+      loadedRoot,
       candidate,
       cycle,
-      installedByCandidate,
-      installedCandidateIds,
+      loadedByCandidate,
+      loadedCandidateIds,
       { version, payloadFingerprint, verifiedAt }
     )
     if (!supersededBy) continue
@@ -512,5 +574,5 @@ export async function registrarReadbackOperacionalInstalado(casa, {
     }, { at: now })
     superseded += 1
   }
-  return { result: 'checked', verified, superseded, version, payloadFingerprint }
+  return { result: 'checked-loaded', verified, superseded, root: loadedRoot, version, payloadFingerprint }
 }

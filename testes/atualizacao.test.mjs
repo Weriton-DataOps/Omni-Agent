@@ -83,7 +83,7 @@ function runner({ before = '0.19.0', after = '0.20.0', marketplace = canonicalMa
   }
 }
 
-test('atualiza, valida e orienta a aplicação conforme a interface', async () => {
+test('atualiza e mantém a ativação carregada como trabalho interno', async () => {
   const loadedRoot = await pluginCarregadoNaVersao('0.19.0')
   try {
     const fake = runner({ installPath: 'C:\\installed\\omni-0.20.0' })
@@ -99,19 +99,23 @@ test('atualiza, valida e orienta a aplicação conforme a interface', async () =
     recordOperationalReadback: emptyReadback
   })
 
-  assert.equal(result.status, 'updated')
+  assert.equal(result.status, 'awaiting-reload')
   assert.equal(result.previousInstalledVersion, '0.19.0')
   assert.equal(result.installedVersion, '0.20.0')
   assert.equal(result.installedFingerprint, 'a'.repeat(64))
   assert.equal(result.installedRoot, 'C:\\installed\\omni-0.20.0')
   assert.equal(result.reloadRequired, true)
-  assert.equal(result.applyInstructions.vscode.command, '/plugin')
-  assert.equal(result.applyInstructions.vscode.action, 'Clique em Restart.')
-  assert.equal(result.applyInstructions.terminal.command, '/reload-plugins')
-  assert.equal(result.applyInstructions.preservesSession, true)
+  assert.deepEqual(result.reloadWork, {
+    status: 'awaiting-host-initialization',
+    owner: 'omni',
+    ownerActionRequired: false,
+    currentProcessCanReloadItself: false,
+    completionEvidence: 'loaded-runtime-readback-on-session-start'
+  })
   assert.deepEqual(result.verifiedBy, ['claude-plugin-list', 'installed-root-integrity', 'github-release-contract', 'payload-fingerprint'])
   assert.deepEqual(result.changes, [{ version: '0.20.0', change: 'Mudança testada.' }])
     assert.ok(fake.calls.some(({ args }) => args.includes('update') && args.includes('omni@omni-hub')))
+    assert.equal(fake.calls.some(({ args }) => args.includes('/reload-plugins')), false)
   } finally {
     await rm(loadedRoot, { recursive: true, force: true })
   }
@@ -134,7 +138,7 @@ test('versão atual é validada sem pedir nova sessão', async () => {
 
   assert.equal(result.status, 'current')
   assert.equal(result.reloadRequired, false)
-  assert.equal(result.applyInstructions, null)
+  assert.equal(result.reloadWork, null)
     assert.deepEqual(result.changes, [])
   } finally {
     await rm(loadedRoot, { recursive: true, force: true })
@@ -380,9 +384,9 @@ test('registro da 0.19.1 descreve o fechamento auditável das conexões', async 
   assert.match(text, /auditorias de 26\/08.*sete dias/i)
 })
 
-test('resumo público contém somente transição, mudanças e recarga necessária', () => {
+test('resumo público explicita espera do host sem inventar worker nem comando humano', () => {
   const summary = resumirAtualizacaoPublica({
-    status: 'updated',
+    status: 'awaiting-reload',
     previousInstalledVersion: '0.13.0',
     installedVersion: '0.13.1',
     changes: [{ version: '0.13.1', change: 'Saída de atualização simplificada.' }],
@@ -390,14 +394,39 @@ test('resumo público contém somente transição, mudanças e recarga necessár
     repository: 'não deve aparecer',
     verifiedBy: ['interno']
   })
-  assert.deepEqual(Object.keys(summary), ['status', 'transition', 'changes', 'reload'])
+  assert.deepEqual(Object.keys(summary), ['status', 'transition', 'changes', 'reloadWork'])
   assert.equal(JSON.stringify(summary).includes('não deve aparecer'), false)
   assert.deepEqual(summary.changes, ['Saída de atualização simplificada.'])
-  assert.equal(summary.reload.preservesSession, true)
+  assert.equal(summary.reloadWork.owner, 'omni')
+  assert.equal(summary.reloadWork.status, 'awaiting-host-initialization')
+  assert.equal(summary.reloadWork.ownerActionRequired, false)
+  assert.equal(summary.reloadWork.currentProcessCanReloadItself, false)
+  assert.doesNotMatch(
+    JSON.stringify(summary),
+    /\b(?:clique|abra|execute|rode|recarregue|reinicie|use)\b|\/plugin|\/reload-plugins|\brestart\b/i
+  )
   assert.deepEqual(
     resumirAtualizacaoPublica({ status: 'current' }),
     { status: 'current', message: 'Nenhuma atualização disponível.' }
   )
+})
+
+test('limitação técnica não fabrica worker ou aprovação que não resolveria a recarga', () => {
+  const summary = resumirAtualizacaoPublica({
+    status: 'awaiting-reload',
+    previousInstalledVersion: '0.19.0',
+    installedVersion: '0.20.0',
+    changes: [],
+    reloadRequired: true,
+    reloadBlocker: {
+      kind: 'owner-authority-required',
+      technicalImpossibility: true
+    }
+  })
+  assert.equal(summary.reloadWork.status, 'awaiting-host-initialization')
+  assert.equal(summary.reloadWork.ownerActionRequired, false)
+  assert.equal(summary.reloadWork.question, undefined)
+  assert.doesNotMatch(JSON.stringify(summary), /\/plugin|\/reload-plugins|clique|recarregue|reinicie/i)
 })
 
 test('recusa marketplace com a identidade certa apontando para outro repositório', async () => {
@@ -426,6 +455,24 @@ test('localizador respeita executável explícito validado', async () => {
   })
   assert.equal(executable, 'C:\\Claude\\claude.exe')
   assert.deepEqual(calls[0].args, ['--version'])
+})
+
+test('localizador relata capacidade ausente sem mandar o proprietário instalar ou configurar', async () => {
+  await assert.rejects(
+    localizarClaudeCli({
+      env: {},
+      run: () => ({ status: 1, stdout: '', stderr: 'indisponível' })
+    }),
+    (error) => {
+      assert.equal(error.code, 'CLAUDE_CLI_UNAVAILABLE')
+      assert.match(error.message, /não foi localizado automaticamente/i)
+      assert.match(error.message, /atualização não foi executada/i)
+      assert.match(error.message, /retomada automática não confirmada.*executor disponível/i)
+      assert.doesNotMatch(error.message, /worker interno|será retomada|vou retomar/i)
+      assert.doesNotMatch(error.message, /\b(?:instale|defina|configure|abra|execute|clique)\b/i)
+      return true
+    }
+  )
 })
 
 test('registro da 0.19.2 descreve o fim do diagnostico imutavel e do sucesso falso', async () => {

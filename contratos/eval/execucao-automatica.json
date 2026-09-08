@@ -11,7 +11,7 @@
     "provider": "anthropic-claude-code",
     "model": "sonnet",
     "effort": "medium",
-    "chunkSize": 26,
+    "chunkSize": 28,
     "timeoutMs": 180000,
     "maxBudgetUsdPerCall": 0.75,
     "tools": [],

@@ -312,10 +312,16 @@ function objetivoDeclarado(prompt) {
 
 export async function observarPrompt(casa, input) {
   const prompt = texto(input?.prompt, 1000)
-  if (!prompt) return { event: null, corrections: [], personalityFeedback: null }
+  if (!prompt) return { event: null, corrections: [], immediateCorrectionIds: [], personalityFeedback: null }
   const corrections = []
   const origin = input?.origin ?? 'owner-live'
   const ownerOrigin = origin === 'owner-live' || origin === 'owner-transcript'
+  const detectedCorrections = ownerOrigin
+    ? CORRECOES.filter((item) => item.matches ? item.matches(prompt) : item.pattern.test(prompt))
+    : []
+  // A aplicação no turno atual não depende de os stores de aprendizado
+  // estarem graváveis. Persistência e promoção continuam best-effort e gated.
+  const immediateCorrectionIds = detectedCorrections.map((item) => item.id)
   const personalityFeedback = await observarVotoPersonalidade(casa, {
     sessionId: input.session_id,
     feedback: input.prompt,
@@ -366,9 +372,7 @@ export async function observarPrompt(casa, input) {
         materialization
       })
     }
-    for (const correction of ownerOrigin
-      ? CORRECOES.filter((item) => item.matches ? item.matches(prompt) : item.pattern.test(prompt))
-      : []) {
+    for (const correction of detectedCorrections) {
       const evidenceId = `correction:${input.session_id}:${correction.id}:${hash(prompt)}`
       const failure = await registrarFalha(casa, {
         agent: 'omni',
@@ -396,11 +400,12 @@ export async function observarPrompt(casa, input) {
         materialization
       })
     }
-    return { event, corrections, personalityFeedback, observationFailure: null }
+    return { event, corrections, immediateCorrectionIds, personalityFeedback, observationFailure: null }
   } catch (error) {
     return {
       event,
       corrections,
+      immediateCorrectionIds,
       personalityFeedback,
       observationFailure: {
         result: 'failed',

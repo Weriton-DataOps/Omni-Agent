@@ -14,13 +14,14 @@ import {
 import {
   materializarMelhoriaOperacional,
   registrarImplementacaoOperacional,
+  registrarReadbackOperacionalCarregado,
   registrarReadbackOperacionalInstalado
 } from '../runtime/evolucao.mjs'
 import { calcularFingerprintPayload } from '../runtime/integridade-release.mjs'
 import { abrirTurnoAuditoria, registrarAcaoAuditoria } from '../runtime/auditoria-autocorrecao.mjs'
 
 async function prepararReleaseIntegra(repo, version = '9.9.9') {
-  for (const area of ['contratos', 'hooks', 'runtime', 'scripts', 'skills']) {
+  for (const area of ['contratos', 'dist', 'hooks', 'runtime', 'scripts', 'skills']) {
     await mkdir(join(repo, area), { recursive: true })
   }
   await mkdir(join(repo, '.claude-plugin'), { recursive: true })
@@ -294,7 +295,7 @@ test('reforco posterior nao regride melhoria materializada para ready', async ()
   }
 })
 
-test('readback operacional so torna efetiva uma entrada presente em release instalada integra', async () => {
+test('readback operacional separa instalacao de efeito no runtime carregado', async () => {
   const base = await mkdtemp(join(tmpdir(), 'omni-evolution-readback-'))
   const casa = join(base, 'home')
   const repo = join(base, 'repo')
@@ -326,14 +327,25 @@ test('readback operacional so torna efetiva uma entrada presente em release inst
     assert.equal(installed.status, 'installed-verified')
     assert.equal(installed.installedReadback.payloadFingerprint, fingerprint)
 
+    const loadedReadback = await registrarReadbackOperacionalCarregado(casa, {
+      pluginRoot: repo,
+      version: '9.9.9',
+      payloadFingerprint: fingerprint,
+      verificationFingerprint: '7'.repeat(64)
+    })
+    assert.equal(loadedReadback.verified, 1)
+    const loaded = (await lerCicloOperacional(casa)).improvementCandidates[0]
+    assert.equal(loaded.status, 'loaded-verified')
+    assert.match(loaded.loadedReadback.root, /[\\/]repo$/)
+
     const reinforced = await proporMelhoriaOperacional(casa, input)
-    assert.equal(reinforced.candidate.status, 'installed-verified')
+    assert.equal(reinforced.candidate.status, 'loaded-verified')
   } finally {
     await rm(base, { recursive: true, force: true })
   }
 })
 
-test('readback encerra como superseded a semantica antiga substituida explicitamente por candidata instalada', async () => {
+test('somente readback carregado encerra como superseded a semantica antiga substituida', async () => {
   const base = await mkdtemp(join(tmpdir(), 'omni-evolution-superseded-'))
   const casa = join(base, 'home')
   const repo = join(base, 'repo')
@@ -391,7 +403,20 @@ test('readback encerra como superseded a semantica antiga substituida explicitam
       now: '2026-08-28T18:00:00.000Z'
     })
     assert.equal(readback.verified, 1)
-    assert.equal(readback.superseded, 1)
+    assert.equal(readback.superseded, 0)
+    const afterInstall = await lerCicloOperacional(casa)
+    assert.equal(afterInstall.improvementCandidates.find((item) => item.id === oldReady.candidate.id).status, 'materialized-pending-release')
+    assert.equal(afterInstall.improvementCandidates.find((item) => item.id === replacementReady.candidate.id).status, 'installed-verified')
+
+    const loadedReadback = await registrarReadbackOperacionalCarregado(casa, {
+      pluginRoot: repo,
+      version: '9.9.9',
+      payloadFingerprint: fingerprint,
+      verificationFingerprint: '7'.repeat(64),
+      now: '2026-08-28T18:01:00.000Z'
+    })
+    assert.equal(loadedReadback.verified, 1)
+    assert.equal(loadedReadback.superseded, 1)
     const cycle = await lerCicloOperacional(casa)
     const old = cycle.improvementCandidates.find((item) => item.id === oldReady.candidate.id)
     const replacement = cycle.improvementCandidates.find((item) => item.id === replacementReady.candidate.id)
@@ -401,8 +426,8 @@ test('readback encerra como superseded a semantica antiga substituida explicitam
     assert.equal(old.supersededBy.replacementCandidateId, replacement.id)
     assert.equal(old.supersededBy.canonicalEntryId, old.id)
     assert.equal(old.supersededBy.payloadFingerprint, fingerprint)
-    assert.equal(old.transitionHistory.at(-1).kind, 'installed-semantic-supersession')
-    assert.equal(replacement.status, 'installed-verified')
+    assert.equal(old.transitionHistory.at(-1).kind, 'loaded-semantic-supersession')
+    assert.equal(replacement.status, 'loaded-verified')
 
     const reinforced = await proporMelhoriaOperacional(casa, oldInput)
     assert.equal(reinforced.candidate.status, 'superseded')

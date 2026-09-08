@@ -6,27 +6,32 @@ import { casaDoOmni } from './memoria.mjs'
 
 const raiz = dirname(dirname(fileURLToPath(import.meta.url)))
 
+export function classificarAchadosRelease(findings = []) {
+  if (!Array.isArray(findings)) throw new TypeError('Achados da release precisam ser uma lista.')
+  const errors = findings.filter((item) => item.severity === 'error')
+  const blockingErrors = errors.filter((item) => item.releaseBlocking !== false)
+  const recoverableErrors = errors.filter((item) => item.releaseBlocking === false)
+  return {
+    errors,
+    blockingErrors,
+    recoverableErrors,
+    warnings: findings.filter((item) => item.severity === 'warning')
+  }
+}
+
 export async function auditarAntesDaRelease({
   casa = casaDoOmni(),
   pluginRoot = raiz,
   at
 } = {}) {
   const audit = await auditarSaudeSistema(casa, { pluginRoot, repair: false, at })
-  const errors = audit.run.findings.filter((item) => item.severity === 'error')
-  const recoverableErrors = errors.filter((item) =>
-    item.code === 'unresolved-turn-findings' && item.releaseBlocking === false
-  )
-  const recoverable = new Set(recoverableErrors)
-  const blockingErrors = errors.filter((item) => !recoverable.has(item))
+  const classified = classificarAchadosRelease(audit.run.findings)
   return {
-    ok: blockingErrors.length === 0,
+    ok: classified.blockingErrors.length === 0,
     trigger: 'before-release',
     auditId: audit.run.id,
     status: audit.run.status,
-    errors,
-    blockingErrors,
-    recoverableErrors,
-    warnings: audit.run.findings.filter((item) => item.severity === 'warning'),
+    ...classified,
     rawConversationStored: false
   }
 }

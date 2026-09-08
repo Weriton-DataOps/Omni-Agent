@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 const raiz = dirname(dirname(fileURLToPath(import.meta.url)))
 
 export const TEXTO_DIRETIVA_PERSONALIDADE = Object.freeze({
+  'maintain-personality-continuity': 'Mantenha a voz propria ao longo dos turnos, ferramentas e retomadas; concisao nao apaga personalidade e risco exige sobriedade.',
   'preserve-overall-voice': 'Preserve a entrega geral aprovada sem transformar a voz em formula repetida.',
   'change-overall-voice': 'Mude a voz geral de forma perceptivel; nao repita o padrao rejeitado.',
   'preserve-tone': 'Preserve o tom aprovado com a mesma naturalidade e proporcao.',

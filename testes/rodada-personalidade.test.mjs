@@ -68,11 +68,13 @@ test('plano aponta a v3 ativa, a baseline controlada e cobre os candidatos apren
   assert.equal(plan.candidate, 'omni-persona-v3-candidate')
   assert.equal(plan.baseline, 'controle-mesmo-modelo-sem-omni')
   assert.equal(plan.baselineProtocol.kind, 'same-model-without-omni-context')
-  assert.equal(plan.cases.length, 26)
+  assert.equal(plan.cases.length, 28)
   assert.ok(plan.cases.some((item) => item.id === 'identidade-nao-apaga-sob-carga'))
   assert.ok(plan.cases.some((item) => item.id === 'relatorio-fecha-com-estado-e-evidencia'))
   assert.ok(plan.cases.some((item) => item.id === 'didatica-com-modelo-mental-e-analogia'))
   assert.ok(plan.cases.some((item) => item.id === 'fidelidade-ao-pedido-sem-expansao'))
+  assert.ok(plan.cases.some((item) => item.id === 'acao-segura-evidente-sem-oferta-generica'))
+  assert.ok(plan.cases.some((item) => item.id === 'autonomia-sem-devolver-operacao-ao-dono'))
   assert.deepEqual(plan.pendingLearnedCandidates, [])
   assert.equal(
     plan.learnedCandidates.find((item) => item.id === 'improvement-7998c0fb-4167-4d47-83db-a987fa6a0d82').state,
@@ -82,6 +84,11 @@ test('plano aponta a v3 ativa, a baseline controlada e cobre os candidatos apren
     plan.learnedCandidates.find((item) => item.id === 'improvement-0ac4a466-8d86-493e-954a-7cc8903ae9c3').state,
     'covered-by-canonical-case'
   )
+  const initiative = plan.learnedCandidates.find(
+    (item) => item.id === 'improvement-de188886-d352-47dd-9014-c25c615e3268'
+  )
+  assert.equal(initiative.state, 'covered-by-canonical-case')
+  assert.equal(initiative.canonicalCaseId, 'acao-segura-evidente-sem-oferta-generica')
   assert.equal(plan.performsModelCalls, false)
 })
 
@@ -109,7 +116,7 @@ test('rodada registra resultados e autoavaliacao como alegacao nao autenticada',
     }
     const evaluated = await avaliarRodadaPersonalidade(input)
     assert.equal(evaluated.status, 'unverified-claim')
-    assert.equal(evaluated.metrics.cases, 26)
+    assert.equal(evaluated.metrics.cases, 28)
     assert.equal(evaluated.metrics.candidateScore, 1)
     assert.equal(evaluated.rawResponsesStored, false)
     assert.notEqual(evaluated.responseSets.baselineSha256, evaluated.responseSets.candidateSha256)

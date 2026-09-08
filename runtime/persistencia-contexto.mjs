@@ -1,8 +1,9 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdir, open, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises'
+import { readFile, rename, writeFile } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
 
 import { pareceConterSegredo } from './memoria.mjs'
+import { acquireLocalFileLock } from '../dist/adapters/local-json/node-local-file-lock.js'
 
 export const STRUCTURED_CONTEXT_SCHEMA_VERSION = 2
 const POLICY_PATH = new URL('../contratos/contexto/persistencia.json', import.meta.url)
@@ -166,23 +167,15 @@ function validateStore(store, path) {
 
 async function acquireLock(casa) {
   const directory = join(casa, 'runs')
-  await mkdir(directory, { recursive: true })
   const lockPath = join(directory, 'structured-context.lock')
-  for (let attempt = 0; attempt < 40; attempt += 1) {
-    try {
-      const handle = await open(lockPath, 'wx')
-      return async () => {
-        await handle.close()
-        await unlink(lockPath).catch(() => undefined)
-      }
-    } catch (error) {
-      if (error?.code !== 'EEXIST') throw error
-      const age = Date.now() - (await stat(lockPath).catch(() => ({ mtimeMs: Date.now() }))).mtimeMs
-      if (age > 10_000) await unlink(lockPath).catch(() => undefined)
-      await new Promise((resolveWait) => setTimeout(resolveWait, 50))
-    }
-  }
-  throw new Error('A persistência estruturada está ocupada por outra escrita.')
+  const lock = await acquireLocalFileLock(lockPath, {
+    acquisitionTimeoutMs: 2_000,
+    retryDelayMs: 50,
+    staleLockMs: 10_000,
+    heartbeatMs: 2_500,
+    timeoutMessage: 'A persistência estruturada está ocupada por outra escrita.'
+  })
+  return () => lock.release()
 }
 
 async function load(casa) {

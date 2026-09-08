@@ -8,15 +8,22 @@
           {
             "type": "command",
             "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/runtime/hook-release-loaded.mjs"],
+            "timeout": 15
+          },
+          {
+            "type": "command",
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/runtime/hook-reconciliacao.mjs"],
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "node",
             "args": ["${CLAUDE_PLUGIN_ROOT}/runtime/hook-varredura.mjs"],
             "timeout": 900,
             "async": true
-          }
-        ]
-      },
-      {
-        "matcher": "resume|compact",
-        "hooks": [
+          },
           {
             "type": "command",
             "command": "node",
@@ -126,6 +133,12 @@
             "command": "node",
             "args": ["${CLAUDE_PLUGIN_ROOT}/runtime/hook-contexto.mjs"],
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/runtime/hook-reconciliacao.mjs"],
+            "timeout": 30
           },
           {
             "type": "command",

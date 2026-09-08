@@ -169,6 +169,21 @@ Regras:
 - correção confirmada atualiza o aprendizado; diagnóstico sem implementação continua pendente;
 - loops, redundâncias, ordens ignoradas e trabalho delegado sem progresso são sinais de auditoria.
 
+O ledger de recuperação é durável entre sessões. Um turno antigo nunca é reexecutado só porque seus
+fingerprints ainda existem: um pedido corrente com o mesmo objetivo precisa renovar a autoridade, e
+somente evidência e readback novos podem superseder a pendência. Sem referência recuperável, o estado
+terminal é `owner-reconfirmation-required`, `historical-unverifiable` ou `superseded`, conforme a
+contraprova disponível. Marcadores de interrupção duplicados representam uma ocorrência, não uma nova
+falha.
+
+`SessionStart` e `Stop` acionam um reconciliador leve e a manutenção lenta. O reconciliador executa
+três etapas sob lock próprio; a manutenção executa quatro etapas sob single-flight separado e não
+repete a reconciliação. Cada perfil registra telemetria hash-only independente, portanto uma rodada
+saudável não mascara a falha do outro. Ambos são silenciosos: dívida operacional segue para os workers
+internos e nunca vira checklist para o proprietário. O reconciliador sincroniza bindings, cancela
+delegações órfãs após o lease e arquiva histórico sem prova. O gate mantém totais históricos, mas
+separa trabalho acionável, trabalho aguardando prova e terminais sem sucesso.
+
 `blocked` descreve um estado operacional transitório com causa concreta; nunca significa
 "manter visível para sempre". Removida a causa, o ciclo volta a `running`. Um bloqueio sem causa,
 alvo e autoridade identificáveis é classificado como falha de estratégia e gera nova tentativa.
@@ -182,6 +197,7 @@ não sabe se o executor é um subagente, uma CLI, um serviço ou uma plataforma 
 Omni: prepared ──► visible
 adaptador: delivered ──► started ──► reported | blocked | failed | cancelled
 Omni: readback independente ──► verified ──► closed
+Omni: legado sem prova ──► archived (historical-unverifiable)
 ```
 
 O adaptador não pode declarar `verified` ou `closed`. Todo evento usa `delegationId`, identificador
@@ -199,12 +215,15 @@ A release autônoma deve:
 2. tocar apenas arquivos previstos para a promoção;
 3. gravar evidência hash-only;
 4. incrementar a versão patch;
-5. recalcular o fingerprint do payload;
-6. executar check, testes e release gate;
+5. executar build determinístico, check e testes;
+6. exigir o conjunto exato fonte auditada + emits derivados, recalcular o fingerprint e executar o
+   gate final de integridade;
 7. restaurar os arquivos se qualquer gate falhar;
 8. publicar por commit e push versionados;
 9. instalar a nova versão e reler o payload instalado;
-10. registrar `installed-verified` somente depois do readback.
+10. registrar `installed-verified` como estado intermediário;
+11. aguardar um `SessionStart` executado pela raiz instalada;
+12. registrar `loaded-verified` somente se raiz, versão e fingerprint carregados forem idênticos.
 
 Falha de rede ou indisponibilidade transitória gera retry com backoff; não invalida o aprendizado e
 não vira muro permanente. A sessão atual pode precisar recarregar o plugin para usar os novos hooks,
@@ -215,6 +234,8 @@ mas não precisa ser abandonada nem perder a conversa.
 - nunca persistir conversa, prompt, resposta de modelo, segredo ou resultado bruto de ferramenta;
 - usar hashes, contagens, códigos seguros e referências verificáveis;
 - escrita atômica, lock com lease e migração com backup;
+- o estado de release usa lock curto e compare-and-swap por chave; processos, rede e integridade rodam
+  fora da seção crítica;
 - mudança material exige checkpoint e rollback proporcionais ao risco;
 - o pedido do proprietário autoriza seus passos subordinados normais, não uma expansão silenciosa
   para outro repositório, ambiente, conta, privilégio ou custo;
@@ -236,6 +257,8 @@ O bloco atual só fecha quando houver evidência repetível de que:
 - eval automático executa, corrige, retesta e não persiste texto bruto;
 - promoção, versão, publicação, instalação e readback formam um ciclo rastreável;
 - falhas candidatas iniciam execução real e não morrem em fila, relatório ou estado falso;
+- pendências de turnos são retomadas ou terminalizadas honestamente entre sessões, sem estoque órfão;
+- delegações perdidas preservam seu binding até cancelamento/arquivo terminal e não voltam ao ativo;
 - a porta neutra governa o fluxo ativo e não é código isolado;
 - Omni verifica resultados externos antes de fechar;
 - check, testes e release gate passam no payload final;

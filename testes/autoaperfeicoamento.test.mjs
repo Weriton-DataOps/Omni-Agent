@@ -120,7 +120,7 @@ async function sourceRepository() {
 }
 
 async function prepararReleaseIntegra(repo, version = '9.9.9') {
-  for (const area of ['contratos', 'hooks', 'runtime', 'scripts', 'skills']) {
+  for (const area of ['contratos', 'dist', 'hooks', 'runtime', 'scripts', 'skills']) {
     await mkdir(join(repo, area), { recursive: true })
   }
   await mkdir(join(repo, 'contratos', 'atualizacao'), { recursive: true })

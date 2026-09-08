@@ -1,13 +1,23 @@
 import { createHash } from 'node:crypto'
 import { readdir, readFile } from 'node:fs/promises'
-import { isAbsolute, join } from 'node:path'
+import { dirname, isAbsolute, join, normalize } from 'node:path'
 
 export const RELEASE_FINGERPRINT_ALGORITHM = 'sha256-canonical-text-v1'
 
-const PAYLOAD_ROOTS = ['contratos', 'hooks', 'runtime', 'scripts', 'skills']
+const PAYLOAD_ROOTS = Object.freeze([
+  { path: 'adaptadores', required: false },
+  { path: 'contratos', required: true },
+  { path: 'dist', required: true },
+  { path: 'hooks', required: true },
+  { path: 'runtime', required: true },
+  { path: 'scripts', required: true },
+  { path: 'skills', required: true }
+])
 const EXCLUDED = new Set([
   'contratos/atualizacao/integridade.json',
-  'contratos/atualizacao/releases.json'
+  'contratos/atualizacao/releases.json',
+  // Dedicated PostgreSQL is local runtime state, never release payload.
+  'runtime/postgresql-5433'
 ])
 
 const SEMVER = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/
@@ -18,12 +28,19 @@ function portable(path) {
 }
 
 async function walk(root, directory, files) {
-  const entries = await readdir(join(root, directory), { withFileTypes: true })
+  let entries
+  try {
+    entries = await readdir(join(root, directory), { withFileTypes: true })
+  } catch (error) {
+    if (error?.code === 'ENOENT') return false
+    throw error
+  }
   for (const entry of entries) {
     const path = join(directory, entry.name)
     if (entry.isDirectory()) await walk(root, path, files)
     else if (entry.isFile()) files.push(portable(path))
   }
+  return true
 }
 
 export async function listarArquivosDoPayload(pluginRoot) {
@@ -31,8 +48,127 @@ export async function listarArquivosDoPayload(pluginRoot) {
     throw new Error('A raiz do plugin precisa usar caminho absoluto para calcular integridade.')
   }
   const files = []
-  for (const directory of PAYLOAD_ROOTS) await walk(pluginRoot, directory, files)
-  return files.filter((path) => !EXCLUDED.has(path)).sort()
+  for (const root of PAYLOAD_ROOTS) {
+    const found = await walk(pluginRoot, root.path, files)
+    if (!found && root.required) throw new Error(`Raiz obrigatoria do payload ausente: ${root.path}.`)
+  }
+  return files.filter((path) => ![...EXCLUDED].some((excluded) => path === excluded || path.startsWith(`${excluded}/`))).sort()
+}
+
+function referenciaPortatil(value) {
+  if (typeof value !== 'string') return null
+  const normalized = portable(value.trim())
+    .replace(/^['"]|['"]$/g, '')
+    .replace(/^\$\{CLAUDE_PLUGIN_ROOT\}\//, '')
+    .replace(/^\.\//, '')
+  if (!/^(?:adaptadores|dist|runtime|scripts)\/.+\.(?:c?js|mjs|ps1)$/i.test(normalized)) return null
+  return normalized
+}
+
+function registrarReferencia(map, path, source) {
+  const portablePath = referenciaPortatil(path)
+  if (!portablePath) return
+  const sources = map.get(portablePath) ?? new Set()
+  sources.add(source)
+  map.set(portablePath, sources)
+}
+
+async function lerOpcional(path) {
+  try {
+    return await readFile(path, 'utf8')
+  } catch (error) {
+    if (error?.code === 'ENOENT') return null
+    throw error
+  }
+}
+
+async function referenciasDosHooks(pluginRoot, references) {
+  const raw = await lerOpcional(join(pluginRoot, 'hooks', 'hooks.json'))
+  if (!raw) return
+  const document = JSON.parse(raw)
+  for (const registrations of Object.values(document?.hooks ?? {})) {
+    for (const registration of registrations ?? []) {
+      for (const hook of registration?.hooks ?? []) {
+        if (hook?.command !== 'node' || !Array.isArray(hook.args)) continue
+        for (const argument of hook.args) registrarReferencia(references, argument, 'hooks/hooks.json')
+      }
+    }
+  }
+}
+
+async function referenciasDoPackage(pluginRoot, references) {
+  const raw = await lerOpcional(join(pluginRoot, 'package.json'))
+  if (!raw) return
+  const document = JSON.parse(raw)
+  for (const [name, script] of Object.entries(document?.scripts ?? {})) {
+    if (typeof script !== 'string') continue
+    const pattern = /\bnode(?:\.exe)?\b(?:\s+--[^\s;&|]+)*\s+([^\s;&|]+\.(?:c?js|mjs))/gi
+    for (const match of script.matchAll(pattern)) registrarReferencia(references, match[1], `package.json#${name}`)
+  }
+}
+
+async function referenciasDosScripts(pluginRoot, references) {
+  const raw = await lerOpcional(join(pluginRoot, 'scripts', 'omni.ps1'))
+  if (!raw) return
+  const pattern = /['"]((?:adaptadores|dist|runtime|scripts)[\\/][^'"]+\.(?:c?js|mjs|ps1))['"]/gi
+  for (const match of raw.matchAll(pattern)) registrarReferencia(references, match[1], 'scripts/omni.ps1')
+}
+
+async function referenciasDosImports(pluginRoot, payloadFiles, references) {
+  const executableFiles = payloadFiles.filter((item) => /\.(?:c?js|mjs)$/i.test(item))
+  const importPattern = /(?:\bfrom\s*|\bimport\s*(?:\(\s*)?)['"]([^'"]+)['"]/g
+  for (const importer of executableFiles) {
+    const raw = await readFile(join(pluginRoot, importer), 'utf8')
+    for (const match of raw.matchAll(importPattern)) {
+      const specifier = match[1]
+      if (!specifier?.startsWith('.') || !/\.(?:c?js|mjs)$/i.test(specifier)) continue
+      const imported = portable(normalize(join(dirname(importer), specifier)))
+      registrarReferencia(references, imported, `import:${importer}`)
+    }
+  }
+}
+
+export async function listarEntrypointsReferenciados(pluginRoot) {
+  if (!isAbsolute(pluginRoot ?? '')) {
+    throw new Error('A raiz do plugin precisa usar caminho absoluto para enumerar entrypoints.')
+  }
+  const files = await listarArquivosDoPayload(pluginRoot)
+  const references = new Map()
+  await Promise.all([
+    referenciasDosHooks(pluginRoot, references),
+    referenciasDoPackage(pluginRoot, references),
+    referenciasDosScripts(pluginRoot, references),
+    referenciasDosImports(pluginRoot, files, references)
+  ])
+  for (const path of files.filter((item) => /\.(?:c?js|mjs)$/i.test(item))) {
+    const raw = await readFile(join(pluginRoot, path), 'utf8')
+    if (/process\.argv\s*\[\s*1\s*\]/.test(raw)) registrarReferencia(references, path, 'self-executable')
+  }
+  return [...references.entries()]
+    .map(([path, sources]) => ({ path, sources: [...sources].sort() }))
+    .sort((left, right) => left.path.localeCompare(right.path))
+}
+
+export async function verificarCoberturaEntrypoints(pluginRoot, payloadFiles) {
+  const payload = new Set(payloadFiles ?? await listarArquivosDoPayload(pluginRoot))
+  const entrypoints = await listarEntrypointsReferenciados(pluginRoot)
+  const missing = []
+  const outsidePayload = []
+  for (const entrypoint of entrypoints) {
+    try {
+      await readFile(join(pluginRoot, entrypoint.path), 'utf8')
+    } catch (error) {
+      if (error?.code === 'ENOENT') missing.push(entrypoint.path)
+      else throw error
+    }
+    if (!payload.has(entrypoint.path)) outsidePayload.push(entrypoint.path)
+  }
+  return {
+    ok: missing.length === 0 && outsidePayload.length === 0,
+    entrypoints,
+    missing,
+    outsidePayload
+  }
 }
 
 export async function calcularFingerprintPayload(pluginRoot) {
@@ -113,14 +249,22 @@ export async function lerIdentidadeRelease(pluginRoot) {
 }
 
 export async function verificarIntegridadePayload(pluginRoot, declaredFingerprint) {
-  const actual = await calcularFingerprintPayload(pluginRoot)
+  const payloadFiles = await listarArquivosDoPayload(pluginRoot)
+  const [actual, entrypointCoverage] = await Promise.all([
+    calcularFingerprintPayload(pluginRoot),
+    verificarCoberturaEntrypoints(pluginRoot, payloadFiles)
+  ])
   const declared = typeof declaredFingerprint === 'string' && /^[a-f0-9]{64}$/.test(declaredFingerprint)
     ? declaredFingerprint
     : null
+  const fingerprintStatus = !declared
+    ? 'legacy-unverifiable'
+    : declared === actual.fingerprint ? 'verified' : 'drifted'
   return {
     ...actual,
     declaredFingerprint: declared,
-    status: !declared ? 'legacy-unverifiable' : declared === actual.fingerprint ? 'verified' : 'drifted'
+    entrypointCoverage,
+    status: entrypointCoverage.ok ? fingerprintStatus : 'drifted'
   }
 }
 

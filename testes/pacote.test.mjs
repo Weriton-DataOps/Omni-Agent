@@ -1,21 +1,32 @@
 import assert from 'node:assert/strict'
 import { readFile, readdir, stat } from 'node:fs/promises'
 import test from 'node:test'
+import { listarArquivosDoPayload } from '../runtime/integridade-release.mjs'
+import { fileURLToPath } from 'node:url'
 
 const root = new URL('../', import.meta.url)
 const file = (path) => new URL(path, root)
+const SEMVER = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/
 
 test('marketplace usa o plugin do próprio repositório e versão semântica', async () => {
   const marketplace = JSON.parse(await readFile(file('.claude-plugin/marketplace.json'), 'utf8'))
   const manifest = JSON.parse(await readFile(file('.claude-plugin/plugin.json'), 'utf8'))
   const releaseIdentity = JSON.parse(await readFile(file('contratos/atualizacao/integridade.json'), 'utf8'))
+  const releaseHistory = JSON.parse(await readFile(file('contratos/atualizacao/releases.json'), 'utf8'))
   const packageManifest = JSON.parse(await readFile(file('package.json'), 'utf8'))
+  const currentRelease = releaseHistory.releases.at(-1)
   assert.equal(marketplace.plugins[0].source, './')
   assert.equal(manifest.name, 'omni')
-  assert.equal(manifest.version, '0.22.0')
+  assert.match(manifest.version, SEMVER)
   assert.equal(packageManifest.version, manifest.version)
   assert.equal(releaseIdentity.identity.version, manifest.version)
+  assert.equal(currentRelease.version, manifest.version)
+  assert.equal(releaseHistory.releases.filter((item) => item.version === manifest.version).length, 1)
+  assert.ok(Array.isArray(currentRelease.changes) && currentRelease.changes.length > 0)
   assert.ok(Number.isFinite(Date.parse(releaseIdentity.identity.releaseAuditScopeStartedAt)))
+  assert.deepEqual(releaseIdentity.payloadRoots, [
+    'adaptadores', 'contratos', 'dist', 'hooks', 'runtime', 'scripts', 'skills'
+  ])
   assert.equal(Object.hasOwn(manifest, 'releaseFingerprint'), false)
 })
 
@@ -159,8 +170,9 @@ test('plugin contém somente o núcleo declarado', async () => {
   await assert.rejects(stat(file('app')), { code: 'ENOENT' })
   await assert.rejects(stat(file('cerebro')), { code: 'ENOENT' })
   await assert.rejects(stat(file('plugin')), { code: 'ENOENT' })
-  await assert.rejects(stat(file('.claude')), { code: 'ENOENT' })
-  await assert.rejects(stat(file('memory')), { code: 'ENOENT' })
+  // Local state may exist in a development workspace, but never in the payload.
+  const payload = await listarArquivosDoPayload(fileURLToPath(root))
+  assert.equal(payload.some(path => /^(?:\.claude|\.runtime|memory|sessions|out)\//u.test(path)), false)
   await stat(file('runtime/cli.mjs'))
   await stat(file('runtime/hook-contexto.mjs'))
   await stat(file('runtime/pipeline-memoria.mjs'))
@@ -193,6 +205,8 @@ test('plugin contém somente o núcleo declarado', async () => {
   await stat(file('runtime/passe.mjs'))
   await stat(file('runtime/guardiao.mjs'))
   await stat(file('runtime/hook-varredura.mjs'))
+  await stat(file('runtime/hook-release-loaded.mjs'))
+  await stat(file('runtime/workspace-vscode.mjs'))
   await stat(file('contratos/operacao/ciclo.json'))
   await stat(file('contratos/operacao/regras-aprendidas.json'))
   await stat(file('contratos/operacao/procedimentos-aprendidos.json'))
@@ -239,7 +253,7 @@ test('fronteiras mantêm interface e iniciativas externas independentes do Omni'
   )
 })
 
-test('hook injeta contexto por turno somente após ativação do Omni', async () => {
+test('hook injeta contexto por turno e reativa escopos opt-in no início da sessão', async () => {
   const hooks = JSON.parse(await readFile(file('hooks/hooks.json'), 'utf8'))
   assert.ok(hooks.hooks.SessionStart)
   assert.ok(hooks.hooks.UserPromptSubmit)
@@ -261,9 +275,21 @@ test('hook injeta contexto por turno somente após ativação do Omni', async ()
     hooks.hooks.PreToolUse[0].hooks[0].args,
     ['${CLAUDE_PLUGIN_ROOT}/runtime/hook-contexto.mjs']
   )
-  const dailyStart = hooks.hooks.SessionStart[0].hooks[0]
+  const releaseLoaded = hooks.hooks.SessionStart[0].hooks.find((hook) =>
+    hook.args?.[0]?.endsWith('hook-release-loaded.mjs')
+  )
+  assert.deepEqual(releaseLoaded.args, ['${CLAUDE_PLUGIN_ROOT}/runtime/hook-release-loaded.mjs'])
+  assert.notEqual(releaseLoaded.async, true)
+  const dailyStart = hooks.hooks.SessionStart[0].hooks.find((hook) =>
+    hook.args?.[0]?.endsWith('hook-varredura.mjs')
+  )
   assert.deepEqual(dailyStart.args, ['${CLAUDE_PLUGIN_ROOT}/runtime/hook-varredura.mjs'])
   assert.equal(dailyStart.async, true)
+  assert.equal(hooks.hooks.SessionStart.length, 1)
+  assert.equal(hooks.hooks.SessionStart[0].matcher, '')
+  assert.ok(hooks.hooks.SessionStart[0].hooks.some((hook) =>
+    hook.args?.[0]?.endsWith('hook-contexto.mjs') && hook.async !== true
+  ))
   assert.ok(hooks.hooks.Stop[0].hooks.some((hook) => hook.args?.[0]?.endsWith('hook-varredura.mjs')))
   const dailyRuntime = await readFile(file('runtime/hook-varredura.mjs'), 'utf8')
   assert.match(dailyRuntime, /processarReleasePendenteMelhoria/)
@@ -375,7 +401,9 @@ test('skill começa em pt-BR e descreve ação, delegação e proteção técnic
   assert.match(skill, /O destino de uma melhoria segue sua natureza/)
   assert.match(skill, /runtime filtra segredos/)
   assert.match(skill, /Quando o pedido for exatamente `atualizar`/)
-  assert.match(skill, /interface nativa do VS Code/)
+  assert.match(skill, /mantenha a ativa[cç][aã]o como trabalho do worker interno at[eé] o readback/i)
+  assert.match(skill, /Nunca devolva recarga, comando ou checklist ao propriet[aá]rio/i)
+  assert.doesNotMatch(skill, /\/reload-plugins|Clique em Restart|interface nativa do VS Code/i)
   assert.match(skill, /execute automaticamente o ciclo completo/i)
   assert.match(skill, /Diferencie explicitamente “valeu subir” de “subiu”/i)
   assert.match(skill, /Nunca afirme publicação sem confirmar o commit remoto/i)

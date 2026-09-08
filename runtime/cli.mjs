@@ -83,6 +83,7 @@ import {
 import { lerEstadoVarredura, varrerAtividadesDoDia } from './varredura-diaria.mjs'
 import { auditarSaudeSistema, lerAuditoriaSistema } from './auditoria-sistema.mjs'
 import { resumirFeedbackPersonalidade } from './feedback-personalidade.mjs'
+import { abrirProjetoNoVscode } from './workspace-vscode.mjs'
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
 const [action = 'estado', ...parts] = process.argv.slice(2)
@@ -276,6 +277,23 @@ function resumirFalha(item) {
 }
 
 async function main() {
+  if (action === 'projeto-vscode-abrir') {
+    const { options, positionals } = lerOpcoes(parts)
+    const literalTarget = options.alvo ?? positionals.join(' ').trim()
+    if (!literalTarget) {
+      throw new Error('Use: projeto-vscode-abrir <Hub|caminho-absoluto> [--reutilizar].')
+    }
+    const workspace = abrirProjetoNoVscode({
+      literalTarget,
+      expectedRepository: options['repositorio-esperado'],
+      reuseWindow: options.reutilizar === true,
+      startClaudeSession: options['iniciar-claude'] === true
+    })
+    return {
+      ok: workspace.state === 'workspace-opened' && workspace.success === true,
+      workspace
+    }
+  }
   if (action === 'estado') {
     const [memory, persona, version, shortcutStore, improvementStore, failureStore, failureAutomation, evalStore, behaviorStore, personalityStore, personalityFeedback, contextStore, operationalCycle, sourceRepository, dailyScan, systemAudit] = await Promise.all([
       lerMemoria(home),
@@ -397,6 +415,7 @@ async function main() {
           implementationRequired: operationalCycle.improvementCandidates.filter((item) => item.status === 'implementation-required').length,
           materializedPendingRelease: operationalCycle.improvementCandidates.filter((item) => item.status === 'materialized-pending-release').length,
           installedVerified: operationalCycle.improvementCandidates.filter((item) => item.status === 'installed-verified').length,
+          loadedVerified: operationalCycle.improvementCandidates.filter((item) => item.status === 'loaded-verified').length,
           superseded: operationalCycle.improvementCandidates.filter((item) => item.status === 'superseded').length
         }
       },

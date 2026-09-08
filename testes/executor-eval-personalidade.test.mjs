@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { appendFile, cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 
@@ -23,6 +23,11 @@ const pluginRoot = new URL('../', import.meta.url)
 const rootPath = fileURLToPath(pluginRoot)
 const HOUR = 60 * 60 * 1_000
 
+function candidateFixtureFilter(source) {
+  const topLevel = relative(rootPath, source).split(/[\\/]/)[0]
+  return !['.git', 'node_modules', '.npm-cache', '.codex-tmp', 'out', '.test-dist', '.claude', '.codex', '.agents', '.runtime', 'memory', 'sessions', 'audio', 'evidence'].includes(topLevel)
+}
+
 function inicializarGit(repo) {
   for (const args of [
     ['init'],
@@ -40,7 +45,7 @@ function inicializarGit(repo) {
 function releasePreparada(capturedRuns = []) {
   return async ({ run }) => {
     capturedRuns.push(run)
-    return { result: 'published-installed-verified', roundId: run.id }
+    return { result: 'published-loaded-verified', roundId: run.id }
   }
 }
 
@@ -80,7 +85,7 @@ test('executor controlado cobre baseline, candidata e juiz sem persistir respost
       result.run.provenance.evaluatedPayloadFingerprint,
       (await calcularFingerprintPayload(rootPath)).fingerprint
     )
-    assert.equal(result.run.judgeDiagnostics.length, 26)
+    assert.equal(result.run.judgeDiagnostics.length, 28)
     assert.ok(result.run.judgeDiagnostics.every((item) => item.reasonCode === 'criteria-met'))
     assert.ok(result.run.judgeDiagnostics.every((item) => /^[a-f0-9]{64}$/.test(item.reasonCodeHash)))
     const raw = await readFile(join(casa, 'evals', 'personality-history.json'), 'utf8')
@@ -178,7 +183,7 @@ test('falha gera correcao canonica, respeita backoff e promove somente o ajuste 
     const state = JSON.parse(await readFile(join(casa, 'evals', 'personality-automation.json'), 'utf8'))
     assert.equal(state.last.correction.attempts, 1)
     assert.equal(state.last.phase, 'completed')
-    assert.equal(state.last.promotion, 'published-installed-verified')
+    assert.equal(state.last.promotion, 'published-loaded-verified')
     const persisted = await readFile(join(casa, 'evals', 'personality-history.json'), 'utf8')
     assert.doesNotMatch(persisted, /Resposta neutra de controle/)
     assert.doesNotMatch(persisted, /biblioteca sem catalogo/i)
@@ -283,7 +288,7 @@ test('promocao nao concluida reabre com backoff sem repetir a rodada paga', asyn
     promotionCalls += 1
     if (promotionCalls === 1) return { result: 'source-repository-unconfigured', roundId: run.id }
     if (promotionCalls === 2) return { result: 'release-reverted', roundId: run.id }
-    return { result: 'published-installed-verified', roundId: run.id }
+    return { result: 'published-loaded-verified', roundId: run.id }
   }
   try {
     const first = await processarFilaEvalPersonalidade({
@@ -319,7 +324,7 @@ test('promocao nao concluida reabre com backoff sem repetir a rodada paga', asyn
       prepareRelease
     })
     assert.equal(completed.result, 'passed')
-    assert.equal(completed.promotion.result, 'published-installed-verified')
+    assert.equal(completed.promotion.result, 'published-loaded-verified')
     assert.equal(modelCalls, callsAfterEval)
     assert.equal(promotionCalls, 3)
   } finally {
@@ -390,7 +395,7 @@ test('mudanca de payload reabre a fila mesmo apos rodada promovida', async () =>
   try {
     await cp(rootPath, copiedRoot, {
       recursive: true,
-      filter: (source) => !['.git', 'node_modules', '.codex-tmp'].includes(source.split(/[\\/]/).at(-1))
+      filter: candidateFixtureFilter
     })
     const prepareRelease = async ({ run }) => {
       try {
@@ -402,7 +407,7 @@ test('mudanca de payload reabre a fila mesmo apos rodada promovida', async () =>
         )
         const release = await calcularFingerprintPayload(copiedRoot)
         return {
-          result: 'published-installed-verified',
+          result: 'published-loaded-verified',
           roundId: run.id,
           releaseFingerprint: release.fingerprint
         }
@@ -459,7 +464,7 @@ test('mudanca da fonte durante as chamadas reprova a rodada antes de persistir o
   try {
     await cp(rootPath, copiedRoot, {
       recursive: true,
-      filter: (source) => !['.git', 'node_modules', '.codex-tmp'].includes(source.split(/[\\/]/).at(-1))
+      filter: candidateFixtureFilter
     })
     const invoke = async (request) => {
       calls += 1
@@ -503,7 +508,7 @@ test('fila usa politica carregada separada da fonte canonica configurada', async
   try {
     await cp(rootPath, canonicalRoot, {
       recursive: true,
-      filter: (source) => !['.git', 'node_modules', '.codex-tmp'].includes(source.split(/[\\/]/).at(-1))
+      filter: candidateFixtureFilter
     })
     const personaPath = join(canonicalRoot, 'contratos', 'personalidade', 'omni-persona-v3.md')
     const personaRaw = await readFile(personaPath, 'utf8')
@@ -549,7 +554,7 @@ test('fila usa politica carregada separada da fonte canonica configurada', async
   }
 })
 
-test('fonte canonica suja entra em backoff sem consumir nenhuma chamada de modelo', async () => {
+test('fonte canônica suja é avaliada em snapshot sem publicar ou limpar trabalho em andamento', async () => {
   const casa = await mkdtemp(join(tmpdir(), 'omni-auto-personality-dirty-source-home-'))
   const fixtureRoot = await mkdtemp(join(tmpdir(), 'omni-auto-personality-dirty-source-repo-'))
   const canonicalRoot = join(fixtureRoot, 'plugin')
@@ -557,7 +562,7 @@ test('fonte canonica suja entra em backoff sem consumir nenhuma chamada de model
   try {
     await cp(rootPath, canonicalRoot, {
       recursive: true,
-      filter: (source) => !['.git', 'node_modules', '.codex-tmp'].includes(source.split(/[\\/]/).at(-1))
+      filter: candidateFixtureFilter
     })
     const payload = await calcularFingerprintPayload(canonicalRoot)
     const integrityPath = join(canonicalRoot, 'contratos', 'atualizacao', 'integridade.json')
@@ -578,12 +583,17 @@ test('fonte canonica suja entra em backoff sem consumir nenhuma chamada de model
       prepareRelease: releasePreparada()
     })
     assert.equal(result.result, 'retry-scheduled')
-    assert.equal(result.sourceStatus, 'repository-not-clean')
-    assert.equal(calls, 0)
+    assert.equal(result.promotion.result, 'awaiting-reviewed-source')
+    assert.ok(calls > 0)
     const state = JSON.parse(await readFile(join(casa, 'evals', 'personality-automation.json'), 'utf8'))
-    assert.equal(state.last.phase, 'source-retry')
-    assert.equal(state.last.sourceStatus, 'repository-not-clean')
+    assert.equal(state.last.phase, 'promotion-retry')
+    assert.match(state.last.snapshotFingerprint, /^[a-f0-9]{64}$/)
     assert.equal(state.last.rawResponsesStored, false)
+    const callsAfterMeasurement = calls
+    const resumed = await processarFilaEvalPersonalidade({ casa, policyRoot: rootPath, now: Date.now() + 2 * HOUR, invoke: async () => { throw new Error('must reuse measurement') }, prepareRelease: async () => { throw new Error('must not publish dirty source') } })
+    assert.equal(resumed.result, 'awaiting-reviewed-source')
+    assert.equal(calls, callsAfterMeasurement)
+    assert.match(await readFile(join(canonicalRoot, 'runtime', 'personalidade.mjs'), 'utf8'), /alteracao ainda nao estabilizada/)
   } finally {
     await rm(casa, { recursive: true, force: true })
     await rm(fixtureRoot, { recursive: true, force: true })

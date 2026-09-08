@@ -1,4 +1,6 @@
 import { pareceConterSegredo, registrarMemoriaAnalisada } from './memoria.mjs'
+import { ownerStatement } from '../dist/core/personality/owner-feedback.js'
+import { declaredProjectFact, isTransientMemory } from '../dist/core/memory/extraction-signals.js'
 
 export const MEMORY_WRITE_PIPELINE_VERSION = 2
 
@@ -29,7 +31,7 @@ const SINAIS = [
   },
   {
     type: 'semantic',
-    pattern: /\b(?:aprendi que|descobri que|fica definido que|lembre que|a regra e)\b/,
+    pattern: /\b(?:aprendi que|descobri que|fica definido que|lembre que)\b/,
     confidence: 0.76,
     importance: 0.7
   },
@@ -79,8 +81,12 @@ export function analisarExperiencias(texto, { scope = { type: 'user' } } = {}) {
     .map((unit) => unit.replace(/\s+/g, ' ').trim())
     .filter(Boolean)
   const analyses = units.flatMap((original) => {
+    original = ownerStatement(original).trim()
+    if (!original) return []
     const normalized = normalizar(original)
-    const signal = SINAIS.find((candidate) => candidate.pattern.test(normalized))
+    if (isTransientMemory(original)) return [{ result: 'transient', reason: 'explicitly-transient' }]
+    const fact = declaredProjectFact(original)
+    const signal = fact ? { type: 'semantic', confidence: 0.9, importance: 0.8 } : SINAIS.find((candidate) => candidate.pattern.test(normalized))
     if (!signal) return []
     if (/\b(?:so nesta sessao|somente nesta sessao|so agora|hoje apenas|temporariamente)\b/.test(normalized)) {
       return [{ result: 'transient', reason: 'explicitly-transient' }]
@@ -90,12 +96,12 @@ export function analisarExperiencias(texto, { scope = { type: 'user' } } = {}) {
     const specificity = Math.min(1, Math.max(0.35, original.length / 240))
     const score = arredondar(signal.confidence * 0.5 + signal.importance * 0.35 + specificity * 0.15)
     if (score < 0.6) return []
-    const explicitDeclaration = /\b(?:lembre|guarde|registre|fica definido|de agora em diante|sempre que|quando eu disser|prefiro|quero que voce|me explique sempre)\b/.test(normalized)
+    const explicitDeclaration = Boolean(fact) || /\b(?:lembre|guarde|registre|fica definido|de agora em diante|sempre que|quando eu disser|prefiro|quero que voce|me explique sempre)\b/.test(normalized)
     return [{
       result: 'validated',
       text: original,
       type: signal.type,
-      scope,
+      scope: fact ? { type: 'project', id: fact.project } : scope,
       confidence: arredondar(signal.confidence),
       importance: arredondar(signal.importance),
       score,

@@ -25,18 +25,20 @@ const DELEGATION_STATES = new Set([
   'closed',
   'blocked',
   'failed',
-  'cancelled'
+  'cancelled',
+  'archived'
 ])
 const DELEGATION_TRANSITIONS = {
   prepared: ['visible', 'failed', 'cancelled'],
   visible: ['running', 'failed', 'cancelled'],
   running: ['reported', 'blocked', 'failed', 'cancelled'],
-  reported: ['verified', 'running', 'blocked', 'failed', 'cancelled'],
+  reported: ['verified', 'running', 'blocked', 'failed', 'cancelled', 'archived'],
   verified: ['closed'],
   blocked: ['running', 'failed', 'cancelled'],
   closed: [],
   failed: [],
-  cancelled: []
+  cancelled: [],
+  archived: []
 }
 const IMPROVEMENT_STATES = new Set([
   'observing',
@@ -44,6 +46,7 @@ const IMPROVEMENT_STATES = new Set([
   'implementation-required',
   'materialized-pending-release',
   'installed-verified',
+  'loaded-verified',
   'superseded'
 ])
 const IMPROVEMENT_TRANSITIONS = {
@@ -51,7 +54,8 @@ const IMPROVEMENT_TRANSITIONS = {
   ready: ['implementation-required', 'materialized-pending-release'],
   'implementation-required': ['materialized-pending-release'],
   'materialized-pending-release': ['installed-verified', 'superseded'],
-  'installed-verified': [],
+  'installed-verified': ['loaded-verified', 'superseded'],
+  'loaded-verified': [],
   superseded: []
 }
 const PORTABLE_ARTIFACTS = {
@@ -101,7 +105,7 @@ async function contrato() {
     !value.delegation.states.every((state) => DELEGATION_STATES.has(state)) ||
     JSON.stringify(value.delegation.transitions) !== JSON.stringify(DELEGATION_TRANSITIONS) ||
     value.delegation.executorReportProduces !== 'reported' ||
-    JSON.stringify(value.delegation.inboundCannotProduce) !== JSON.stringify(['verified', 'closed']) ||
+    JSON.stringify(value.delegation.inboundCannotProduce) !== JSON.stringify(['verified', 'closed', 'archived']) ||
     value.delegation.externalCorrelation !== 'delegation-id' ||
     value.delegation.untrackedExecutorProduces !== 'failed' ||
     value.delegation.adapterCorrelation?.requiresExplicitDelegationId !== true ||
@@ -109,6 +113,11 @@ async function contrato() {
     value.delegation.adapterCorrelation?.bindExecutorOnStarted !== true ||
     value.delegation.adapterCorrelation?.duplicateRequiresSameExecutor !== true ||
     value.delegation.reportedIsNotSuccess !== true ||
+    JSON.stringify(value.delegation.terminalStates) !== JSON.stringify(['closed', 'failed', 'cancelled', 'archived']) ||
+    value.delegation.historicalUnverifiableState !== 'archived' ||
+    value.delegation.historicalUnverifiableOutcome !== 'historical-unverifiable' ||
+    !Number.isInteger(value.delegation.orphanVisibleLeaseMinutes) ||
+    value.delegation.orphanVisibleLeaseMinutes < 1 ||
     value.delegation.verificationPrecedesClosure !== true ||
     value.delegation.verifiedRequiresAuditActionAndEvidence !== true ||
     value.delegation.verificationMustFollowReport !== true ||
@@ -118,12 +127,14 @@ async function contrato() {
     !value.improvement.states.every((state) => IMPROVEMENT_STATES.has(state)) ||
     JSON.stringify(value.improvement.transitions) !== JSON.stringify(IMPROVEMENT_TRANSITIONS) ||
     value.improvement.minimumOccurrencesReady !== 2 ||
-    value.improvement.effectiveState !== 'installed-verified' ||
+    value.improvement.installedState !== 'installed-verified' ||
+    value.improvement.effectiveState !== 'loaded-verified' ||
     value.improvement.supersededState !== 'superseded' ||
     value.improvement.materializedState !== 'materialized-pending-release' ||
     value.improvement.reinforcementNeverRegressesState !== true ||
     value.improvement.installedVerificationRequiresReleaseIntegrity !== true ||
-    value.improvement.supersededRequiresExplicitInstalledReplacement !== true ||
+    value.improvement.loadedVerificationRequiresRuntimeIdentity !== true ||
+    value.improvement.supersededRequiresExplicitLoadedReplacement !== true ||
     value.improvement.sourceImplementationRequiresAuditedMutationAndReadback !== true ||
     value.privacy?.storeRawConversation !== false ||
     value.privacy?.storeRawToolOutput !== false ||
@@ -382,6 +393,40 @@ function envelopeLegado(item) {
   return { ...envelope, fingerprint: fingerprintEnvelope(envelope) }
 }
 
+function arquivarDelegacaoHistorica(item, timestamp, kind = 'historical-unverifiable-migration') {
+  if (item.state === 'archived') {
+    return {
+      ...item,
+      verificationEvidenceFingerprint: null,
+      verificationSummary: null,
+      verificationAuditActionId: null,
+      verificationAuditEvidenceId: null,
+      reasonFingerprint: item.reasonFingerprint ?? hash('historical-delegation-without-independent-proof'),
+      finalOutcome: 'historical-unverifiable',
+      legacyUnverified: true
+    }
+  }
+  return {
+    ...item,
+    state: 'archived',
+    verificationEvidenceFingerprint: null,
+    verificationSummary: null,
+    verificationAuditActionId: null,
+    verificationAuditEvidenceId: null,
+    reasonFingerprint: item.reasonFingerprint ?? hash('historical-delegation-without-independent-proof'),
+    finalOutcome: 'historical-unverifiable',
+    legacyUnverified: true,
+    transitionHistory: [...(Array.isArray(item.transitionHistory) ? item.transitionHistory : []), {
+      from: item.state ?? null,
+      to: 'archived',
+      evidenceFingerprint: null,
+      kind,
+      recordedAt: timestamp
+    }].slice(-50),
+    updatedAt: timestamp
+  }
+}
+
 function migrarDelegacaoLegada(item) {
   if (item?.lifecycleVersion === 2) {
     const current = {
@@ -392,7 +437,7 @@ function migrarDelegacaoLegada(item) {
       verificationAuditActionId: item.verificationAuditActionId ?? null,
       verificationAuditEvidenceId: item.verificationAuditEvidenceId ?? null
     }
-    if (
+    const verificationBindingMissing =
       ['verified', 'closed'].includes(current.state) &&
       (
         current.reportAuditActionId === null ||
@@ -400,20 +445,21 @@ function migrarDelegacaoLegada(item) {
         current.verificationAuditActionId === null ||
         current.verificationAuditEvidenceId === null
       )
-    ) {
-      const timestamp = dataValida(current.updatedAt) ? current.updatedAt : agora()
-      current.state = 'reported'
-      current.verificationEvidenceFingerprint = null
-      current.verificationSummary = null
-      current.finalOutcome = 'legacy-unverified'
-      current.legacyUnverified = true
-      current.transitionHistory = [...current.transitionHistory, {
-        from: item.state,
-        to: 'reported',
-        evidenceFingerprint: null,
-        kind: 'legacy-migration',
-        recordedAt: timestamp
-      }].slice(-50)
+    const historicalWithoutProof = current.legacyUnverified === true ||
+      current.finalOutcome === 'legacy-unverified' || verificationBindingMissing
+    if (historicalWithoutProof && ['failed', 'cancelled'].includes(current.state)) {
+      return {
+        ...current,
+        finalOutcome: current.state,
+        reasonFingerprint: current.reasonFingerprint ?? hash('historical-terminal-delegation'),
+        legacyUnverified: true
+      }
+    }
+    if (historicalWithoutProof && !['failed', 'cancelled'].includes(current.state)) {
+      return arquivarDelegacaoHistorica(
+        current,
+        dataValida(current.updatedAt) ? current.updatedAt : agora()
+      )
     }
     return current
   }
@@ -421,19 +467,9 @@ function migrarDelegacaoLegada(item) {
     ? item.updatedAt
     : dataValida(item?.createdAt) ? item.createdAt : agora()
   const legacyState = item?.state
-  const state = legacyState === 'completed'
-    ? 'reported'
-    : legacyState === 'closed'
-      ? 'closed'
-      : legacyState === 'visible'
-        ? 'prepared'
-        : legacyState === 'running'
-          ? 'blocked'
-          : DELEGATION_STATES.has(legacyState)
-            ? legacyState
-            : 'failed'
+  const state = ['failed', 'cancelled'].includes(legacyState) ? legacyState : 'archived'
   const authorityEnvelope = envelopeLegado(item)
-  return {
+  const migrated = {
     ...item,
     lifecycleVersion: 2,
     state,
@@ -444,9 +480,7 @@ function migrarDelegacaoLegada(item) {
     verificationEvidenceFingerprint: null,
     evidenceFingerprint: null,
     verificationSummary: null,
-    reasonFingerprint: state === 'blocked' || state === 'failed'
-      ? hash('legacy-lifecycle-without-verifiable-evidence')
-      : null,
+    reasonFingerprint: hash('legacy-lifecycle-without-verifiable-evidence'),
     checkpointFingerprint: null,
     rollbackFingerprint: null,
     correlationFingerprint: null,
@@ -456,7 +490,7 @@ function migrarDelegacaoLegada(item) {
     verificationAuditEvidenceId: null,
     authorityEnvelope,
     authorityFingerprint: authorityEnvelope.fingerprint,
-    finalOutcome: state === 'closed' ? 'legacy-unverified' : item.finalOutcome ?? null,
+    finalOutcome: ['failed', 'cancelled'].includes(state) ? state : 'historical-unverifiable',
     legacyUnverified: true,
     transitionHistory: [{
       from: legacyState ?? null,
@@ -466,6 +500,7 @@ function migrarDelegacaoLegada(item) {
       recordedAt: timestamp
     }]
   }
+  return migrated
 }
 
 function migrarDelegacoesLegadas(store) {
@@ -487,7 +522,11 @@ function referenciaPortatil(item) {
 
 function migrarMelhoriaLegada(item) {
   if (item?.lifecycleVersion === 2 && Object.hasOwn(item, 'supersededBy')) {
-    return Object.hasOwn(item, 'sourceRefs') ? item : { ...item, sourceRefs: [] }
+    return {
+      ...item,
+      sourceRefs: Object.hasOwn(item, 'sourceRefs') ? item.sourceRefs : [],
+      loadedReadback: Object.hasOwn(item, 'loadedReadback') ? item.loadedReadback : null
+    }
   }
   const timestamp = dataValida(item?.updatedAt)
     ? item.updatedAt
@@ -505,7 +544,10 @@ function migrarMelhoriaLegada(item) {
   if (status === 'superseded' && !supersessaoMelhoriaValida(item?.supersededBy)) {
     status = 'materialized-pending-release'
   }
-  let materialized = ['materialized-pending-release', 'installed-verified', 'superseded'].includes(status)
+  if (status === 'loaded-verified' && item?.loadedReadback?.verified !== true) {
+    status = item?.installedReadback?.verified === true ? 'installed-verified' : 'materialized-pending-release'
+  }
+  let materialized = ['materialized-pending-release', 'installed-verified', 'loaded-verified', 'superseded'].includes(status)
   let artifactRef = materialized
     ? item.artifactRef ?? referenciaPortatil(item)
     : null
@@ -545,7 +587,8 @@ function migrarMelhoriaLegada(item) {
     materializedAt: materialized
       ? dataValida(item?.materializedAt) ? item.materializedAt : timestamp
       : null,
-    installedReadback: status === 'installed-verified' ? item.installedReadback : null,
+    installedReadback: ['installed-verified', 'loaded-verified'].includes(status) ? item.installedReadback : null,
+    loadedReadback: status === 'loaded-verified' ? item.loadedReadback : null,
     supersededBy: status === 'superseded' ? item.supersededBy : null,
     sourceRefs: Array.isArray(item?.sourceRefs) ? item.sourceRefs : [],
     transitionHistory
@@ -599,13 +642,18 @@ function delegacaoValida(item) {
   for (let index = 1; index < item.transitionHistory.length; index += 1) {
     const previous = item.transitionHistory[index - 1]
     const current = item.transitionHistory[index]
-    if (current.kind === 'legacy-migration') continue
+    if (['legacy-migration', 'historical-unverifiable-migration'].includes(current.kind)) continue
     if (current.from !== previous.to) return false
     if (!(DELEGATION_TRANSITIONS[current.from] ?? []).includes(current.to)) return false
   }
 
   if (item.legacyUnverified === true) {
-    return item.verificationEvidenceFingerprint === null && item.finalOutcome !== 'verified'
+    if (item.verificationEvidenceFingerprint !== null || item.finalOutcome === 'verified') return false
+    if (item.state === 'archived') {
+      return item.finalOutcome === 'historical-unverifiable' && item.reasonFingerprint !== null
+    }
+    return ['failed', 'cancelled'].includes(item.state) && item.finalOutcome === item.state &&
+      item.reasonFingerprint !== null
   }
 
   // O historico e uma janela limitada. Marcos antigos podem sair dela sem apagar
@@ -627,6 +675,8 @@ function delegacaoValida(item) {
     return false
   }
   if (item.state === 'closed' && item.finalOutcome !== 'verified') return false
+  if (item.state === 'archived' && item.finalOutcome !== 'historical-unverifiable') return false
+  if (['failed', 'cancelled'].includes(item.state) && item.finalOutcome !== item.state) return false
   if (['blocked', 'failed', 'cancelled'].includes(item.state) && item.reasonFingerprint === null) return false
   return true
 }
@@ -686,6 +736,19 @@ function readbackMelhoriaValido(value) {
   )
 }
 
+function readbackCarregadoMelhoriaValido(value) {
+  return Boolean(
+    value &&
+    value.verified === true &&
+    isAbsolute(value.root ?? '') &&
+    typeof value.version === 'string' && value.version.length > 0 && value.version.length <= 80 &&
+    HASH_SHA256.test(value.payloadFingerprint ?? '') &&
+    HASH_SHA256.test(value.artifactFingerprint ?? '') &&
+    HASH_SHA256.test(value.verificationFingerprint ?? '') &&
+    dataValida(value.verifiedAt)
+  )
+}
+
 function supersessaoMelhoriaValida(value) {
   return Boolean(
     value &&
@@ -721,6 +784,7 @@ function melhoriaValida(item) {
     (item.artifactRef === null || referenciaMelhoriaValida(item.artifactRef)) &&
     (item.materializedAt === null || dataValida(item.materializedAt)) &&
     (item.installedReadback === null || readbackMelhoriaValido(item.installedReadback)) &&
+    (item.loadedReadback === null || readbackCarregadoMelhoriaValido(item.loadedReadback)) &&
     (item.supersededBy === null || supersessaoMelhoriaValida(item.supersededBy)) &&
     Array.isArray(item.transitionHistory) && item.transitionHistory.length > 0 &&
     item.transitionHistory.every((transition) =>
@@ -736,23 +800,33 @@ function melhoriaValida(item) {
   if (['observing', 'ready'].includes(item.status)) {
     return item.artifact === null && item.artifactRef === null && item.materializedAt === null &&
       item.installedReadback === null && item.supersededBy === null
+      && item.loadedReadback === null
   }
   if (item.status === 'implementation-required') {
     return typeof item.artifact === 'string' && item.artifact.length > 0 &&
       item.artifactRef === null && item.materializedAt === null && item.installedReadback === null &&
-      item.supersededBy === null
+      item.loadedReadback === null && item.supersededBy === null
   }
   if (!referenciaMelhoriaValida(item.artifactRef) || item.artifact !== item.artifactRef.path || !dataValida(item.materializedAt)) {
     return false
   }
   if (item.status === 'materialized-pending-release') {
-    return item.installedReadback === null && item.supersededBy === null
+    return item.installedReadback === null && item.loadedReadback === null && item.supersededBy === null
   }
   if (item.status === 'installed-verified') {
-    return readbackMelhoriaValido(item.installedReadback) && item.supersededBy === null
+    return readbackMelhoriaValido(item.installedReadback) && item.loadedReadback === null && item.supersededBy === null
+  }
+  if (item.status === 'loaded-verified') {
+    return readbackMelhoriaValido(item.installedReadback) &&
+      readbackCarregadoMelhoriaValido(item.loadedReadback) &&
+      item.loadedReadback.version === item.installedReadback.version &&
+      item.loadedReadback.payloadFingerprint === item.installedReadback.payloadFingerprint &&
+      item.loadedReadback.artifactFingerprint === item.installedReadback.artifactFingerprint &&
+      item.supersededBy === null
   }
   return item.artifactRef.kind === 'portable-entry' &&
     item.installedReadback === null &&
+    item.loadedReadback === null &&
     supersessaoMelhoriaValida(item.supersededBy) &&
     item.artifactRef.semanticFingerprint === fingerprintSemanticoMelhoria(item) &&
     item.supersededBy.replacementCandidateId !== item.id &&
@@ -889,7 +963,7 @@ export async function observarEvento(casa, input, { at } = {}) {
 }
 
 function evidenciaObrigatoria(input, state) {
-  const reasonState = ['blocked', 'failed', 'cancelled'].includes(state)
+  const reasonState = ['blocked', 'failed', 'cancelled', 'archived'].includes(state)
   const reason = reasonState
     ? textoIntegralSeguro(input?.reason ?? input?.summary, `Motivo do estado ${state}`, 2000, { required: true })
     : null
@@ -973,11 +1047,19 @@ function aplicarTransicao(item, state, input, policy, timestamp) {
     item.verificationAuditEvidenceId = input.auditProof.verificationEvidence.id
     item.legacyUnverified = false
   }
-  if (['blocked', 'failed', 'cancelled'].includes(state)) {
+  if (['blocked', 'failed', 'cancelled', 'archived'].includes(state)) {
     item.reasonFingerprint = hash(reason)
   }
   if (state === 'closed') item.finalOutcome = 'verified'
   if (state === 'failed' || state === 'cancelled') item.finalOutcome = state
+  if (state === 'archived') {
+    item.finalOutcome = 'historical-unverifiable'
+    item.legacyUnverified = true
+    item.verificationEvidenceFingerprint = null
+    item.verificationSummary = null
+    item.verificationAuditActionId = null
+    item.verificationAuditEvidenceId = null
+  }
 
   item.state = state
   item.updatedAt = timestamp
@@ -1237,6 +1319,7 @@ export async function atualizarDelegacao(casa, id, state, input = {}, { at } = {
     const item = store.delegations.find((candidate) => candidate.id === id)
     if (!item) throw new Error(`Delegacao inexistente: ${id}`)
     if (state !== 'verified') return aplicarTransicao(item, state, input, policy, timestamp)
+    if (item.state !== 'reported') return aplicarTransicao(item, state, input, policy, timestamp)
     const auditActionId = textoIntegralSeguro(
       input?.auditActionId,
       'Acao de verificacao da auditoria',
@@ -1263,6 +1346,78 @@ export async function atualizarDelegacao(casa, id, state, input = {}, { at } = {
       throw new Error('Verificacao da delegacao nao e posterior ao relato, independente e do mesmo objeto auditado.')
     }
     return aplicarTransicao(item, state, { ...input, auditProof }, policy, timestamp)
+  })
+}
+
+export async function renovarLeaseDelegacaoPendente(casa, id, { at } = {}) {
+  const delegationId = textoIntegralSeguro(
+    id,
+    'Identificador da delegacao para renovacao',
+    500,
+    { required: true }
+  )
+  if (!delegationId.startsWith('delegation-')) {
+    throw new Error('Identificador da delegacao para renovacao fora do contrato.')
+  }
+  const timestamp = agora(at)
+  return alterar(casa, (store) => {
+    const item = store.delegations.find((candidate) => candidate.id === delegationId) ?? null
+    if (item === null) {
+      return { result: 'not-found', delegation: null, renewed: false }
+    }
+    if (!['prepared', 'visible'].includes(item.state)) {
+      return { result: 'not-pending', delegation: item, renewed: false }
+    }
+    if (Date.parse(timestamp) < Date.parse(item.updatedAt)) {
+      return { result: 'stale-renewal', delegation: item, renewed: false }
+    }
+    item.updatedAt = timestamp
+    return { result: 'renewed', delegation: item, renewed: true }
+  })
+}
+
+export async function reconciliarDelegacoesOperacionais(casa, {
+  activeDelegationIds = [],
+  at
+} = {}) {
+  if (!Array.isArray(activeDelegationIds)) {
+    throw new Error('Bindings ativos de delegacao precisam ser uma lista.')
+  }
+  const active = new Set(activeDelegationIds.map((id) => {
+    const safe = textoIntegralSeguro(id, 'Identificador da delegacao ativa', 500, { required: true })
+    if (!safe.startsWith('delegation-')) throw new Error('Identificador da delegacao ativa fora do contrato.')
+    return safe
+  }))
+  const timestamp = agora(at)
+  const timestampMs = Date.parse(timestamp)
+  return alterar(casa, (store, policy) => {
+    const result = {
+      archived: store.delegations.filter((item) => item.state === 'archived').length,
+      cancelled: 0,
+      preservedActive: 0,
+      unchanged: 0
+    }
+    const leaseMs = policy.delegation.orphanVisibleLeaseMinutes * 60_000
+    for (const item of store.delegations) {
+      if (!['prepared', 'visible'].includes(item.state)) {
+        result.unchanged += 1
+        continue
+      }
+      if (active.has(item.id)) {
+        result.preservedActive += 1
+        continue
+      }
+      if (timestampMs - Date.parse(item.updatedAt) < leaseMs) {
+        result.unchanged += 1
+        continue
+      }
+      aplicarTransicao(item, 'cancelled', {
+        reason: 'Delegacao sem binding ativo apos o lease operacional.',
+        evidence: `orphan-delegation-lease:${item.id}:${item.updatedAt}`
+      }, policy, timestamp)
+      result.cancelled += 1
+    }
+    return { result: result.cancelled > 0 || result.archived > 0 ? 'reconciled' : 'unchanged', ...result }
   })
 }
 
@@ -1415,6 +1570,7 @@ export async function proporMelhoriaOperacional(casa, input, { at } = {}) {
       artifactRef: null,
       materializedAt: null,
       installedReadback: null,
+      loadedReadback: null,
       supersededBy: null,
       transitionHistory: [{
         from: null,
@@ -1447,6 +1603,7 @@ export async function marcarMelhoriaOperacional(casa, id, input = {}, { at } = {
       candidate.artifactRef = null
       candidate.materializedAt = null
       candidate.installedReadback = null
+      candidate.loadedReadback = null
       candidate.supersededBy = null
     }
     if (next === 'materialized-pending-release') {
@@ -1458,6 +1615,7 @@ export async function marcarMelhoriaOperacional(casa, id, input = {}, { at } = {
       candidate.artifactRef = { ...reference }
       candidate.materializedAt = candidate.materializedAt ?? timestamp
       candidate.installedReadback = null
+      candidate.loadedReadback = null
       candidate.supersededBy = null
     }
     if (next === 'installed-verified') {
@@ -1466,6 +1624,21 @@ export async function marcarMelhoriaOperacional(casa, id, input = {}, { at } = {
         throw new Error('Estado installed-verified exige readback integro da release instalada.')
       }
       candidate.installedReadback = { ...readback }
+      candidate.loadedReadback = null
+      candidate.supersededBy = null
+    }
+    if (next === 'loaded-verified') {
+      const readback = input.loadedReadback
+      if (
+        !readbackCarregadoMelhoriaValido(readback) ||
+        !readbackMelhoriaValido(candidate.installedReadback) ||
+        readback.version !== candidate.installedReadback.version ||
+        readback.payloadFingerprint !== candidate.installedReadback.payloadFingerprint ||
+        readback.artifactFingerprint !== candidate.installedReadback.artifactFingerprint
+      ) {
+        throw new Error('Estado loaded-verified exige raiz, versao, payload e artefato do runtime carregado.')
+      }
+      candidate.loadedReadback = { ...readback }
       candidate.supersededBy = null
     }
     if (next === 'superseded') {
@@ -1483,13 +1656,16 @@ export async function marcarMelhoriaOperacional(casa, id, input = {}, { at } = {
         throw new Error('Estado superseded exige substituicao explicita por entrada instalada semanticamente distinta.')
       }
       candidate.installedReadback = null
+      candidate.loadedReadback = null
       candidate.supersededBy = { ...supersededBy }
     }
     if (next !== candidate.status) {
       candidate.transitionHistory = [...candidate.transitionHistory, {
         from: candidate.status,
         to: next,
-        kind: next === 'superseded' ? 'installed-semantic-supersession' : 'state-transition',
+        kind: next === 'superseded'
+          ? 'loaded-semantic-supersession'
+          : next === 'loaded-verified' ? 'loaded-release-readback' : 'state-transition',
         recordedAt: timestamp
       }].slice(-50)
       candidate.status = next

@@ -4,15 +4,14 @@ import test from 'node:test'
 import { tratarHookVarredura } from '../runtime/hook-varredura.mjs'
 
 const CASA = 'C:\\omni-hook-test'
-const ORDEM = [
+const ORDER = [
   'daily-scan',
-  'failure-automation',
   'system-audit',
   'personality-eval',
   'operational-release'
 ]
 
-function dependencias({ failures = new Map(), calls = [] } = {}) {
+function dependencies({ failures = new Map(), calls = [] } = {}) {
   const execute = (stage) => async (...args) => {
     calls.push({ stage, args })
     if (failures.has(stage)) throw new Error(failures.get(stage))
@@ -20,27 +19,32 @@ function dependencias({ failures = new Map(), calls = [] } = {}) {
   }
   return {
     casaDoOmni: () => CASA,
+    withMaintenanceLock: async (_casa, operation) => operation(),
     varrerAtividadesDoDia: execute('daily-scan'),
-    sincronizarAutomacaoFalhas: execute('failure-automation'),
     auditarSaudeSistema: execute('system-audit'),
     processarFilaEvalPersonalidade: execute('personality-eval'),
-    processarReleasePendenteMelhoria: execute('operational-release')
+    processarReleasePendenteMelhoria: execute('operational-release'),
+    registrarTelemetriaAutocorrecao: async (_casa, input) => {
+      assert.equal(input.profile, 'maintenance')
+      return { status: 'healthy' }
+    }
   }
 }
 
-test('falha na primeira etapa nao impede auditoria, eval ou release no mesmo ciclo', async () => {
+test('falha na varredura nao impede auditoria, eval ou release no mesmo ciclo', async () => {
   const calls = []
   const result = await tratarHookVarredura(
     { hook_event_name: 'SessionStart' },
     {},
-    dependencias({ failures: new Map([['daily-scan', 'SEGREDO-DA-VARREDURA']]), calls })
+    dependencies({ failures: new Map([['daily-scan', 'SEGREDO-DA-VARREDURA']]), calls })
   )
 
-  assert.deepEqual(calls.map((item) => item.stage), ORDEM)
-  assert.deepEqual(result.stages.map((item) => item.status), [
-    'rejected', 'fulfilled', 'fulfilled', 'fulfilled', 'fulfilled'
-  ])
+  assert.deepEqual(calls.map((item) => item.stage), ORDER)
+  assert.equal(result.stages[0].status, 'rejected')
+  assert.equal(result.stages.filter((item) => item.status === 'fulfilled').length, 3)
   assert.equal(result.suppressOutput, true)
+  assert.equal(result.maintenance, 'completed')
+  assert.equal(result.telemetry, 'persisted')
 })
 
 test('falha no eval ainda executa a release operacional', async () => {
@@ -48,12 +52,12 @@ test('falha no eval ainda executa a release operacional', async () => {
   const result = await tratarHookVarredura(
     { hook_event_name: 'Stop' },
     {},
-    dependencias({ failures: new Map([['personality-eval', 'RESPOSTA-BRUTA-DO-EVAL']]), calls })
+    dependencies({ failures: new Map([['personality-eval', 'RESPOSTA-BRUTA-DO-EVAL']]), calls })
   )
 
-  assert.deepEqual(calls.map((item) => item.stage), ORDEM)
-  assert.equal(result.stages[3].status, 'rejected')
-  assert.equal(result.stages[4].status, 'fulfilled')
+  assert.deepEqual(calls.map((item) => item.stage), ORDER)
+  assert.equal(result.stages[2].status, 'rejected')
+  assert.equal(result.stages[3].status, 'fulfilled')
   assert.equal(calls.filter((item) => item.stage === 'operational-release').length, 1)
 })
 
@@ -71,7 +75,7 @@ test('multiplas falhas ficam somente em fingerprints e nunca vazam texto bruto',
   const result = await tratarHookVarredura(
     { hook_event_name: 'SessionStart' },
     {},
-    dependencias({ failures })
+    dependencies({ failures })
   )
   const raw = JSON.stringify(result)
 
@@ -82,24 +86,53 @@ test('multiplas falhas ficam somente em fingerprints e nunca vazam texto bruto',
   assert.ok(rejected.every((item) => !Object.hasOwn(item, 'error')))
 })
 
-test('caminho feliz preserva ordem, argumentos e uma chamada por etapa', async () => {
+test('caminho feliz preserva ordem e evita reconciliacao duplicada na auditoria', async () => {
   const calls = []
-  const env = { OMNI_HOME: CASA }
   const result = await tratarHookVarredura(
     { hook_event_name: 'Stop' },
-    env,
-    dependencias({ calls })
+    { OMNI_HOME: CASA },
+    dependencies({ calls })
   )
 
-  assert.deepEqual(calls.map((item) => item.stage), ORDEM)
-  assert.equal(new Set(calls.map((item) => item.stage)).size, ORDEM.length)
+  assert.deepEqual(calls.map((item) => item.stage), ORDER)
+  assert.equal(new Set(calls.map((item) => item.stage)).size, ORDER.length)
   assert.deepEqual(calls[0].args, [CASA, { automatic: true }])
-  assert.deepEqual(calls[1].args, [CASA])
-  assert.deepEqual(calls[2].args, [CASA, { repair: true }])
-  assert.deepEqual(calls[3].args, [{ casa: CASA }])
-  assert.deepEqual(calls[4].args, [CASA])
+  assert.deepEqual(calls[1].args, [CASA, { repair: true, reconcile: false }])
+  assert.deepEqual(calls[2].args, [{ casa: CASA }])
+  assert.deepEqual(calls[3].args, [CASA])
   assert.ok(result.stages.every((item) => item.status === 'fulfilled'))
   assert.ok(result.stages.every((item) => /^[a-f0-9]{64}$/.test(item.resultFingerprint)))
+})
+
+test('single-flight agrega evento concorrente sem iniciar uma segunda manutencao', async () => {
+  const result = await tratarHookVarredura(
+    { hook_event_name: 'SessionStart' },
+    {},
+    {
+      casaDoOmni: () => CASA,
+      withMaintenanceLock: async () => {
+        const error = new Error('busy')
+        error.name = 'LocalJsonLockTimeoutError'
+        throw error
+      },
+      varrerAtividadesDoDia: () => { throw new Error('nao deveria executar') }
+    }
+  )
+  assert.deepEqual(result, { suppressOutput: true, maintenance: 'coalesced-in-flight' })
+})
+
+test('falha de manutencao no Stop fica em telemetria e nunca prolonga a conversa', async () => {
+  const result = await tratarHookVarredura(
+    { hook_event_name: 'Stop' },
+    {},
+    {
+      ...dependencies(),
+      registrarTelemetriaAutocorrecao: async () => { throw new Error('telemetry unavailable') }
+    }
+  )
+  assert.equal(result.telemetry, 'rejected')
+  assert.equal(result.suppressOutput, true)
+  assert.equal(result.hookSpecificOutput, undefined)
 })
 
 test('evento alheio nao resolve casa nem executa qualquer etapa', async () => {
@@ -113,11 +146,12 @@ test('evento alheio nao resolve casa nem executa qualquer etapa', async () => {
     {},
     {
       casaDoOmni: forbidden,
+      withMaintenanceLock: forbidden,
       varrerAtividadesDoDia: forbidden,
-      sincronizarAutomacaoFalhas: forbidden,
       auditarSaudeSistema: forbidden,
       processarFilaEvalPersonalidade: forbidden,
-      processarReleasePendenteMelhoria: forbidden
+      processarReleasePendenteMelhoria: forbidden,
+      registrarTelemetriaAutocorrecao: forbidden
     }
   )
 

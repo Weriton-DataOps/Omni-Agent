@@ -1,12 +1,14 @@
 import { createHash } from 'node:crypto'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { casaDoOmni } from './memoria.mjs'
-import { varrerAtividadesDoDia } from './varredura-diaria.mjs'
-import { sincronizarAutomacaoFalhas } from './automacao-falhas.mjs'
 import { auditarSaudeSistema } from './auditoria-sistema.mjs'
-import { processarFilaEvalPersonalidade } from './executor-eval-personalidade.mjs'
 import { processarReleasePendenteMelhoria } from './automacao-melhorias.mjs'
+import { processarFilaEvalPersonalidade } from './executor-eval-personalidade.mjs'
+import { casaDoOmni } from './memoria.mjs'
+import { registrarTelemetriaAutocorrecao } from './telemetria-autocorrecao.mjs'
+import { varrerAtividadesDoDia } from './varredura-diaria.mjs'
+import { acquireLocalFileLock } from '../dist/adapters/local-json/node-local-file-lock.js'
 
 function hash(value) {
   return createHash('sha256').update(String(value ?? ''), 'utf8').digest('hex')
@@ -26,51 +28,96 @@ function fingerprintErro(error) {
   return hash(`${name}:${code}`)
 }
 
+async function withMaintenanceLock(casa, operation) {
+  const held = await acquireLocalFileLock(join(casa, 'runs', 'self-repair-maintenance.lock'), {
+    acquisitionTimeoutMs: 250,
+    retryDelayMs: 25,
+    staleLockMs: 120_000,
+    heartbeatMs: 20_000,
+    timeoutMessage: 'A manutencao do Omni ja esta em execucao.'
+  })
+  try {
+    return await operation()
+  } finally {
+    await held.release()
+  }
+}
+
+function maintenanceDegradedOutput(error) {
+  const errorFingerprint = fingerprintErro(error)
+  return {
+    suppressOutput: true,
+    maintenance: 'rejected',
+    maintenanceErrorFingerprint: errorFingerprint
+  }
+}
+
 export async function tratarHookVarredura(input, env = process.env, deps = {}) {
-  if (!['SessionStart', 'Stop'].includes(input?.hook_event_name)) {
-    return { suppressOutput: true }
-  }
-  const resolverCasa = deps.casaDoOmni ?? casaDoOmni
-  const casa = resolverCasa(env)
-  const stages = [
-    {
-      id: 'daily-scan',
-      run: () => (deps.varrerAtividadesDoDia ?? varrerAtividadesDoDia)(casa, { automatic: true })
-    },
-    {
-      id: 'failure-automation',
-      run: () => (deps.sincronizarAutomacaoFalhas ?? sincronizarAutomacaoFalhas)(casa)
-    },
-    {
-      id: 'system-audit',
-      run: () => (deps.auditarSaudeSistema ?? auditarSaudeSistema)(casa, { repair: true })
-    },
-    {
-      id: 'personality-eval',
-      run: () => (deps.processarFilaEvalPersonalidade ?? processarFilaEvalPersonalidade)({ casa })
-    },
-    {
-      id: 'operational-release',
-      run: () => (deps.processarReleasePendenteMelhoria ?? processarReleasePendenteMelhoria)(casa)
+  if (!['SessionStart', 'Stop'].includes(input?.hook_event_name)) return { suppressOutput: true }
+  const casa = (deps.casaDoOmni ?? casaDoOmni)(env)
+  const withinMaintenance = deps.withMaintenanceLock ?? withMaintenanceLock
+  try {
+    return await withinMaintenance(casa, async () => {
+      const outcomes = []
+      const stages = [
+        {
+          id: 'daily-scan',
+          run: () => (deps.varrerAtividadesDoDia ?? varrerAtividadesDoDia)(casa, { automatic: true })
+        },
+        {
+          id: 'system-audit',
+          run: () => (deps.auditarSaudeSistema ?? auditarSaudeSistema)(casa, {
+            repair: true,
+            reconcile: false
+          })
+        },
+        {
+          id: 'personality-eval',
+          run: () => (deps.processarFilaEvalPersonalidade ?? processarFilaEvalPersonalidade)({ casa })
+        },
+        {
+          id: 'operational-release',
+          run: () => (deps.processarReleasePendenteMelhoria ?? processarReleasePendenteMelhoria)(casa)
+        }
+      ]
+      for (const stage of stages) {
+        try {
+          outcomes.push({
+            stage: stage.id,
+            status: 'fulfilled',
+            resultFingerprint: fingerprintResultado(await stage.run())
+          })
+        } catch (error) {
+          outcomes.push({
+            stage: stage.id,
+            status: 'rejected',
+            errorFingerprint: fingerprintErro(error)
+          })
+        }
+      }
+      try {
+        await (deps.registrarTelemetriaAutocorrecao ?? registrarTelemetriaAutocorrecao)(casa, {
+          profile: 'maintenance',
+          event: input.hook_event_name,
+          stages: outcomes
+        })
+        return { suppressOutput: true, maintenance: 'completed', telemetry: 'persisted', stages: outcomes }
+      } catch (error) {
+        return {
+          ...maintenanceDegradedOutput(error),
+          maintenance: 'completed-degraded',
+          telemetry: 'rejected',
+          telemetryErrorFingerprint: fingerprintErro(error),
+          stages: outcomes
+        }
+      }
+    })
+  } catch (error) {
+    if (error?.name === 'LocalJsonLockTimeoutError') {
+      return { suppressOutput: true, maintenance: 'coalesced-in-flight' }
     }
-  ]
-  const outcomes = []
-  for (const stage of stages) {
-    try {
-      outcomes.push({
-        stage: stage.id,
-        status: 'fulfilled',
-        resultFingerprint: fingerprintResultado(await stage.run())
-      })
-    } catch (error) {
-      outcomes.push({
-        stage: stage.id,
-        status: 'rejected',
-        errorFingerprint: fingerprintErro(error)
-      })
-    }
+    return maintenanceDegradedOutput(error)
   }
-  return { suppressOutput: true, stages: outcomes }
 }
 
 async function entradaPadrao() {

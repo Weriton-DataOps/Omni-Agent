@@ -1,4 +1,6 @@
 node_modules/
+.npm-cache/
+.test-dist/
 coverage/
 out/
 .prints/
@@ -8,8 +10,9 @@ out/
 .claude/
 
 # Estado cognitivo é local e nunca pertence ao pacote instalado.
-.runtime/
-memory/
-sessions/
-audio/
-evidence/
+/.runtime/
+/runtime/postgresql-5433/
+/memory/
+/sessions/
+/audio/
+/evidence/

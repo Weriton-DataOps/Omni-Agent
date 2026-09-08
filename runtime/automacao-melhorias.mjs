@@ -6,18 +6,21 @@ import { fileURLToPath } from 'node:url'
 import {
   atualizarDelegacao,
   lerCicloOperacional,
+  renovarLeaseDelegacaoPendente,
   verificarEFecharDelegacaoImplementacao
 } from './ciclo-operacional.mjs'
 import {
   lerRepositorioCanonico,
   materializarMelhoriaConfigurada,
   registrarImplementacaoOperacional,
+  registrarReadbackOperacionalCarregado,
   registrarReadbackOperacionalInstalado
 } from './evolucao.mjs'
 import { verificarIntegridadeRelease } from './integridade-release.mjs'
 import { criarSolicitacaoDelegacao } from './porta-delegacao.mjs'
 import {
   capturarBaselineReleaseOperacional,
+  confirmarRuntimeCarregado,
   prepararReleaseAutonomaOperacional,
   recuperarBaselineReleaseOperacionalLegado
 } from './release-autonoma.mjs'
@@ -34,7 +37,7 @@ const STATES = new Set([
   'completed'
 ])
 const HASH = /^[a-f0-9]{64}$/
-const PORTABLE_ARTIFACT = /^(?:contratos|hooks|runtime|scripts|skills)\/[A-Za-z0-9._/-]+$/
+const PORTABLE_ARTIFACT = /^(?:adaptadores|contratos|dist|hooks|runtime|scripts|skills)\/[A-Za-z0-9._/-]+$/
 const GIT_SHA = /^[a-f0-9]{40,64}$/
 const BASELINE_CONTRACT = 'omni-operational-release-baseline-v1'
 const RAIZ_CARREGADA = fileURLToPath(new URL('../', import.meta.url))
@@ -45,6 +48,13 @@ const SERIAL_PIPELINE_STATES = new Set([
   'running',
   'reported-unverified',
   'awaiting-release'
+])
+const TERMINAL_OR_COMPLETED_DELEGATION_STATES = new Set([
+  'verified',
+  'closed',
+  'failed',
+  'cancelled',
+  'archived'
 ])
 
 function hash(value) {
@@ -77,8 +87,8 @@ async function contrato() {
     value.execution?.requiresRealStartedEvent !== true ||
     value.execution?.requiresCleanGitBaselineBeforeDispatch !== true ||
     value.execution?.baselineContract !== BASELINE_CONTRACT ||
-    value.execution?.repositorySerialization !== 'one-candidate-until-installed-or-superseded' ||
-    value.execution?.legacyBaselineRecovery?.installedReadbackFirst !== true ||
+    value.execution?.repositorySerialization !== 'one-candidate-until-loaded-or-superseded' ||
+    value.execution?.legacyBaselineRecovery?.loadedReadbackFirst !== true ||
     value.execution?.legacyBaselineRecovery?.recoverOnlySingleAuditedArtifact !== true ||
     value.execution?.legacyBaselineRecovery?.unprovableDisposition !== 'legacy-unrecoverable-without-blind-release-retry' ||
     value.execution?.baselineDivergence !== 'recapture-only-when-single-audited-artifact-remains' ||
@@ -87,7 +97,7 @@ async function contrato() {
     value.execution?.requiresRegressionGates !== true ||
     value.execution?.releaseThrough !== 'omni-autonomous-operational-release' ||
     value.execution?.releaseRetryForward !== true ||
-    value.execution?.completionState !== 'installed-verified' ||
+    value.execution?.completionState !== 'loaded-verified' ||
     Object.values(value.privacy ?? {}).some((item) => item !== false)
   ) throw new Error('Contrato de automacao de melhorias fora da versao 1.')
   return value
@@ -226,7 +236,7 @@ export async function sincronizarAutomacaoMelhorias(casa, { at } = {}) {
   const delegations = new Map((cycle.delegations ?? []).map((item) => [item.id, item]))
   return alterar(casa, (store, policy) => {
     for (const candidate of candidates.values()) {
-      if (!['implementation-required', 'materialized-pending-release'].includes(candidate.status)) continue
+      if (!['implementation-required', 'materialized-pending-release', 'installed-verified'].includes(candidate.status)) continue
       if (!store.jobs.some((item) => item.candidateId === candidate.id && item.state !== 'completed')) {
         store.jobs.push({
           id: `improvement-job-${randomUUID()}`,
@@ -259,12 +269,12 @@ export async function sincronizarAutomacaoMelhorias(casa, { at } = {}) {
     for (const job of store.jobs) {
       const candidate = candidates.get(job.candidateId)
       if (!candidate) continue
-      if (candidate.status === 'installed-verified' || candidate.status === 'superseded') {
+      if (candidate.status === 'loaded-verified' || candidate.status === 'superseded') {
         job.state = 'completed'
         job.retryAt = null
         job.releaseRetryAt = null
         job.reasonFingerprint = null
-      } else if (candidate.status === 'materialized-pending-release') {
+      } else if (['materialized-pending-release', 'installed-verified'].includes(candidate.status)) {
         job.state = 'awaiting-release'
         job.retryAt = null
         job.artifactFingerprint = candidate.artifactRef?.contentFingerprint ??
@@ -471,9 +481,40 @@ export async function prepararDespachoAutomaticoMelhoria(casa, {
       mode: 'proceed'
     }
   }, { at })
+  const lease = await renovarLeaseDelegacaoPendente(casa, dispatch.request.delegationId, { at })
+  if (
+    lease.result === 'not-found' ||
+    TERMINAL_OR_COMPLETED_DELEGATION_STATES.has(lease.delegation?.state)
+  ) {
+    const retry = await alterar(casa, (latest) => {
+      const current = latest.jobs.find((item) => item.id === job.id)
+      if (!current || current.state !== 'queued' || current.generation !== job.generation) {
+        throw new Error('Trabalho mudou antes do reagendamento de uma delegacao terminal.')
+      }
+      current.generation += 1
+      current.delegationId = null
+      current.dispatchSessionFingerprint = null
+      current.executorFingerprint = null
+      current.reasonFingerprint = hash(
+        `delegation-before-binding:${lease.delegation?.state ?? lease.result}`
+      )
+      current.retryAt = null
+      current.updatedAt = agora(at)
+      return current
+    })
+    return {
+      result: 'delegation-retry-scheduled',
+      job: retry,
+      request: null,
+      prompt: null,
+      rejectedDelegationId: dispatch.request.delegationId
+    }
+  }
   const updated = await alterar(casa, (latest) => {
     const current = latest.jobs.find((item) => item.id === job.id)
-    if (!current) throw new Error('Trabalho de melhoria desapareceu antes do despacho.')
+    if (!current || current.state !== 'queued' || current.generation !== job.generation) {
+      throw new Error('Trabalho de melhoria mudou antes do despacho.')
+    }
     current.state = 'dispatch-required'
     current.delegationId = dispatch.request.delegationId
     current.dispatchSessionFingerprint = hash(sessionId)
@@ -683,17 +724,30 @@ async function tentarReadbackDaReleaseCarregada({ casa, candidateId, pluginRoot 
     integrity.versionMatchesManifest !== true ||
     !HASH.test(integrity.fingerprint ?? '')
   ) return { result: 'loaded-release-unverifiable', observationFingerprint }
-  await registrarReadbackOperacionalInstalado(casa, {
+  const loadedReadback = await confirmarRuntimeCarregado({
     pluginRoot,
     version: integrity.releaseVersion,
     payloadFingerprint: integrity.fingerprint,
+    at
+  })
+  await registrarReadbackOperacionalInstalado(casa, {
+    pluginRoot: loadedReadback.root,
+    version: loadedReadback.version,
+    payloadFingerprint: loadedReadback.fingerprint,
+    now: at
+  })
+  await registrarReadbackOperacionalCarregado(casa, {
+    pluginRoot: loadedReadback.root,
+    version: loadedReadback.version,
+    payloadFingerprint: loadedReadback.fingerprint,
+    verificationFingerprint: loadedReadback.verificationFingerprint,
     now: at
   })
   const cycle = await lerCicloOperacional(casa)
   const candidate = cycle.improvementCandidates.find((item) => item.id === candidateId)
   return {
-    result: ['installed-verified', 'superseded'].includes(candidate?.status)
-      ? 'installed-readback-verified'
+    result: ['loaded-verified', 'superseded'].includes(candidate?.status)
+      ? 'loaded-readback-verified'
       : 'artifact-not-in-loaded-release',
     observationFingerprint
   }
@@ -737,12 +791,14 @@ export async function processarReleasePendenteMelhoria(casa, {
   if (!job) return { result: 'idle', job: null }
   let baseline = baselineDoJob(job)
   if (!baseline) {
-    const installed = await recoverInstalled({ casa, candidateId: job.candidateId, at: timestamp })
+    // `recoverInstalled` permanece como nome de injecao legado, mas a prova
+    // exigida aqui ja e exclusivamente a do runtime efetivamente carregado.
+    const loaded = await recoverInstalled({ casa, candidateId: job.candidateId, at: timestamp })
     await sincronizarAutomacaoMelhorias(casa, { at: timestamp })
     const afterReadback = await lerAutomacaoMelhorias(casa)
     const readbackJob = afterReadback.jobs.find((item) => item.id === job.id)
     if (readbackJob?.state === 'completed') {
-      return { result: 'completed-from-installed-readback', recoveryResult: installed.result, job: readbackJob }
+      return { result: 'completed-from-loaded-readback', recoveryResult: loaded.result, job: readbackJob }
     }
     const configuration = await lerRepositorioCanonico(casa)
     const recovered = configuration.status === 'configured'
@@ -761,7 +817,7 @@ export async function processarReleasePendenteMelhoria(casa, {
         const current = latest.jobs.find((item) => item.id === job.id)
         current.reasonFingerprint = hash(JSON.stringify({
           class: 'legacy-unrecoverable',
-          installedObservation: installed.observationFingerprint ?? hash(installed.result),
+          loadedObservation: loaded.observationFingerprint ?? hash(loaded.result),
           baselineObservation: recovered.observationFingerprint ?? recovered.statusFingerprint ?? hash(recovered.result)
         }))
         current.releaseRetryAt = null
@@ -770,7 +826,7 @@ export async function processarReleasePendenteMelhoria(casa, {
       })
       return {
         result: 'legacy-unrecoverable',
-        installedReadbackResult: installed.result,
+        loadedReadbackResult: loaded.result,
         baselineRecoveryResult: recovered.result,
         baselineRecoveryObservation: {
           changedPathCount: recovered.changedPathCount ?? null,
@@ -784,7 +840,7 @@ export async function processarReleasePendenteMelhoria(casa, {
   }
   const cycle = await lerCicloOperacional(casa)
   const candidate = cycle.improvementCandidates.find((item) =>
-    item.id === job.candidateId && item.status === 'materialized-pending-release'
+    item.id === job.candidateId && ['materialized-pending-release', 'installed-verified'].includes(item.status)
   )
   if (!candidate?.artifactRef) return { result: 'stale', job }
   const configuration = await lerRepositorioCanonico(casa)
@@ -832,8 +888,8 @@ export async function processarReleasePendenteMelhoria(casa, {
   await sincronizarAutomacaoMelhorias(casa, { at: timestamp })
   const currentCycle = await lerCicloOperacional(casa)
   const currentCandidate = currentCycle.improvementCandidates.find((item) => item.id === candidate.id)
-  const successful = ['published-installed-verified', 'already-published-installed-verified'].includes(release.result) &&
-    currentCandidate?.status === 'installed-verified'
+  const successful = ['published-loaded-verified', 'already-published-loaded-verified'].includes(release.result) &&
+    currentCandidate?.status === 'loaded-verified'
   const updated = await alterar(casa, (latest, policy) => {
     const current = latest.jobs.find((item) => item.id === job.id)
     current.releaseAttempts += 1
@@ -877,7 +933,7 @@ export async function exigirInicioDespachoMelhoriaAntesDaParada(casa, {
     decision: 'block',
     reason: [
       `implementation-dispatch-not-started: ${pending.job.id}.`,
-      `Inicie o executor em segundo plano com a delegacao ${pending.job.delegationId}.`,
+      `O adaptador interno deve iniciar o executor em segundo plano com a delegacao ${pending.job.delegationId}.`,
       'A solicitacao visivel nao equivale a inicio real; preserve o briefing e continue sem pedir nova aprovacao.'
     ].join(' '),
     job: pending.job

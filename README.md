@@ -42,6 +42,20 @@ independente, registrada pela auditoria depois do relato e vinculada ao mesmo ob
 turno, delegações verificadas, efeito do aprendizado e resultados ou alegações de personalidade
 registrados; observação real só existe quando uma rodada revisada a comprova.
 
+Pendências agora sobrevivem à sessão em uma fila durável. Em `SessionStart` e `Stop`, o reconciliador
+leve executa três etapas sob seu próprio lock, enquanto a manutenção executa quatro etapas sob um
+single-flight separado e não repete a reconciliação. Os dois perfis permanecem silenciosos e registram
+telemetria independente, de modo que uma rodada saudável não esconda a falha do outro. Trabalho com o mesmo fingerprint
+do novo pedido pode ser reivindicado, mas só é encerrado depois de nova execução e readback. Registros antigos
+sem referência executável viram `owner-reconfirmation-required` ou `historical-unverifiable`; nunca
+ganham sucesso retroativo. Delegações órfãs expiram como `cancelled`, e relatos legados sem prova
+independente terminam em `archived`. O gate separa essas classes da dívida realmente acionável.
+
+Cada rodada dos reparadores guarda apenas perfil, etapa, estado e fingerprint em
+`%APPDATA%\omni\audits\self-repair-runs.json`. O schema v2 migra o formato anterior e põe stores
+inválidos ou de versão futura em quarentena. Uma falha de etapa fica observável sem persistir erro,
+conversa, ferramenta ou caminho bruto, e nunca vira checklist operacional para o proprietário.
+
 ## Separação de dados
 
 ```text
@@ -135,8 +149,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\omni.ps1 repo-conf
 
 O caminho fica em `%APPDATA%\omni\config`, fora do Git. Depois disso, uma melhoria operacional
 repetida e pronta pode ser materializada no artefato correspondente, mas permanece como
-`materialized-pending-release`. Ela só conta como aprendizado efetivo depois que uma release íntegra
-for instalada, o artefato for relido nessa instalação e o estado chegar a `installed-verified`.
+`materialized-pending-release`. `installed-verified` prova apenas que os arquivos chegaram à raiz de
+instalação. Ela só conta como aprendizado efetivo depois que um `SessionStart` executado pela nova
+raiz confirmar a mesma versão e fingerprint e o estado chegar a `loaded-verified`.
+O hook e a publicação não mantêm lock de estado durante build, Git, rede ou verificação de
+integridade: cada gravação usa compare-and-swap curto por transação, preservando outras releases e
+impedindo regressão de uma chave que já avançou.
 Se uma skill materializada for formalmente retirada e substituída por correção de runtime, o
 readback encerra o registro como `retracted`, preservando a prova da troca sem fingir que a skill foi
 instalada. Se uma entrada declarativa antiga for explicitamente incorporada por uma candidata
@@ -147,17 +165,22 @@ encaminhadas automaticamente à fila de implementação pela porta neutra. O est
 arquivo executável real é vinculado ao candidato. Esse vínculo exige recibo hash-only da
 auditoria: mutação no próprio artefato e readback posterior do mesmo alvo, ambos posteriores ao
 estado `implementation-required`. Um arquivo que já existia, sozinho, não prova implementação.
+Quando o artefato auditado está em `src/**/*.ts`, a release controla exatamente a fonte e seu emit
+`dist/**/*.js`; ambos precisam aparecer depois dos gates e qualquer arquivo extra bloqueia o commit.
 
 O registro técnico desse vínculo usa
 `melhoria-operacional-registrar-implementacao <id> --repo <raiz> --artefato <caminho-portátil>` com
 os IDs das ações/evidências de mutação e readback produzidos pela auditoria. Ele só leva a
-`materialized-pending-release`; gates, release instalada íntegra e readback ainda são necessários.
+`materialized-pending-release`; gates, release instalada íntegra e o handshake do runtime carregado
+ainda são necessários.
 
 ## Verificação
 
 A identidade verificável da release vive em `contratos/atualizacao/integridade.json`. O manifesto do
 plugin mantém apenas campos suportados; o runtime compara versão pública, versão canônica e
 fingerprint do payload, preservando cache e marcando bundles antigos como não verificáveis.
+`dist/**` é raiz obrigatória do payload, e o gate enumera entrypoints de hooks, scripts, package e
+imports executáveis para impedir que um adapter emitido fique fora do fingerprint.
 
 ```powershell
 npm.cmd run check
@@ -166,5 +189,8 @@ npm.cmd pack --dry-run
 claude plugin validate .
 ```
 
-Leia [a arquitetura ativa](docs/arquitetura-ativa.md), a [cobertura real](docs/cobertura.md) e o
+Leia [a arquitetura ativa](docs/arquitetura-ativa.md), a [cobertura real](docs/cobertura.md), o
+[backlog de TypeScript, contexto e personalidade](docs/backlog/typescript-e-personalidade.md), a
+[auditoria de personalidade, contexto e VS Code](docs/auditorias/2026-08-31-personalidade-contexto-vscode.md),
+a [auditoria da autocorreção histórica](docs/auditorias/2026-08-31-autocorrecao-historica.md) e o
 [Definition of Done reservado para 27/08/2026](docs/validacao/definition-of-done-2026-08-27.md).

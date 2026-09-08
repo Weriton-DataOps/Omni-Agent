@@ -36,6 +36,22 @@
         "caseId": "identidade-nao-apaga-sob-carga"
       },
       "learnedAt": "2026-08-27T00:24:24.899Z"
+    },
+    {
+      "id": "improvement-de188886-d352-47dd-9014-c25c615e3268",
+      "category": "conversation-eval",
+      "destination": "personality",
+      "text": "Quando a proxima acao for segura e evidente, execute-a e apresente o resultado em vez de encerrar com oferta generica.",
+      "evidence": {
+        "occurrences": 10,
+        "fingerprint": "f2813cb6be6bee541caef26c1b2a5cc0d261f1b1b43efbd5965ffc7bdf76eec5"
+      },
+      "status": "candidate",
+      "readiness": "covered-by-canonical-case",
+      "scenario": {
+        "caseId": "acao-segura-evidente-sem-oferta-generica"
+      },
+      "learnedAt": "2026-08-28T17:45:24.804Z"
     }
   ]
 }

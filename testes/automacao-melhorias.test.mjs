@@ -17,6 +17,7 @@ import {
   exigirInicioDespachoMelhoriaAntesDaParada,
   lerAutomacaoMelhorias,
   materializarMelhoriaComBaselineConfigurada,
+  prepararDespachoAutomaticoMelhoria,
   processarReleasePendenteMelhoria,
   sincronizarAutomacaoMelhorias
 } from '../runtime/automacao-melhorias.mjs'
@@ -27,13 +28,40 @@ import {
 import {
   lerCicloOperacional,
   marcarMelhoriaOperacional,
-  proporMelhoriaOperacional
+  proporMelhoriaOperacional,
+  reconciliarDelegacoesOperacionais
 } from '../runtime/ciclo-operacional.mjs'
 import {
   configurarRepositorioCanonico,
   materializarMelhoriaConfigurada
 } from '../runtime/evolucao.mjs'
 import { registrarFalha } from '../runtime/falhas.mjs'
+import { criarSolicitacaoDelegacao } from '../runtime/porta-delegacao.mjs'
+
+async function marcarMelhoriaCarregada(casa, candidateId, {
+  root,
+  version,
+  payloadFingerprint,
+  artifactFingerprint,
+  verifiedAt
+}) {
+  await marcarMelhoriaOperacional(casa, candidateId, {
+    status: 'installed-verified',
+    installedReadback: { verified: true, version, payloadFingerprint, artifactFingerprint, verifiedAt }
+  }, { at: verifiedAt })
+  return marcarMelhoriaOperacional(casa, candidateId, {
+    status: 'loaded-verified',
+    loadedReadback: {
+      verified: true,
+      root,
+      version,
+      payloadFingerprint,
+      artifactFingerprint,
+      verificationFingerprint: 'f'.repeat(64),
+      verifiedAt
+    }
+  }, { at: verifiedAt })
+}
 
 async function fixture() {
   const casa = await mkdtemp(join(tmpdir(), 'omni-improvement-automation-home-'))
@@ -87,6 +115,37 @@ function tool(sessionId, id, name, filePath) {
   }
 }
 
+function solicitacaoDespachoMelhoria(candidateId, targetFingerprint, generation, sessionId) {
+  return {
+    sessionId,
+    idempotencyKey: `operational-improvement:${candidateId}:${generation}`,
+    destinationCapability: 'omni-self-correction',
+    authorityMode: 'standing-self-correction',
+    brief: {
+      objective: `Implementar autocorrecao operacional ${candidateId}`,
+      scope: [`candidate:${candidateId}`, `target-fingerprint:${targetFingerprint}`],
+      constraints: [
+        'somente repositorio canonico configurado do Omni',
+        'mudanca reversivel sem segredos privilegios custos ou expansao de objetivo',
+        'publicacao e instalacao ficam para o ciclo de release'
+      ],
+      successCriteria: [
+        'mutacao auditada no menor artefato correto',
+        'readback posterior do mesmo artefato',
+        'testes focais e suite completa verdes',
+        'recibo estruturado com caminho portatil'
+      ]
+    },
+    effectClasses: ['read', 'execute', 'write'],
+    risk: {
+      reversibility: 'reversible',
+      reach: 'single-scoped-target',
+      data: 'project',
+      mode: 'proceed'
+    }
+  }
+}
+
 test('candidata implementation-required vira despacho neutro com autoridade limitada e store hash-only', async () => {
   const { casa, repo, candidateId } = await fixture()
   const sessionId = 'improvement-dispatch-session'
@@ -121,6 +180,55 @@ test('candidata implementation-required vira despacho neutro com autoridade limi
     const raw = await readFile(caminhoDaAutomacaoMelhorias(casa), 'utf8')
     assert.doesNotMatch(raw, /Evitar repetir|runtime\/fix\.mjs/)
     assert.doesNotMatch(raw, new RegExp(repo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'))
+  } finally {
+    await rm(casa, { recursive: true, force: true })
+    await rm(repo, { recursive: true, force: true })
+  }
+})
+
+test('reconciliacao anterior ao binding recusa terminal, avanca geracao e reagenda internamente', async () => {
+  const { casa, repo, candidateId } = await fixture()
+  const sessionId = 'terminal-before-improvement-binding'
+  try {
+    await sincronizarAutomacaoMelhorias(casa, { at: '2026-08-29T10:02:00.000Z' })
+    const queued = (await lerAutomacaoMelhorias(casa)).jobs[0]
+    const orphan = await criarSolicitacaoDelegacao(
+      casa,
+      solicitacaoDespachoMelhoria(candidateId, queued.targetFingerprint, queued.generation, sessionId),
+      { at: '2026-08-29T10:03:00.000Z' }
+    )
+    assert.equal(orphan.delegation.state, 'prepared')
+
+    const reconciled = await reconciliarDelegacoesOperacionais(casa, {
+      activeDelegationIds: [],
+      at: '2026-08-29T11:04:00.000Z'
+    })
+    assert.equal(reconciled.cancelled, 1)
+
+    const retry = await prepararDespachoAutomaticoMelhoria(casa, { sessionId }, {
+      at: '2026-08-29T11:04:01.000Z'
+    })
+    assert.equal(retry.result, 'delegation-retry-scheduled')
+    assert.equal(retry.request, null)
+    assert.equal(retry.rejectedDelegationId, orphan.request.delegationId)
+    let job = (await lerAutomacaoMelhorias(casa)).jobs[0]
+    assert.equal(job.state, 'queued')
+    assert.equal(job.generation, 2)
+    assert.equal(job.delegationId, null)
+    assert.match(job.reasonFingerprint, /^[a-f0-9]{64}$/)
+    let cycle = await lerCicloOperacional(casa)
+    assert.equal(cycle.delegations[0].state, 'cancelled')
+
+    const recovered = await prepararDespachoAutomaticoMelhoria(casa, { sessionId }, {
+      at: '2026-08-29T11:04:02.000Z'
+    })
+    assert.equal(recovered.result, 'dispatch-required')
+    assert.notEqual(recovered.request.delegationId, orphan.request.delegationId)
+    job = (await lerAutomacaoMelhorias(casa)).jobs[0]
+    assert.equal(job.generation, 2)
+    assert.equal(job.delegationId, recovered.request.delegationId)
+    cycle = await lerCicloOperacional(casa)
+    assert.equal(cycle.delegations.find((item) => item.id === recovered.request.delegationId).state, 'prepared')
   } finally {
     await rm(casa, { recursive: true, force: true })
     await rm(repo, { recursive: true, force: true })
@@ -184,17 +292,14 @@ test('regra portatil captura baseline antes de materializar e conclui pela mesma
       releaseOperational: async ({ baseline, allowedArtifacts }) => {
         assert.equal(baseline.commitSha, pending.baselineCommitSha)
         assert.deepEqual(allowedArtifacts, [candidate.artifactRef])
-        await marcarMelhoriaOperacional(casa, candidate.id, {
-          status: 'installed-verified',
-          installedReadback: {
-            verified: true,
-            version: '1.0.1',
-            payloadFingerprint: 'd'.repeat(64),
-            artifactFingerprint: 'e'.repeat(64),
-            verifiedAt: '2031-01-01T00:03:00.000Z'
-          }
-        }, { at: '2031-01-01T00:03:00.000Z' })
-        return { result: 'published-installed-verified' }
+        await marcarMelhoriaCarregada(casa, candidate.id, {
+          root: repo,
+          version: '1.0.1',
+          payloadFingerprint: 'd'.repeat(64),
+          artifactFingerprint: 'e'.repeat(64),
+          verifiedAt: '2031-01-01T00:03:00.000Z'
+        })
+        return { result: 'published-loaded-verified' }
       }
     })
     assert.equal(released.result, 'completed', JSON.stringify(released))
@@ -241,17 +346,14 @@ test('pipeline serializa duas regras prontas ate a primeira release ficar instal
     const released = await processarReleasePendenteMelhoria(casa, {
       releaseOperational: async () => {
         commitGit(repo, 'release first learned rule')
-        await marcarMelhoriaOperacional(casa, ready[0].id, {
-          status: 'installed-verified',
-          installedReadback: {
-            verified: true,
-            version: '1.0.1',
-            payloadFingerprint: '1'.repeat(64),
-            artifactFingerprint: first.candidate.artifactRef.semanticFingerprint,
-            verifiedAt: '2031-01-01T00:03:00.000Z'
-          }
+        await marcarMelhoriaCarregada(casa, ready[0].id, {
+          root: repo,
+          version: '1.0.1',
+          payloadFingerprint: '1'.repeat(64),
+          artifactFingerprint: first.candidate.artifactRef.semanticFingerprint,
+          verifiedAt: '2031-01-01T00:03:00.000Z'
         })
-        return { result: 'published-installed-verified' }
+        return { result: 'published-loaded-verified' }
       }
     })
     assert.equal(released.result, 'completed')
@@ -296,17 +398,14 @@ test('job legado sem baseline recupera somente o artefato auditado e conclui rel
       releaseOperational: async ({ baseline, allowedArtifacts }) => {
         assert.match(baseline.commitSha, /^[a-f0-9]{40,64}$/)
         assert.deepEqual(allowedArtifacts, [materialized.candidate.artifactRef])
-        await marcarMelhoriaOperacional(casa, ready.candidate.id, {
-          status: 'installed-verified',
-          installedReadback: {
-            verified: true,
-            version: '1.0.1',
-            payloadFingerprint: '3'.repeat(64),
-            artifactFingerprint: materialized.candidate.artifactRef.semanticFingerprint,
-            verifiedAt: '2031-01-01T00:03:00.000Z'
-          }
+        await marcarMelhoriaCarregada(casa, ready.candidate.id, {
+          root: repo,
+          version: '1.0.1',
+          payloadFingerprint: '3'.repeat(64),
+          artifactFingerprint: materialized.candidate.artifactRef.semanticFingerprint,
+          verifiedAt: '2031-01-01T00:03:00.000Z'
         })
-        return { result: 'published-installed-verified' }
+        return { result: 'published-loaded-verified' }
       }
     })
     assert.equal(released.result, 'completed', JSON.stringify(released))
@@ -415,17 +514,14 @@ test('baseline divergente recaptura o novo HEAD quando resta somente o artefato 
     const completed = await processarReleasePendenteMelhoria(casa, {
       releaseOperational: async ({ baseline }) => {
         assert.equal(baseline.commitSha, newHead)
-        await marcarMelhoriaOperacional(casa, candidate.id, {
-          status: 'installed-verified',
-          installedReadback: {
-            verified: true,
-            version: '1.0.1',
-            payloadFingerprint: '5'.repeat(64),
-            artifactFingerprint: candidate.artifactRef.semanticFingerprint,
-            verifiedAt: '2031-01-01T00:03:00.000Z'
-          }
+        await marcarMelhoriaCarregada(casa, candidate.id, {
+          root: repo,
+          version: '1.0.1',
+          payloadFingerprint: '5'.repeat(64),
+          artifactFingerprint: candidate.artifactRef.semanticFingerprint,
+          verifiedAt: '2031-01-01T00:03:00.000Z'
         })
-        return { result: 'published-installed-verified' }
+        return { result: 'published-loaded-verified' }
       }
     })
     assert.equal(completed.result, 'completed')
@@ -700,24 +796,21 @@ test('inicio real, mutacao, readback e recibo avancam para release sem alegar co
       at: '2030-01-01T00:11:00.000Z',
       releaseOperational: async (input) => {
         assert.equal(input.candidateId, candidateId)
-        await marcarMelhoriaOperacional(casa, candidateId, {
-          status: 'installed-verified',
-          installedReadback: {
-            verified: true,
-            version: '1.0.1',
-            payloadFingerprint: 'a'.repeat(64),
-            artifactFingerprint: candidate.artifactRef.contentFingerprint,
-            verifiedAt: '2030-01-01T00:11:00.000Z'
-          }
-        }, { at: '2030-01-01T00:11:00.000Z' })
-        return { result: 'published-installed-verified' }
+        await marcarMelhoriaCarregada(casa, candidateId, {
+          root: repo,
+          version: '1.0.1',
+          payloadFingerprint: 'a'.repeat(64),
+          artifactFingerprint: candidate.artifactRef.contentFingerprint,
+          verifiedAt: '2030-01-01T00:11:00.000Z'
+        })
+        return { result: 'published-loaded-verified' }
       }
     })
     assert.equal(released.result, 'completed')
     assert.equal((await lerAutomacaoMelhorias(casa)).jobs[0].state, 'completed')
     assert.equal(
       (await lerCicloOperacional(casa)).improvementCandidates.find((item) => item.id === candidateId).status,
-      'installed-verified'
+      'loaded-verified'
     )
   } finally {
     await rm(casa, { recursive: true, force: true })

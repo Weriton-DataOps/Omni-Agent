@@ -18,6 +18,7 @@ import {
   adaptarInicioSubagenteClaude,
   registrarEntregaClaude
 } from '../runtime/adaptador-claude-delegacao.mjs'
+import { lerCicloOperacional } from '../runtime/ciclo-operacional.mjs'
 import {
   analisarPadraoFalha,
   avaliarPadraoFalha,
@@ -226,6 +227,12 @@ test('lease expirado e falha tecnica recolocam o mesmo trabalho na fila', async 
     const expired = await sincronizarAutomacaoFalhas(casa, { at: '2026-08-27T02:01:00.000Z' })
     assert.equal(expired.jobs[0].state, 'queued')
     assert.equal(expired.jobs[0].reasonClass, 'lease-expired')
+    assert.equal(expired.jobs[0].delegationId, null)
+    const expiredDelegation = (await lerCicloOperacional(casa)).delegations.find(
+      (item) => item.id === started.delegation.id
+    )
+    assert.equal(expiredDelegation.state, 'failed')
+    assert.equal(expiredDelegation.finalOutcome, 'failed')
 
     const restarted = await iniciarTrabalhoReal(casa, null, { at: '2026-08-27T02:02:00.000Z' })
     assert.equal(restarted.job.attempts, 2)
@@ -246,6 +253,53 @@ test('lease expirado e falha tecnica recolocam o mesmo trabalho na fila', async 
     assert.equal(stable.jobs[0].state, 'queued')
     assert.equal(stable.jobs[0].reasonClass, 'retryable')
     assert.equal(stable.jobs[0].reasonFingerprint.length, 64)
+  } finally {
+    await rm(casa, { recursive: true, force: true })
+  }
+})
+
+test('binding visible perdido e reatado antes do timeout e terminalizado depois de expirar', async () => {
+  const casa = await home()
+  try {
+    await candidate(casa, 'reattach-visible')
+    const sessionId = 'failure-visible-reattach'
+    await abrirTurnoAuditoria(casa, {
+      session_id: sessionId,
+      prompt: 'Prepare o despacho recuperável da validação.'
+    }, { at: '2099-01-01T10:00:00.000Z' })
+    const dispatch = await prepararDespachoAutomaticoFalha(casa, {
+      sessionId
+    }, { at: '2099-01-01T10:00:01.000Z' })
+    assert.equal(dispatch.result, 'dispatch-required')
+    await registrarEntregaClaude(casa, dispatch.request, { at: '2099-01-01T10:00:02.000Z' })
+
+    const path = caminhoDaAutomacaoFalhas(casa)
+    const interrupted = JSON.parse(await readFile(path, 'utf8'))
+    const job = interrupted.jobs[0]
+    job.dispatchState = 'not-requested'
+    job.dispatchRequestedAt = null
+    job.dispatchExpiresAt = null
+    job.dispatchSessionFingerprint = null
+    job.delegationId = null
+    job.authorityFingerprint = null
+    await writeFile(path, `${JSON.stringify(interrupted, null, 2)}\n`, 'utf8')
+
+    const reattached = await sincronizarAutomacaoFalhas(casa, { at: '2099-01-01T10:05:00.000Z' })
+    assert.equal(reattached.jobs[0].dispatchState, 'requested')
+    assert.equal(reattached.jobs[0].delegationId, dispatch.request.delegationId)
+    assert.equal(
+      (await lerCicloOperacional(casa)).delegations.find((item) => item.id === dispatch.request.delegationId).state,
+      'visible'
+    )
+
+    const expired = await sincronizarAutomacaoFalhas(casa, { at: '2099-01-01T10:16:00.000Z' })
+    assert.equal(expired.jobs[0].dispatchState, 'not-requested')
+    assert.equal(expired.jobs[0].delegationId, null)
+    const terminal = (await lerCicloOperacional(casa)).delegations.find(
+      (item) => item.id === dispatch.request.delegationId
+    )
+    assert.equal(terminal.state, 'cancelled')
+    assert.equal(terminal.finalOutcome, 'cancelled')
   } finally {
     await rm(casa, { recursive: true, force: true })
   }

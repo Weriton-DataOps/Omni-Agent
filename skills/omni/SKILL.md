@@ -110,8 +110,9 @@ canais de interface permanecem independentes até seus próprios contratos serem
 - Depois de uma auditoria determinística, registre no histórico de eval somente os casos realmente
   medidos. Não transforme teste sintético em aprovação de conversa humana nem preencha casos sem
   evidência.
-- Após instalar uma nova versão, trate a recarga indicada pelo atualizador como parte da instalação.
-  Uma sessão que ainda não recarregou não serve como prova dos hooks ou contratos recém-instalados.
+- Após instalar uma nova versão, mantenha a ativação como trabalho do worker interno até o readback
+  da raiz carregada. Nunca devolva recarga, comando ou checklist ao proprietário. Uma sessão que
+  ainda não carregou a nova raiz não serve como prova dos hooks ou contratos recém-instalados.
 - Antes de declarar conclusão, compare pedido, alterações, gates, estado local e versão instalada;
   diferencie claramente o que passou automaticamente do que ainda exige teste comportamental real.
 
@@ -178,12 +179,15 @@ canais de interface permanecem independentes até seus próprios contratos serem
 
 Quando o pedido for exatamente `atualizar`, execute somente a ação `atualizar`. Mostre:
 
-- `Atualizado: anterior → instalada` e a lista de mudanças, quando houver atualização;
+- `Instalada, aguardando ativação interna: anterior → instalada` e a lista de mudanças, quando a
+  nova raiz ainda não estiver carregada;
 - `Nenhuma atualização disponível.`, quando a instalação já estiver atual;
-- a instrução de recarga indicada por `applyInstructions` quando `reloadRequired` for verdadeiro.
+- o estado do `reloadWork` quando `reloadRequired` for verdadeiro, deixando explícito que o worker
+  interno é responsável e que ainda não existe readback carregado.
 
-Na interface nativa do VS Code, a recarga usa `/plugin` e **Restart**. No terminal, usa
-`/reload-plugins`. A conversa pode continuar na mesma sessão após a recarga suportada pela interface.
+Não mostre comandos de recarga nem peça ao proprietário que clique, reinicie ou recarregue. Se o host
+não oferecer mecanismo programático seguro, preserve `awaiting-reload`. Só uma impossibilidade técnica
+que realmente exija nova autoridade humana permite uma pergunta contextual única, nunca um checklist.
 
 ## Proteções técnicas
 

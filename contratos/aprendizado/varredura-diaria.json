@@ -30,7 +30,7 @@
     ],
     "countsAsRelease": false,
     "countsAsPublication": false,
-    "effectiveOnlyAfter": "installed-verified"
+    "effectiveOnlyAfter": "loaded-verified"
   },
   "report": {
     "producedBy": "host-orchestration",

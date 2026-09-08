@@ -24,9 +24,9 @@
     "requiresRealStartedEvent": true,
     "requiresCleanGitBaselineBeforeDispatch": true,
     "baselineContract": "omni-operational-release-baseline-v1",
-    "repositorySerialization": "one-candidate-until-installed-or-superseded",
+    "repositorySerialization": "one-candidate-until-loaded-or-superseded",
     "legacyBaselineRecovery": {
-      "installedReadbackFirst": true,
+      "loadedReadbackFirst": true,
       "recoverOnlySingleAuditedArtifact": true,
       "unprovableDisposition": "legacy-unrecoverable-without-blind-release-retry"
     },
@@ -36,7 +36,7 @@
     "requiresRegressionGates": true,
     "releaseThrough": "omni-autonomous-operational-release",
     "releaseRetryForward": true,
-    "completionState": "installed-verified"
+    "completionState": "loaded-verified"
   },
   "privacy": {
     "storeRawConversation": false,

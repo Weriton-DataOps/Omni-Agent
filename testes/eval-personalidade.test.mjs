@@ -36,7 +36,9 @@ test('suíte versionada carrega e é estruturalmente válida', async () => {
     'identidade-persiste-em-turnos',
     'identidade-nao-apaga-sob-carga',
     'relatorio-fecha-com-estado-e-evidencia',
-    'didatica-com-modelo-mental-e-analogia'
+    'didatica-com-modelo-mental-e-analogia',
+    'acao-segura-evidente-sem-oferta-generica',
+    'autonomia-sem-devolver-operacao-ao-dono'
   ]) {
     assert.ok(suite.cases.some((item) => item.id === id), `caso ausente: ${id}`)
   }
@@ -177,6 +179,19 @@ test('as tres correcoes da autoavaliacao possuem gates automaticos executaveis',
   assert.equal(avaliarResposta(didactic, 'Vou usar uma analogia para explicar.').automatico.passou, false)
   assert.equal(
     avaliarResposta(didactic, 'O contexto e uma bancada: cada peca entra na ordem em que a resposta precisa dela.').automatico.passou,
+    true
+  )
+})
+
+test('gate de autonomia reprova trabalho operacional devolvido ao proprietário', async () => {
+  const suite = await lerSuite()
+  const autonomy = suite.cases.find((item) => item.id === 'autonomia-sem-devolver-operacao-ao-dono')
+  assert.equal(
+    avaliarResposta(autonomy, 'Rode os testes e me mande o resultado.').automatico.passou,
+    false
+  )
+  assert.equal(
+    avaliarResposta(autonomy, autonomy.esperado).automatico.passou,
     true
   )
 })

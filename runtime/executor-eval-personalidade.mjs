@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, open, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { createCandidateSnapshot, verifyCandidateSnapshot } from '../scripts/create-candidate-snapshot.mjs'
 
 import { localizarClaudeCli } from './atualizacao.mjs'
 import { TEXTO_DIRETIVA_PERSONALIDADE } from './ajustes-personalidade.mjs'
@@ -31,8 +32,8 @@ const HASH_SHA256 = /^[a-f0-9]{64}$/
 const HASH_COMMIT = /^[a-f0-9]{40,64}$/
 const SAFE_REASON_CODE = /^[a-z0-9][a-z0-9-]{0,79}$/
 const COMPLETE_PROMOTIONS = new Set([
-  'published-installed-verified',
-  'already-published-installed-verified'
+  'published-loaded-verified',
+  'already-published-loaded-verified'
 ])
 const REEVALUATION_REQUIRED = new Set([
   'evaluated-source-unbound',
@@ -474,9 +475,22 @@ function erroFonteCanonica(message, code) {
   return error
 }
 
-async function capturarFonteCanonica(root, repository) {
+async function capturarFonteCanonica(root, repository, { allowSnapshot = false } = {}) {
   const initialChanges = await repository.status(root)
   if (initialChanges.length > 0) {
+    if (allowSnapshot) {
+      const parent = join(root, 'out', 'eval-candidates')
+      await mkdir(parent, { recursive: true })
+      const captured = await createCandidateSnapshot(root, join(parent, randomUUID()))
+      await verifyCandidateSnapshot(captured.destination)
+      const evaluationRoot = join(captured.destination, 'source')
+      return {
+        payloadFingerprint: (await calcularFingerprintPayload(evaluationRoot)).fingerprint,
+        snapshotFingerprint: captured.sourceFingerprint,
+        snapshotDestination: captured.destination,
+        evaluationRoot
+      }
+    }
     throw erroFonteCanonica(
       'O repositorio canonico precisa estar limpo antes de qualquer chamada de eval.',
       'CANONICAL_SOURCE_NOT_CLEAN'
@@ -834,6 +848,15 @@ export async function processarFilaEvalPersonalidade(options = {}) {
       }
     }
     if (previous?.phase === 'promotion-retry' && typeof previous.roundId === 'string') {
+      if (previous.snapshotFingerprint) {
+        // Measurement on WIP is useful; publication still requires reviewed, stable source.
+        try {
+          const stable = await capturarFonteCanonica(evaluationRoot, repository)
+          if (stable.payloadFingerprint !== previous.payloadFingerprints.releaseFingerprint) return { result: 'awaiting-reviewed-source', triggerFingerprint }
+        } catch {
+          return { result: 'awaiting-reviewed-source', triggerFingerprint }
+        }
+      }
       const passedRun = currentHistory.runs.find((run) =>
         run.id === previous.roundId && run.status === 'passed' && run.trust?.promotable === true
       )
@@ -881,7 +904,8 @@ export async function processarFilaEvalPersonalidade(options = {}) {
     let evaluatedSource = null
     if (canonicalMode) {
       try {
-        evaluatedSource = await capturarFonteCanonica(evaluationRoot, repository)
+        evaluatedSource = await capturarFonteCanonica(evaluationRoot, repository, { allowSnapshot: true })
+        evaluationRoot = evaluatedSource.evaluationRoot ?? evaluationRoot
       } catch (error) {
         const retryAtIso = retryAt(now, contract.retry.backoffMinutes)
         await gravarEstado(casa, {
@@ -941,7 +965,9 @@ export async function processarFilaEvalPersonalidade(options = {}) {
         evaluationRoot,
         evaluatedSource,
         verifyEvaluatedSource: canonicalMode
-          ? (expected) => verificarFonteCanonica(evaluationRoot, repository, expected)
+          ? evaluatedSource?.snapshotDestination
+            ? () => verifyCandidateSnapshot(evaluatedSource.snapshotDestination)
+            : (expected) => verificarFonteCanonica(evaluationRoot, repository, expected)
           : undefined,
         triggerFingerprint,
         testedDirectiveIds,
@@ -1010,7 +1036,9 @@ export async function processarFilaEvalPersonalidade(options = {}) {
             }
       }
 
-      const promotion = await promoverRodada({ casa, pluginRoot, run: recorded.run, prepareRelease })
+      const promotion = evaluatedSource?.snapshotFingerprint
+        ? { result: 'awaiting-reviewed-source' }
+        : await promoverRodada({ casa, pluginRoot, run: recorded.run, prepareRelease })
       const completed = COMPLETE_PROMOTIONS.has(promotion?.result)
       const reevaluationRequired = REEVALUATION_REQUIRED.has(promotion?.result)
       const promotedReleaseFingerprint = completed && HASH_SHA256.test(promotion?.releaseFingerprint ?? '')
@@ -1031,6 +1059,7 @@ export async function processarFilaEvalPersonalidade(options = {}) {
           roundId: recorded.run.id,
           status: recorded.run.status,
           promotion: promotion?.result ?? 'unknown',
+          ...(evaluatedSource?.snapshotFingerprint ? { snapshotFingerprint: evaluatedSource.snapshotFingerprint } : {}),
           promotedReleaseFingerprint,
           retryAt: nextRetryAt,
           correction: correction

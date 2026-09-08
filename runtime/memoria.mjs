@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, open, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { isAbsolute, join, resolve } from 'node:path'
+
+import { acquireLocalFileLock } from '../dist/adapters/local-json/node-local-file-lock.js'
 
 export const MEMORY_SCHEMA_VERSION = 4
 export const MEMORY_GC_POLICY_VERSION = 1
@@ -433,23 +435,15 @@ async function carregarSemTrava(casa) {
 }
 
 async function adquirirTrava(casa) {
-  await mkdir(join(casa, 'memory'), { recursive: true })
   const trava = join(casa, 'memory', 'memory.lock')
-  for (let tentativa = 0; tentativa < 40; tentativa += 1) {
-    try {
-      const handle = await open(trava, 'wx')
-      return async () => {
-        await handle.close()
-        await unlink(trava).catch(() => undefined)
-      }
-    } catch (erro) {
-      if (erro?.code !== 'EEXIST') throw erro
-      const idade = Date.now() - (await stat(trava).catch(() => ({ mtimeMs: Date.now() }))).mtimeMs
-      if (idade > 10_000) await unlink(trava).catch(() => undefined)
-      await new Promise((resolveWait) => setTimeout(resolveWait, 50))
-    }
-  }
-  throw new Error('A memória está ocupada por outra escrita.')
+  const lock = await acquireLocalFileLock(trava, {
+    acquisitionTimeoutMs: 2_000,
+    retryDelayMs: 50,
+    staleLockMs: 10_000,
+    heartbeatMs: 2_500,
+    timeoutMessage: 'A memória está ocupada por outra escrita.'
+  })
+  return () => lock.release()
 }
 
 async function gravar(casa, memoria) {

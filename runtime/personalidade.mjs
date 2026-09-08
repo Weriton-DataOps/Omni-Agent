@@ -37,6 +37,36 @@ function escaparExpressao(texto) {
   return texto.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
+/**
+ * A GALERIA vive dentro do núcleo textual, que só cabe inteiro na ativação.
+ * Extraí-la em itens permite injetar uma janela rotativa a cada turno, mantendo
+ * a voz demonstrada por exemplo sem repetir o núcleo completo.
+ */
+function extrairGaleria(nucleo) {
+  const bloco = nucleo.replace(/\r\n/g, '\n').match(/^GALERIA\b[^\n]*\n([\s\S]*)$/m)
+  if (!bloco) return []
+  const galeria = []
+  let atual = null
+  for (const linha of bloco[1].split('\n')) {
+    if (/^-\s+/.test(linha)) {
+      if (atual) galeria.push(atual)
+      atual = linha.replace(/^-\s+/, '')
+      continue
+    }
+    if (atual === null) continue
+    if (!linha.trim()) break
+    atual = `${atual} ${linha.trim()}`
+  }
+  if (atual) galeria.push(atual)
+  return galeria.flatMap((entrada) => {
+    const partes = entrada.split('→')
+    if (partes.length < 2) return []
+    const situation = partes[0].trim()
+    const line = partes.slice(1).join('→').trim()
+    return situation && line ? [{ situation, line }] : []
+  })
+}
+
 function extrairBlocoTextualOpcional(markdown, titulo) {
   const expressao = new RegExp(
     `^#{2,3}\\s+${escaparExpressao(titulo)}\\s*\\r?\\n+\`\`\`text\\s*([\\s\\S]*?)\`\`\``,
@@ -277,6 +307,7 @@ async function carregar(pluginRoot, verificarEvidenciaConfiavel) {
     nucleus,
     textAdapter,
     continuityAnchor,
+    gallery: extrairGaleria(nucleus),
     promotionEvidence,
     learnedAdjustments,
     learnedAdjustmentText: formatarAjustesAprendidos(learnedAdjustments)

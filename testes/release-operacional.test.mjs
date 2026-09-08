@@ -7,6 +7,7 @@ import test from 'node:test'
 
 import {
   lerCicloOperacional,
+  marcarMelhoriaOperacional,
   proporMelhoriaOperacional
 } from '../runtime/ciclo-operacional.mjs'
 import {
@@ -24,6 +25,8 @@ const RELEASE_COMMIT = 'b'.repeat(40)
 const BRANCH = createHash('sha256').update('main').digest('hex')
 const REMOTE_REF = createHash('sha256').update('refs/heads/main').digest('hex')
 const ARTIFACT = 'contratos/operacao/regras-aprendidas.json'
+const TYPESCRIPT_SOURCE = 'src/core/example/improvement.ts'
+const TYPESCRIPT_EMIT = 'dist/core/example/improvement.js'
 const METADATA = [
   '.claude-plugin/plugin.json',
   'contratos/atualizacao/integridade.json',
@@ -36,7 +39,7 @@ async function fixture() {
   const casa = await mkdtemp(join(tmpdir(), 'omni-operational-release-home-'))
   for (const directory of [
     '.git', '.claude-plugin', 'contratos/atualizacao', 'contratos/operacao',
-    'hooks', 'runtime', 'scripts', 'skills'
+    'dist', 'hooks', 'runtime', 'scripts', 'skills'
   ]) await mkdir(join(root, directory), { recursive: true })
   await writeFile(join(root, 'package.json'), JSON.stringify({ name: 'omni-agent', version: '0.21.2' }))
   await writeFile(join(root, '.claude-plugin', 'plugin.json'), JSON.stringify({ name: 'omni', version: '0.21.2' }))
@@ -73,7 +76,13 @@ async function fixture() {
   return { root, casa, candidateId: first.candidate.id }
 }
 
-function repositoryFixture({ outside = false, dirtyBaseline = false, failPushes = 0 } = {}) {
+function repositoryFixture({
+  outside = false,
+  dirtyBaseline = false,
+  failPushes = 0,
+  initialArtifacts = [ARTIFACT],
+  finalArtifacts = initialArtifacts
+} = {}) {
   let statusCalls = 0
   let committed = false
   const calls = { commit: 0, push: 0, paths: [], messages: [] }
@@ -86,11 +95,11 @@ function repositoryFixture({ outside = false, dirtyBaseline = false, failPushes 
         if (statusCalls === 1) return dirtyBaseline ? [{ status: ' M', path: 'README.md' }] : []
         if (statusCalls === 2) {
           return [
-            { status: ' M', path: ARTIFACT },
+            ...initialArtifacts.map((path) => ({ status: ' M', path })),
             ...(outside ? [{ status: ' M', path: 'README.md' }] : [])
           ]
         }
-        return [ARTIFACT, ...METADATA].map((path) => ({ status: ' M', path }))
+        return [...finalArtifacts, ...METADATA].map((path) => ({ status: ' M', path }))
       },
       async head() {
         return { commitSha: committed ? RELEASE_COMMIT : BASE_COMMIT, branchFingerprint: BRANCH }
@@ -117,6 +126,22 @@ async function prepararCandidata(casa, candidateId) {
   return result.candidate
 }
 
+function implementationReceipt() {
+  return {
+    sessionFingerprint: '1'.repeat(64),
+    mutationActionId: 'audit-action-mutation',
+    mutationEvidenceId: 'audit-evidence-mutation',
+    mutationActionFingerprint: '2'.repeat(64),
+    mutationEvidenceFingerprint: '3'.repeat(64),
+    verificationActionId: 'audit-action-verification',
+    verificationEvidenceId: 'audit-evidence-verification',
+    verificationActionFingerprint: '4'.repeat(64),
+    verificationEvidenceFingerprint: '5'.repeat(64),
+    targetFingerprint: '6'.repeat(64),
+    verifiedAt: '2026-08-29T10:05:00.000Z'
+  }
+}
+
 function gates() {
   return async () => ({
     ok: true,
@@ -136,7 +161,15 @@ function instalarComRaizInstalada(installedRoot, calls = { count: 0 }) {
       installedVersion: version,
       installedFingerprint: releaseFingerprint,
       installedRoot,
-      verificationFingerprint: '6'.repeat(64)
+      verificationFingerprint: '6'.repeat(64),
+      loadedReadback: {
+        verified: true,
+        root: installedRoot,
+        version,
+        fingerprint: releaseFingerprint,
+        verificationFingerprint: '7'.repeat(64),
+        verifiedAt: '2026-08-29T10:10:00.000Z'
+      }
     }
   }
 }
@@ -188,17 +221,18 @@ test('melhoria operacional publica apenas artefato auditado e metadados, instala
       installAndReadback: instalarComRaizInstalada(root, installCalls),
       at: '2026-08-29T10:10:00.000Z'
     })
-    assert.equal(result.result, 'published-installed-verified')
+    assert.equal(result.result, 'published-loaded-verified')
     assert.equal(result.version, '0.21.3')
     assert.equal(result.publication, 'remote-commit-verified')
     assert.equal(result.installedReadback, true)
+    assert.equal(result.loadedReadback, true)
     assert.equal(git.calls.commit, 1)
     assert.equal(git.calls.push, 1)
     assert.equal(installCalls.count, 1)
     assert.deepEqual(git.calls.paths[0], [ARTIFACT, ...METADATA].sort())
     assert.match(git.calls.messages[0], /v0\.21\.3 operational \[[a-f0-9]{12}\]/)
     const cycle = await lerCicloOperacional(casa)
-    assert.equal(cycle.improvementCandidates.find((item) => item.id === candidateId).status, 'installed-verified')
+    assert.equal(cycle.improvementCandidates.find((item) => item.id === candidateId).status, 'loaded-verified')
 
     const rawState = await readFile(caminhoDoEstadoReleaseAutonoma(casa), 'utf8')
     assert.doesNotMatch(rawState, new RegExp(candidateId))
@@ -209,8 +243,71 @@ test('melhoria operacional publica apenas artefato auditado e metadados, instala
       casa, candidateId, baseline: captured.baseline, repository: git.adapter,
       runGates: gates(), installAndReadback: async () => { throw new Error('nao deve repetir') }
     })
-    assert.equal(again.result, 'already-published-installed-verified')
+    assert.equal(again.result, 'already-published-loaded-verified')
     assert.equal(git.calls.commit, 1)
+  } finally {
+    await cleanup(root, casa)
+  }
+})
+
+test('release TypeScript controla exatamente fonte auditada e emit deterministico', async () => {
+  const { root, casa, candidateId } = await fixture()
+  const git = repositoryFixture({
+    initialArtifacts: [TYPESCRIPT_SOURCE, TYPESCRIPT_EMIT],
+    finalArtifacts: [TYPESCRIPT_SOURCE, TYPESCRIPT_EMIT]
+  })
+  try {
+    const captured = await capturarBaselineReleaseOperacional({ casa, repository: git.adapter })
+    const cycle = await lerCicloOperacional(casa)
+    const ready = cycle.improvementCandidates.find((item) => item.id === candidateId)
+    assert.equal(ready.status, 'ready')
+    await marcarMelhoriaOperacional(casa, candidateId, {
+      status: 'implementation-required',
+      artifact: TYPESCRIPT_SOURCE
+    }, { at: '2026-08-29T10:03:00.000Z' })
+    await mkdir(join(root, 'src', 'core', 'example'), { recursive: true })
+    await mkdir(join(root, 'dist', 'core', 'example'), { recursive: true })
+    const sourceRaw = 'export const operationalImprovement: string = \'verified\'\n'
+    await writeFile(join(root, ...TYPESCRIPT_SOURCE.split('/')), sourceRaw, 'utf8')
+    await writeFile(
+      join(root, ...TYPESCRIPT_EMIT.split('/')),
+      'export const operationalImprovement = \'verified\';\n',
+      'utf8'
+    )
+    const materialized = await marcarMelhoriaOperacional(casa, candidateId, {
+      status: 'materialized-pending-release',
+      artifactRef: {
+        kind: 'source-file',
+        path: TYPESCRIPT_SOURCE,
+        collection: null,
+        entryId: null,
+        semanticFingerprint: ready.fingerprint,
+        contentFingerprint: createHash('sha256').update(sourceRaw).digest('hex'),
+        implementationReceipt: implementationReceipt()
+      }
+    }, { at: '2026-08-29T10:06:00.000Z' })
+    assert.equal(materialized.result, 'materialized-pending-release')
+
+    const result = await prepararReleaseAutonomaOperacional({
+      casa,
+      candidateId,
+      baseline: captured.baseline,
+      sourceRepository: root,
+      allowedArtifacts: [TYPESCRIPT_SOURCE],
+      repository: git.adapter,
+      runGates: gates(),
+      installAndReadback: instalarComRaizInstalada(root),
+      at: '2026-08-29T10:10:00.000Z'
+    })
+    assert.equal(result.result, 'published-loaded-verified')
+    assert.deepEqual(
+      git.calls.paths[0],
+      [TYPESCRIPT_SOURCE, TYPESCRIPT_EMIT, ...METADATA].sort()
+    )
+    const loaded = (await lerCicloOperacional(casa)).improvementCandidates
+      .find((item) => item.id === candidateId)
+    assert.equal(loaded.status, 'loaded-verified')
+    assert.match(loaded.loadedReadback.artifactFingerprint, /^[a-f0-9]{64}$/)
   } finally {
     await cleanup(root, casa)
   }
@@ -232,7 +329,7 @@ test('release operacional recusa mudanca alheia e teste sem vinculo auditavel', 
             repository: git.adapter,
             allowedArtifacts: [candidate.artifactRef, 'runtime/teste-nao-vinculado.test.mjs']
           }),
-          /testes extras ainda nao possuem vinculo seguro/
+          /artefato extra nao possui vinculo seguro/
         )
       } else {
         const result = await prepararReleaseAutonomaOperacional({
@@ -293,7 +390,7 @@ test('push transitorio retoma o mesmo commit sem novo bump ou novo gate', async 
       casa, candidateId, baseline: captured.baseline, repository: git.adapter, runGates,
       installAndReadback: instalarComRaizInstalada(root)
     })
-    assert.equal(second.result, 'published-installed-verified')
+    assert.equal(second.result, 'published-loaded-verified')
     assert.equal(second.version, '0.21.3')
     assert.equal(git.calls.commit, 1)
     assert.equal(git.calls.push, 2)

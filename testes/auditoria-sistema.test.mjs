@@ -6,10 +6,15 @@ import { join } from 'node:path'
 import test from 'node:test'
 
 import {
+  CLASSIFICACOES_AUDITORIA,
   auditarSaudeSistema,
   caminhoDaAuditoriaSistema,
+  classificarAchadoTurnoAuditoria,
+  classificarDelegacaoAuditoria,
+  classificarMelhoriaOperacionalAuditoria,
   consumirContextoAuditoriaSistema,
-  lerAuditoriaSistema
+  lerAuditoriaSistema,
+  resumirClassificacoesAuditoria
 } from '../runtime/auditoria-sistema.mjs'
 import {
   caminhoDaAutomacaoFalhas,
@@ -18,6 +23,7 @@ import {
 import {
   abrirTurnoAuditoria,
   auditarParada,
+  encerrarSessaoAuditoria,
   lerAuditoriaAutocorrecao,
   registrarAcaoAuditoria
 } from '../runtime/auditoria-autocorrecao.mjs'
@@ -26,12 +32,17 @@ import {
   lerCicloOperacional,
   marcarMelhoriaOperacional,
   observarDelegacao,
+  prepararDelegacao,
   proporMelhoriaOperacional
 } from '../runtime/ciclo-operacional.mjs'
 import { registrarFalha } from '../runtime/falhas.mjs'
 import { calcularFingerprintPayload } from '../runtime/integridade-release.mjs'
-import { auditarAntesDaRelease } from '../runtime/release-gate.mjs'
+import {
+  auditarAntesDaRelease,
+  classificarAchadosRelease
+} from '../runtime/release-gate.mjs'
 import { configurarRepositorioCanonico } from '../runtime/evolucao.mjs'
+import { registrarTelemetriaAutocorrecao } from '../runtime/telemetria-autocorrecao.mjs'
 
 async function temporary(prefix) {
   return mkdtemp(join(tmpdir(), prefix))
@@ -43,7 +54,7 @@ async function pluginFixture({
   releaseAuditScopeStartedAt = '2026-08-28T12:00:00.000Z'
 } = {}) {
   const root = await temporary('omni-system-audit-plugin-')
-  for (const area of ['contratos', 'hooks', 'runtime', 'scripts', 'skills']) {
+  for (const area of ['contratos', 'dist', 'hooks', 'runtime', 'scripts', 'skills']) {
     await mkdir(join(root, area), { recursive: true })
     await writeFile(join(root, area, 'fixture.txt'), `${area}\n`, 'utf8')
   }
@@ -115,7 +126,10 @@ async function failureCandidate(casa) {
   }
 }
 
-async function operationalCandidate(casa, suffix, status) {
+async function operationalCandidate(casa, suffix, status, {
+  version = '1.2.3',
+  payloadFingerprint = 'a'.repeat(64)
+} = {}) {
   const input = {
     category: 'system-audit-test',
     destination: 'operational-rule',
@@ -154,22 +168,35 @@ async function operationalCandidate(casa, suffix, status) {
         collection: artifactRef.collection,
         semanticFingerprint: 'c'.repeat(64),
         artifactFingerprint: 'd'.repeat(64),
-        version: '1.2.3',
-        payloadFingerprint: 'a'.repeat(64),
+        version,
+        payloadFingerprint,
         verifiedAt: `2026-08-28T08:3${suffix}:00.000Z`
       }
     }, { at: `2026-08-28T08:3${suffix}:00.000Z` })).candidate
   }
-  return (await marcarMelhoriaOperacional(casa, ready.candidate.id, {
+  const installed = await marcarMelhoriaOperacional(casa, ready.candidate.id, {
     status: 'installed-verified',
     installedReadback: {
       verified: true,
-      version: '1.2.3',
-      payloadFingerprint: 'a'.repeat(64),
+      version,
+      payloadFingerprint,
       artifactFingerprint: 'b'.repeat(64),
       verifiedAt: `2026-08-28T08:3${suffix}:00.000Z`
     }
-  }, { at: `2026-08-28T08:3${suffix}:00.000Z` })).candidate
+  }, { at: `2026-08-28T08:3${suffix}:00.000Z` })
+  if (status !== 'loaded-verified') return installed.candidate
+  return (await marcarMelhoriaOperacional(casa, ready.candidate.id, {
+    status: 'loaded-verified',
+    loadedReadback: {
+      verified: true,
+      root: casa,
+      version,
+      payloadFingerprint,
+      artifactFingerprint: 'b'.repeat(64),
+      verificationFingerprint: 'e'.repeat(64),
+      verifiedAt: `2026-08-28T08:4${suffix}:00.000Z`
+    }
+  }, { at: `2026-08-28T08:4${suffix}:00.000Z` })).candidate
 }
 
 test('leitura do histórico vazio é neutra e não cria aprovação', async () => {
@@ -182,15 +209,99 @@ test('leitura do histórico vazio é neutra e não cria aprovação', async () =
   }
 })
 
-test('achados entram uma vez no contexto com rota executavel sem fabricar sucesso', async () => {
+test('classificação separa dívida ativa, prova pendente e histórico terminal sem reabrir trabalho', () => {
+  const classificationByState = new Map([
+    ['prepared', CLASSIFICACOES_AUDITORIA.actionableDebt],
+    ['visible', CLASSIFICACOES_AUDITORIA.actionableDebt],
+    ['running', CLASSIFICACOES_AUDITORIA.actionableDebt],
+    ['blocked', CLASSIFICACOES_AUDITORIA.actionableDebt],
+    ['reported', CLASSIFICACOES_AUDITORIA.awaitingProof],
+    ['failed', CLASSIFICACOES_AUDITORIA.terminalWithoutSuccess],
+    ['cancelled', CLASSIFICACOES_AUDITORIA.terminalWithoutSuccess],
+    ['verified', CLASSIFICACOES_AUDITORIA.verified],
+    ['closed', CLASSIFICACOES_AUDITORIA.verified],
+    ['archived', CLASSIFICACOES_AUDITORIA.historicalUnverifiable]
+  ])
+  for (const [state, expected] of classificationByState) {
+    assert.equal(classificarDelegacaoAuditoria({ state }), expected)
+  }
+  assert.equal(
+    classificarDelegacaoAuditoria({ state: 'closed', finalOutcome: 'legacy-unverified', legacyUnverified: true }),
+    CLASSIFICACOES_AUDITORIA.historicalUnverifiable
+  )
+  assert.equal(
+    classificarDelegacaoAuditoria({ state: 'failed', finalOutcome: 'failed', legacyUnverified: true }),
+    CLASSIFICACOES_AUDITORIA.terminalWithoutSuccess
+  )
+
+  const delegationSummary = resumirClassificacoesAuditoria(
+    [...classificationByState.keys()].map((state) => ({ state })),
+    classificarDelegacaoAuditoria
+  )
+  assert.equal(Object.values(delegationSummary).reduce((sum, amount) => sum + amount, 0), 10)
+  assert.equal(delegationSummary[CLASSIFICACOES_AUDITORIA.actionableDebt], 4)
+  assert.equal(delegationSummary[CLASSIFICACOES_AUDITORIA.awaitingProof], 1)
+  assert.equal(delegationSummary[CLASSIFICACOES_AUDITORIA.terminalWithoutSuccess], 2)
+  assert.equal(delegationSummary[CLASSIFICACOES_AUDITORIA.verified], 2)
+  assert.equal(delegationSummary[CLASSIFICACOES_AUDITORIA.historicalUnverifiable], 1)
+
+  assert.equal(
+    classificarAchadoTurnoAuditoria({ state: 'open' }, { state: 'repairing' }),
+    CLASSIFICACOES_AUDITORIA.actionableDebt
+  )
+  for (const turnState of ['verified', 'closed', 'failed', 'cancelled', 'archived']) {
+    assert.equal(
+      classificarAchadoTurnoAuditoria({ state: 'unresolved' }, { state: turnState }),
+      CLASSIFICACOES_AUDITORIA.terminalWithoutSuccess
+    )
+  }
+  assert.equal(
+    classificarAchadoTurnoAuditoria({ state: 'owner-reconfirmation-required' }),
+    CLASSIFICACOES_AUDITORIA.terminalWithoutSuccess
+  )
+  assert.equal(
+    classificarAchadoTurnoAuditoria({ state: 'historical-unverifiable' }),
+    CLASSIFICACOES_AUDITORIA.historicalUnverifiable
+  )
+  assert.equal(
+    classificarAchadoTurnoAuditoria({ state: 'superseded' }),
+    CLASSIFICACOES_AUDITORIA.superseded
+  )
+  assert.equal(
+    classificarAchadoTurnoAuditoria({ state: 'corrected' }),
+    CLASSIFICACOES_AUDITORIA.verified
+  )
+
+  const currentRelease = { version: '1.2.3', payloadFingerprint: 'a'.repeat(64) }
+  const installed = {
+    status: 'installed-verified',
+    installedReadback: { version: '1.2.3', payloadFingerprint: 'a'.repeat(64) }
+  }
+  assert.equal(
+    classificarMelhoriaOperacionalAuditoria(installed, currentRelease),
+    CLASSIFICACOES_AUDITORIA.awaitingProof
+  )
+  assert.equal(
+    classificarMelhoriaOperacionalAuditoria(installed, {
+      version: '1.2.4',
+      payloadFingerprint: 'b'.repeat(64)
+    }),
+    CLASSIFICACOES_AUDITORIA.historicalUnverifiable
+  )
+  assert.equal(
+    classificarMelhoriaOperacionalAuditoria({ status: 'superseded' }, currentRelease),
+    CLASSIFICACOES_AUDITORIA.superseded
+  )
+})
+
+test('achados entram uma vez como obrigação interna sem virar checklist para o proprietário', async () => {
   const casa = await temporary('omni-system-audit-surface-home-')
   const pluginRoot = await pluginFixture()
   try {
-    await observarDelegacao(casa, {
-      state: 'running',
-      agentId: 'executor-sem-rota-automatica',
-      sessionId: 'sessao-auditoria-surface',
-      agentType: 'general-purpose'
+    await prepararDelegacao(casa, {
+      prompt: 'Execute a rota auditada e retorne evidência independente.',
+      target: 'executor-sem-rota-automatica',
+      sessionId: 'sessao-auditoria-surface'
     })
     await auditarSaudeSistema(casa, {
       pluginRoot,
@@ -201,11 +312,22 @@ test('achados entram uma vez no contexto com rota executavel sem fabricar sucess
     const first = await consumirContextoAuditoriaSistema(casa, {
       at: '2026-08-28T09:31:00.000Z'
     })
-    assert.match(first, /AUDITORIA SISTÊMICA/)
+    assert.match(first, /ESTADO INTERNO DE AUTOCORREÇÃO/)
     assert.match(first, /unverified-delegations/)
-    assert.match(first, /registre uma rota executável e inicie a correção/i)
-    assert.match(first, /sem declarar sucesso/i)
-    assert.equal(await consumirContextoAuditoriaSistema(casa), null)
+    assert.match(first, /não o repita nem o transforme em checklist para o proprietário/i)
+    assert.match(first, /Mantenha a personalidade ativa/i)
+    assert.match(first, /O Omni é responsável por executar silenciosamente/i)
+    assert.match(first, /O pedido atual mantém prioridade/i)
+    assert.match(first, /permanece no worker ou na fila/i)
+    assert.match(first, /uma única pergunta contextual/i)
+    assert.doesNotMatch(first, /\brode\b|\bexecute\b|\bcorrija\b|\breivindique\b/i)
+    assert.equal(await consumirContextoAuditoriaSistema(casa, {
+      at: '2026-08-28T09:32:00.000Z'
+    }), null)
+    const retried = await consumirContextoAuditoriaSistema(casa, {
+      at: '2026-08-28T09:42:00.000Z'
+    })
+    assert.match(retried, /ESTADO INTERNO DE AUTOCORREÇÃO/)
   } finally {
     await rm(casa, { recursive: true, force: true })
     await rm(pluginRoot, { recursive: true, force: true })
@@ -292,6 +414,18 @@ test('gate before-release bloqueia erro e permite somente avisos', async () => {
   }
 })
 
+test('gate respeita releaseBlocking para qualquer código sem reclassificar erro recuperável', () => {
+  const blocking = { code: 'future-blocking-error', severity: 'error', releaseBlocking: true }
+  const recoverable = { code: 'future-recoverable-error', severity: 'error', releaseBlocking: false }
+  const failClosed = { code: 'legacy-error-without-flag', severity: 'error' }
+  const warning = { code: 'warning-only', severity: 'warning', releaseBlocking: false }
+  const result = classificarAchadosRelease([blocking, recoverable, failClosed, warning])
+  assert.deepEqual(result.errors, [blocking, recoverable, failClosed])
+  assert.deepEqual(result.blockingErrors, [blocking, failClosed])
+  assert.deepEqual(result.recoverableErrors, [recoverable])
+  assert.deepEqual(result.warnings, [warning])
+})
+
 test('histórico não persiste conversa, dados de ferramenta, caminhos ou versão não permitida', async () => {
   const marker = 'SEGREDO-PRIVADO-AUDITORIA-9381'
   const casa = await temporary('omni-system-audit-private-home-')
@@ -352,6 +486,11 @@ test('detecta lacunas a partir dos stores e do payload reais, sem flags sintéti
       sessionId: session,
       agentType: 'general-purpose'
     })
+    await prepararDelegacao(casa, {
+      prompt: 'Execute a pendência ativa e produza readback independente.',
+      target: 'executor-preparado-pendente',
+      sessionId: session
+    })
 
     const result = await auditarSaudeSistema(casa, { pluginRoot, repair: false })
     const codes = new Set(result.run.findings.map((item) => item.code))
@@ -361,6 +500,9 @@ test('detecta lacunas a partir dos stores e do payload reais, sem flags sintéti
     assert.ok(codes.has('unverified-delegations'))
     assert.ok(codes.has('unresolved-turn-findings'))
     assert.ok(codes.has('duplicate-portable-rules'))
+    assert.equal(result.run.metrics.delegationHistoricalTotal, 2)
+    assert.equal(result.run.metrics.delegationActionableDebt, 1)
+    assert.equal(result.run.metrics.delegationTerminalWithoutSuccess, 1)
     assert.equal(result.run.status, 'repair-required')
     const raw = await readFile(caminhoDaAuditoriaSistema(casa), 'utf8')
     assert.equal(raw.includes(marker), false)
@@ -443,15 +585,75 @@ test('achado não corrigido atravessa release como trabalho recuperavel', async 
   }
 })
 
-test('audita cada fronteira operacional e conta efeito somente após installed-verified', async () => {
+test('reparo reconcilia somente trabalho inativo e mantém terminais no total histórico', async () => {
+  const casa = await temporary('omni-system-audit-reconcile-home-')
+  const pluginRoot = await pluginFixture()
+  const session = 'sessao-inativa-para-reconciliacao'
+  try {
+    await abrirTurnoAuditoria(casa, {
+      session_id: session,
+      prompt: 'corrija a pendência operacional e verifique o resultado'
+    }, { at: '2026-08-28T08:00:00.000Z' })
+    const stop = await auditarParada(casa, {
+      session_id: session,
+      last_assistant_message: 'Ainda não executei a correção.'
+    }, { at: '2026-08-28T08:01:00.000Z' })
+    assert.equal(stop.decision, 'block')
+    await encerrarSessaoAuditoria(casa, {
+      session_id: session
+    }, { at: '2026-08-28T08:02:00.000Z' })
+    await prepararDelegacao(casa, {
+      prompt: 'Execute a correção operacional e produza evidência independente.',
+      target: 'executor-orfao',
+      sessionId: session
+    }, { at: '2026-08-28T08:03:00.000Z' })
+
+    const before = await auditarSaudeSistema(casa, {
+      pluginRoot,
+      repair: false,
+      at: '2026-08-28T08:04:00.000Z'
+    })
+    assert.ok(before.run.findings.some((item) => item.code === 'unresolved-turn-findings'))
+    assert.ok(before.run.findings.some((item) => item.code === 'unverified-delegations'))
+
+    const after = await auditarSaudeSistema(casa, {
+      pluginRoot,
+      repair: true,
+      at: '2026-08-28T11:04:00.000Z'
+    })
+    assert.equal(after.run.findings.some((item) => item.code === 'unresolved-turn-findings'), false)
+    assert.equal(after.run.findings.some((item) => item.code === 'unverified-delegations'), false)
+    assert.equal(after.run.metrics.delegationHistoricalTotal, 1)
+    assert.equal(after.run.metrics.delegationActionableDebt, 0)
+    assert.equal(after.run.metrics.delegationTerminalWithoutSuccess, 1)
+    assert.ok(after.run.metrics.turnFindingHistoricalTotal >= 1)
+    assert.equal(after.run.metrics.turnFindingActionableDebt, 0)
+    assert.equal(
+      after.run.metrics.turnFindingTerminalWithoutSuccess +
+        after.run.metrics.turnFindingHistoricalUnverifiable +
+        after.run.metrics.turnFindingSuperseded +
+        after.run.metrics.turnFindingVerified,
+      after.run.metrics.turnFindingHistoricalTotal
+    )
+  } finally {
+    await rm(casa, { recursive: true, force: true })
+    await rm(pluginRoot, { recursive: true, force: true })
+  }
+})
+
+test('audita cada fronteira operacional e conta efeito somente após loaded-verified', async () => {
   const casa = await temporary('omni-system-audit-operational-home-')
   const pluginRoot = await pluginFixture()
   try {
+    const currentPayloadFingerprint = (await calcularFingerprintPayload(pluginRoot)).fingerprint
     await operationalCandidate(casa, 1, 'ready')
     await operationalCandidate(casa, 2, 'implementation-required')
     await operationalCandidate(casa, 3, 'materialized-pending-release')
-    await operationalCandidate(casa, 4, 'installed-verified')
+    await operationalCandidate(casa, 4, 'installed-verified', {
+      payloadFingerprint: currentPayloadFingerprint
+    })
     await operationalCandidate(casa, 5, 'superseded')
+    await operationalCandidate(casa, 6, 'loaded-verified')
 
     const result = await auditarSaudeSistema(casa, {
       pluginRoot,
@@ -462,22 +664,60 @@ test('audita cada fronteira operacional e conta efeito somente após installed-v
     assert.ok(codes.has('operational-improvement-ready-without-materialization'))
     assert.ok(codes.has('operational-implementation-required'))
     assert.ok(codes.has('operational-materialized-without-installed-readback'))
+    assert.ok(codes.has('operational-installed-without-loaded-readback'))
     assert.equal(result.run.metrics.operationalImprovementReady, 1)
     assert.equal(result.run.metrics.operationalImplementationRequired, 1)
     assert.equal(result.run.metrics.operationalMaterializedPendingRelease, 1)
     assert.equal(result.run.metrics.operationalInstalledVerified, 1)
+    assert.equal(result.run.metrics.operationalLoadedVerified, 1)
     assert.equal(result.run.metrics.operationalSuperseded, 1)
-    assert.equal(result.run.metrics.operationalLearningEffectRate, 0.2)
-    assert.equal(result.run.metrics.learningEffectRate, 0.2)
+    assert.equal(result.run.metrics.operationalImprovementHistoricalTotal, 6)
+    assert.equal(result.run.metrics.operationalImprovementActionableDebt, 3)
+    assert.equal(result.run.metrics.operationalImprovementAwaitingProof, 1)
+    assert.equal(result.run.metrics.operationalImprovementHistoricalUnverifiable, 0)
+    assert.equal(result.run.metrics.operationalLearningEffectRate, 0.1667)
+    assert.equal(result.run.metrics.learningEffectRate, 0.1667)
     assert.equal(
       result.run.findings.find((item) => item.code === 'operational-materialized-without-installed-readback').amount,
       1
     )
 
     const context = await consumirContextoAuditoriaSistema(casa)
-    assert.match(context, /sem configuração ela continua pronta/i)
-    assert.match(context, /reivindique automaticamente um executor pela porta neutra/i)
-    assert.match(context, /antes do readback íntegro não há efeito comprovado/i)
+    assert.match(context, /sem configuração, ela permanece pronta/i)
+    assert.match(context, /o despachante interno reivindica um executor pela porta neutra/i)
+    assert.match(context, /antes disso não há efeito comprovado/i)
+    assert.doesNotMatch(context, /\brode\b|\bexecute\b|\bcorrija\b/i)
+  } finally {
+    await rm(casa, { recursive: true, force: true })
+    await rm(pluginRoot, { recursive: true, force: true })
+  }
+})
+
+test('installed-verified de outra identidade fica histórico sem fabricar supersessão ou pendência ativa', async () => {
+  const casa = await temporary('omni-system-audit-stale-installed-home-')
+  const pluginRoot = await pluginFixture()
+  try {
+    const candidate = await operationalCandidate(casa, 1, 'installed-verified', {
+      version: '1.2.2',
+      payloadFingerprint: 'f'.repeat(64)
+    })
+    const result = await auditarSaudeSistema(casa, {
+      pluginRoot,
+      repair: false,
+      at: '2026-08-28T11:00:00.000Z'
+    })
+    assert.equal(result.run.metrics.operationalInstalledVerified, 1)
+    assert.equal(result.run.metrics.operationalImprovementHistoricalTotal, 1)
+    assert.equal(result.run.metrics.operationalImprovementAwaitingProof, 0)
+    assert.equal(result.run.metrics.operationalImprovementHistoricalUnverifiable, 1)
+    assert.equal(
+      result.run.findings.some((item) => item.code === 'operational-installed-without-loaded-readback'),
+      false
+    )
+    const cycle = await lerCicloOperacional(casa)
+    const unchanged = cycle.improvementCandidates.find((item) => item.id === candidate.id)
+    assert.equal(unchanged.status, 'installed-verified')
+    assert.equal(unchanged.supersededBy, null)
   } finally {
     await rm(casa, { recursive: true, force: true })
     await rm(pluginRoot, { recursive: true, force: true })
@@ -518,6 +758,49 @@ test('auditoria materializa candidatas deterministicas e encaminha mudanca de fo
       'utf8'
     ))
     assert.equal(rules.rules.length, 0)
+  } finally {
+    await rm(casa, { recursive: true, force: true })
+    await rm(pluginRoot, { recursive: true, force: true })
+  }
+})
+
+test('falha de manutenção não é mascarada por reconciliação saudável e não vaza erro bruto', async () => {
+  const casa = await temporary('omni-system-audit-self-repair-home-')
+  const pluginRoot = await pluginFixture()
+  try {
+    await registrarTelemetriaAutocorrecao(casa, {
+      profile: 'maintenance',
+      event: 'SessionStart',
+      at: '2026-08-28T10:00:00.000Z',
+      stages: [
+        { stage: 'daily-scan', status: 'rejected', errorFingerprint: 'a'.repeat(64) },
+        { stage: 'system-audit', status: 'fulfilled', resultFingerprint: 'b'.repeat(64) },
+        { stage: 'personality-eval', status: 'fulfilled', resultFingerprint: 'c'.repeat(64) },
+        { stage: 'operational-release', status: 'fulfilled', resultFingerprint: 'd'.repeat(64) }
+      ]
+    })
+    await registrarTelemetriaAutocorrecao(casa, {
+      profile: 'reconciliation',
+      event: 'SessionStart',
+      at: '2026-08-28T10:00:30.000Z',
+      stages: [
+        { stage: 'failure-automation', status: 'fulfilled', resultFingerprint: 'e'.repeat(64) },
+        { stage: 'delegation-reconciliation', status: 'fulfilled', resultFingerprint: 'f'.repeat(64) },
+        { stage: 'historical-turn-reconciliation', status: 'fulfilled', resultFingerprint: '1'.repeat(64) }
+      ]
+    })
+    const result = await auditarSaudeSistema(casa, {
+      pluginRoot,
+      repair: false,
+      at: '2026-08-28T10:01:00.000Z'
+    })
+    const finding = result.run.findings.find((item) => item.code === 'self-repair-stages-degraded')
+    assert.equal(finding.amount, 1)
+    assert.equal(finding.releaseBlocking, false)
+    assert.equal(result.run.metrics.selfRepairRunsObserved, 2)
+    assert.equal(result.run.metrics.selfRepairConsecutiveDegradedRuns, 1)
+    assert.equal(result.run.metrics.selfRepairFailedStagesLatest, 1)
+    assert.equal(JSON.stringify(result).includes('erro bruto privado'), false)
   } finally {
     await rm(casa, { recursive: true, force: true })
     await rm(pluginRoot, { recursive: true, force: true })

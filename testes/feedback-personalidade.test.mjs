@@ -62,6 +62,7 @@ test('classificador exige avaliacao explicita e separa positivo, negativo e mist
   assert.equal(classificarFeedbackPersonalidade('Explique por que uma conversa generica pode falhar.'), null)
   assert.equal(classificarFeedbackPersonalidade('Use uma voz generica no exemplo de teste.'), null)
   assert.equal(classificarFeedbackPersonalidade('Nao diga que a resposta ficou seca no exemplo.'), null)
+  assert.equal(classificarFeedbackPersonalidade('O build tá todo zoado depois da compilação.'), null)
 
   const positive = classificarFeedbackPersonalidade(
     'Essa resposta ficou excelente; gostei do humor e a analogia funcionou.'
@@ -83,6 +84,11 @@ test('classificador exige avaliacao explicita e separa positivo, negativo e mist
   assert.ok(negative.reasonCodes.includes('voice-generic'))
   assert.ok(negative.reasonCodes.includes('humor-missing'))
   assert.ok(negative.reasonCodes.includes('analogy-missing'))
+
+  const exactComplaint = classificarFeedbackPersonalidade('ta todo zoado, nem parece que é o Omni')
+  assert.equal(exactComplaint.polarity, 'negative')
+  assert.ok(exactComplaint.reasonCodes.includes('overall-rejected'))
+  assert.ok(exactComplaint.reasonCodes.includes('personality-absent'))
 
   const negatedPraise = classificarFeedbackPersonalidade('A resposta nao ficou boa e precisa melhorar.')
   assert.equal(negatedPraise.polarity, 'negative')
@@ -151,7 +157,7 @@ test('proximo prompt do proprietario vira voto ligado a ultima resposta e ajuste
   }
 })
 
-test('frase neutra, origem externa e feedback sem resposta anterior nao fabricam voto', async () => {
+test('frase neutra e origem externa não fabricam voto; feedback explícito sem resposta recebe ajuste efêmero', async () => {
   const casa = await home()
   try {
     await response(casa, 's-neutral')
@@ -166,9 +172,19 @@ test('frase neutra, origem externa e feedback sem resposta anterior nao fabricam
     assert.equal(external.result, 'ignored-origin')
 
     const unbound = await observarVotoPersonalidade(casa, {
-      sessionId: 'outra-sessao', origin: 'owner-transcript', feedback: 'A resposta ficou excelente.'
+      sessionId: 'outra-sessao',
+      origin: 'owner-transcript',
+      feedback: 'ta todo zoado, nem parece que é o Omni'
     })
     assert.equal(unbound.result, 'unbound')
+    assert.equal(unbound.vote, null)
+    assert.equal(unbound.adjustment.scope, 'next-response')
+    assert.equal(unbound.adjustment.sourceVoteId, null)
+    assert.equal(unbound.adjustment.turnFingerprint, null)
+    assert.equal(unbound.adjustment.answerFingerprint, null)
+    assert.ok(unbound.adjustment.directives.includes('change-overall-voice'))
+    assert.ok(unbound.adjustment.directives.includes('increase-personality-intensity'))
+    assert.deepEqual(unbound.candidateSignals, [])
     assert.equal((await lerFeedbackPersonalidade(casa)).votes.length, 0)
   } finally {
     await rm(casa, { recursive: true, force: true })

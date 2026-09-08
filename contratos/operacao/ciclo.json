@@ -20,6 +20,7 @@
       "implementation-required",
       "materialized-pending-release",
       "installed-verified",
+      "loaded-verified",
       "superseded"
     ],
     "transitions": {
@@ -27,16 +28,19 @@
       "ready": ["implementation-required", "materialized-pending-release"],
       "implementation-required": ["materialized-pending-release"],
       "materialized-pending-release": ["installed-verified", "superseded"],
-      "installed-verified": [],
+      "installed-verified": ["loaded-verified", "superseded"],
+      "loaded-verified": [],
       "superseded": []
     },
     "minimumOccurrencesReady": 2,
     "materializedState": "materialized-pending-release",
-    "effectiveState": "installed-verified",
+    "installedState": "installed-verified",
+    "effectiveState": "loaded-verified",
     "supersededState": "superseded",
     "reinforcementNeverRegressesState": true,
     "installedVerificationRequiresReleaseIntegrity": true,
-    "supersededRequiresExplicitInstalledReplacement": true,
+    "loadedVerificationRequiresRuntimeIdentity": true,
+    "supersededRequiresExplicitLoadedReplacement": true,
     "sourceImplementationRequiresAuditedMutationAndReadback": true
   },
   "delegation": {
@@ -49,23 +53,29 @@
       "closed",
       "blocked",
       "failed",
-      "cancelled"
+      "cancelled",
+      "archived"
     ],
     "transitions": {
       "prepared": ["visible", "failed", "cancelled"],
       "visible": ["running", "failed", "cancelled"],
       "running": ["reported", "blocked", "failed", "cancelled"],
-      "reported": ["verified", "running", "blocked", "failed", "cancelled"],
+      "reported": ["verified", "running", "blocked", "failed", "cancelled", "archived"],
       "verified": ["closed"],
       "blocked": ["running", "failed", "cancelled"],
       "closed": [],
       "failed": [],
-      "cancelled": []
+      "cancelled": [],
+      "archived": []
     },
     "successStates": ["verified"],
+    "terminalStates": ["closed", "failed", "cancelled", "archived"],
+    "historicalUnverifiableState": "archived",
+    "historicalUnverifiableOutcome": "historical-unverifiable",
+    "orphanVisibleLeaseMinutes": 60,
     "closedSuccessRequiresOutcome": "verified",
     "executorReportProduces": "reported",
-    "inboundCannotProduce": ["verified", "closed"],
+    "inboundCannotProduce": ["verified", "closed", "archived"],
     "externalCorrelation": "delegation-id",
     "untrackedExecutorProduces": "failed",
     "adapterCorrelation": {
@@ -74,7 +84,7 @@
       "bindExecutorOnStarted": true,
       "duplicateRequiresSameExecutor": true
     },
-    "evidenceRequiredFor": ["visible", "running", "reported", "verified", "blocked", "failed", "cancelled"],
+    "evidenceRequiredFor": ["visible", "running", "reported", "verified", "blocked", "failed", "cancelled", "archived"],
     "targetReceivesVisiblePrompt": true,
     "centralConversationRemainsAvailable": true,
     "completionReturnsEvidence": true,

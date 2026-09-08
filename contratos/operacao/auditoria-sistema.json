@@ -12,6 +12,8 @@
       "coalesce-duplicate-failure-jobs",
       "supersede-stale-jobs",
       "migrate-local-stores-with-backup",
+      "reconcile-inactive-turn-findings",
+      "reconcile-orphan-delegations",
       "materialize-ready-operational-improvements",
       "serialize-operational-improvements-per-repository",
       "route-source-improvements-to-neutral-delegation"
@@ -28,13 +30,16 @@
     "learned-personality-cases-pending",
     "duplicate-active-failure-jobs",
     "unverified-delegations",
+    "delegations-awaiting-proof",
+    "self-repair-stages-degraded",
     "unresolved-turn-findings",
     "duplicate-portable-rules",
     "evaluated-learning-without-route",
     "materialized-learning-without-installed-readback",
     "operational-improvement-ready-without-materialization",
     "operational-implementation-required",
-    "operational-materialized-without-installed-readback"
+    "operational-materialized-without-installed-readback",
+    "operational-installed-without-loaded-readback"
   ],
   "turnFindingLifecycle": {
     "recoverable": {
@@ -46,12 +51,64 @@
       "terminalArchiveWithoutCounterproof": false
     }
   },
+  "classification": {
+    "categories": [
+      "actionable-debt",
+      "awaiting-proof",
+      "terminal-without-success",
+      "historical-unverifiable",
+      "superseded",
+      "verified",
+      "observing"
+    ],
+    "historicalTotalsRemainObservable": true,
+    "actionableFindingsExcludeTerminal": true,
+    "delegations": {
+      "actionableStates": ["prepared", "visible", "running", "blocked"],
+      "awaitingProofStates": ["reported"],
+      "terminalWithoutSuccessStates": ["failed", "cancelled"],
+      "terminalStatesOverrideLegacyFlag": true,
+      "verifiedStates": ["verified", "closed"],
+      "historicalUnverifiableStates": ["archived"],
+      "historicalUnverifiableOutcomes": ["legacy-unverified", "historical-unverifiable"]
+    },
+    "turnFindings": {
+      "actionableStates": ["open", "unresolved"],
+      "terminalWithoutSuccessStates": ["owner-reconfirmation-required"],
+      "historicalUnverifiableStates": ["historical-unverifiable"],
+      "supersededStates": ["superseded"],
+      "verifiedStates": ["corrected"],
+      "terminalContainerStates": ["verified", "closed", "failed", "cancelled", "archived"]
+    },
+    "operationalImprovements": {
+      "actionableStates": ["ready", "implementation-required", "materialized-pending-release"],
+      "awaitingProofStates": ["installed-verified"],
+      "verifiedStates": ["loaded-verified"],
+      "supersededStates": ["superseded"],
+      "observingStates": ["observing"]
+    }
+  },
   "metrics": [
     "findingCorrectionRate",
     "findingRecurrenceRate",
     "evidenceCoverage",
     "sameTurnCorrectionRate",
     "verifiedDelegationRate",
+    "delegationHistoricalTotal",
+    "delegationActionableDebt",
+    "delegationAwaitingProof",
+    "delegationTerminalWithoutSuccess",
+    "delegationHistoricalUnverifiable",
+    "delegationVerified",
+    "turnFindingHistoricalTotal",
+    "turnFindingActionableDebt",
+    "turnFindingTerminalWithoutSuccess",
+    "turnFindingHistoricalUnverifiable",
+    "turnFindingSuperseded",
+    "turnFindingVerified",
+    "selfRepairRunsObserved",
+    "selfRepairConsecutiveDegradedRuns",
+    "selfRepairFailedStagesLatest",
     "personalityRealPassRate",
     "personalityTrustedPassRate",
     "personalityUnverifiedClaims",
@@ -62,7 +119,13 @@
     "operationalImplementationRequired",
     "operationalMaterializedPendingRelease",
     "operationalInstalledVerified",
+    "operationalLoadedVerified",
     "operationalSuperseded",
+    "operationalImprovementHistoricalTotal",
+    "operationalImprovementActionableDebt",
+    "operationalImprovementAwaitingProof",
+    "operationalImprovementHistoricalUnverifiable",
+    "operationalImprovementObserving",
     "operationalLearningEffectRate"
   ],
   "privacy": {

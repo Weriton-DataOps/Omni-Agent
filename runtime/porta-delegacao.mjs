@@ -63,12 +63,12 @@ const EVENT_FROM = {
   cancelled: new Set(['prepared', 'visible', 'running', 'reported', 'blocked'])
 }
 const STALE_FROM = {
-  delivered: new Set(['visible', 'running', 'reported', 'verified', 'closed', 'blocked', 'failed', 'cancelled']),
-  started: new Set(['running', 'reported', 'verified', 'closed', 'failed', 'cancelled']),
-  reported: new Set(['reported', 'verified', 'closed', 'failed', 'cancelled']),
-  blocked: new Set(['blocked', 'verified', 'closed', 'failed', 'cancelled']),
-  failed: new Set(['failed', 'verified', 'closed', 'cancelled']),
-  cancelled: new Set(['cancelled', 'verified', 'closed', 'failed'])
+  delivered: new Set(['visible', 'running', 'reported', 'verified', 'closed', 'blocked', 'failed', 'cancelled', 'archived']),
+  started: new Set(['running', 'reported', 'verified', 'closed', 'failed', 'cancelled', 'archived']),
+  reported: new Set(['reported', 'verified', 'closed', 'failed', 'cancelled', 'archived']),
+  blocked: new Set(['blocked', 'verified', 'closed', 'failed', 'cancelled', 'archived']),
+  failed: new Set(['failed', 'verified', 'closed', 'cancelled', 'archived']),
+  cancelled: new Set(['cancelled', 'verified', 'closed', 'failed', 'archived'])
 }
 
 function hash(value) {

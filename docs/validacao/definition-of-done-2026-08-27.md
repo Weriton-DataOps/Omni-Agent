@@ -26,7 +26,8 @@ contratos prometem aparece no uso real.
 
 ### 1. Personalidade e conversa longa
 
-Depois de `/plugin` → **Restart**, ative o Omni e converse naturalmente por 8 a 12 turnos. Misture:
+Depois que o worker interno registrar `loaded-verified` em um `SessionStart` compatível, a avaliação
+humana pode conversar naturalmente com o Omni por 8 a 12 turnos. Misture:
 
 - uma pergunta simples;
 - um problema técnico que exija raciocínio;
