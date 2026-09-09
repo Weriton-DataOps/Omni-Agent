@@ -12,8 +12,10 @@ $taskStartup = [Environment]::GetFolderPath([Environment+SpecialFolder]::Startup
 $taskLinkPath = Join-Path $taskStartup 'Omni Runtime.lnk'
 $taskShell = New-Object -ComObject WScript.Shell
 $taskLink = $taskShell.CreateShortcut($taskLinkPath)
-$taskLink.TargetPath = 'powershell.exe'
-$taskLink.Arguments = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$(Join-Path $PSScriptRoot 'start-user-omni-runtime.ps1')`""
+$taskLauncher = Join-Path $PSScriptRoot 'start-user-omni-runtime-hidden.vbs'
+if (-not (Test-Path -LiteralPath $taskLauncher -PathType Leaf)) { throw 'Hidden Omni runtime launcher is missing.' }
+$taskLink.TargetPath = "$env:SystemRoot\System32\wscript.exe"
+$taskLink.Arguments = "`"$taskLauncher`""
 $taskLink.WorkingDirectory = $taskRoot
 $taskLink.Description = 'Inicia o PostgreSQL dedicado e o broker local seguro do Omni.'
 $taskLink.Save()

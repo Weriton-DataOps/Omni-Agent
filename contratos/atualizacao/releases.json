@@ -210,6 +210,12 @@
         "Implementou a fundacao TypeScript de validade e saude das credenciais do Cracha e sua migration PostgreSQL com roles, RLS e auditoria; provisionamento real, cofre e executor ainda pendentes.",
         "Removeu a promessa de worker de recarga inexistente; ativacao continua dependente do readback do host real."
       ]
+    },
+    {
+      "version": "0.22.2",
+      "changes": [
+        "Substituiu o atalho de inicializacao visivel por um lancador silencioso via wscript, preservando o PostgreSQL dedicado e o broker local em segundo plano."
+      ]
     }
   ]
 }
