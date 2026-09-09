@@ -3,17 +3,38 @@ function grantCovers(ceiling, action) {
         return action.operation === 'runtime.assemble-report';
     return ceiling.grants.some((grant) => grant.resourceRef === action.resourceRef && grant.operations.includes(action.operation));
 }
+const REQUIRED_REVERSIBLE_MUTATION_CONTROLS = new Set([
+    'checkpoint-before-mutation',
+    'verify-after-effect',
+    'reconcile-before-retry',
+    'revocation-check-before-effect'
+]);
+function isControlledReversibleMutation(action, maximumRisk) {
+    if (maximumRisk !== 'medium' ||
+        action.scope !== 'request-resource' ||
+        action.operation !== 'filesystem.modify' ||
+        action.effectMode !== 'journaled' ||
+        action.effectClass !== 'reversible-change' ||
+        action.riskLevel !== 'medium')
+        return false;
+    const controls = new Set(action.requestedControls);
+    return [...REQUIRED_REVERSIBLE_MUTATION_CONTROLS].every((control) => controls.has(control));
+}
 function reasonFor(ceiling, action, maximumRisk, now) {
     if (ceiling.expiresAt !== undefined && Date.parse(ceiling.expiresAt) <= now.getTime())
         return 'authority-expired';
-    if (maximumRisk !== 'low')
-        return 'risk-policy';
-    if (action.riskLevel !== 'low' || action.effectMode !== 'none')
-        return 'risk-policy';
     if (action.scope === 'runtime-internal' && action.effectClass !== 'runtime-internal')
         return 'plan-mismatch';
-    if (action.scope === 'request-resource' && action.effectClass !== 'read-only')
+    if (action.scope === 'runtime-internal' && (maximumRisk !== 'low' || action.riskLevel !== 'low' || action.effectMode !== 'none'))
         return 'risk-policy';
+    if (action.scope === 'request-resource' && action.effectClass === 'read-only' && (maximumRisk !== 'low' || action.riskLevel !== 'low' || action.effectMode !== 'none'))
+        return 'risk-policy';
+    if (action.scope === 'request-resource' && action.effectClass === 'reversible-change' &&
+        !isControlledReversibleMutation(action, maximumRisk))
+        return 'risk-policy';
+    if (action.scope === 'request-resource' && !['read-only', 'reversible-change'].includes(action.effectClass)) {
+        return 'risk-policy';
+    }
     if (!grantCovers(ceiling, action))
         return 'outside-delegated-authority';
     return 'within-delegated-authority';

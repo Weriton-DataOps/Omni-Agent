@@ -56,6 +56,27 @@ function request() {
   return { ...base, authorizationRequestFingerprint: fingerprint(base) }
 }
 
+function reversibleMutationRequest() {
+  const input = request()
+  const base = structuredClone(input)
+  base.authorityCeiling.grants = [{ resourceRef: 'resource-omni-http-test', operations: ['filesystem.modify'] }]
+  base.actions[0] = {
+    ...base.actions[0],
+    actionId: 'action-omni-http-write-0001',
+    operation: 'filesystem.modify', effectMode: 'journaled', effectKey: 'effect-omni-http-write-0001',
+    effectClass: 'reversible-change', riskLevel: 'medium',
+    requestedControls: [
+      'checkpoint-before-mutation', 'verify-after-effect',
+      'reconcile-before-retry', 'revocation-check-before-effect'
+    ]
+  }
+  base.riskSummary = {
+    maximumRisk: 'medium', triggeredBoundaries: [], requestResourceActionCount: 1, journaledEffectCount: 1
+  }
+  delete base.authorizationRequestFingerprint
+  return { ...base, authorizationRequestFingerprint: fingerprint(base) }
+}
+
 test('nucleo neutro permite somente leitura coberta pelo teto recebido', () => {
   const decision = avaliarEnvelopeAutoridade({
     ceiling: { mode: 'proceed-within-scope', grants: [{ resourceRef: 'resource-a', operations: ['filesystem.read'] }] },
@@ -120,6 +141,37 @@ test('servidor aceita somente token local e devolve JSON', async () => {
     assert.equal(decision.outcome, 'permit-with-constraints')
   }
   finally {
+    await new Promise((resolve) => server.close(resolve))
+  }
+})
+
+test('servidor revalida o efeito reversivel imediatamente antes da escrita', async () => {
+  const token = 'token-local-omni-revalidation-test-0001'
+  const server = criarServidorAutoridadeOvercore({
+    token,
+    at: () => new Date('2026-08-31T15:00:00.000Z')
+  })
+  server.listen(0, '127.0.0.1')
+  await once(server, 'listening')
+  const address = server.address()
+  assert.ok(address && typeof address !== 'string')
+  const endpoint = `http://127.0.0.1:${address.port}/v1/authority/revalidate-effect`
+  try {
+    const authorizationRequest = reversibleMutationRequest()
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        contractVersion: '1.0', authorizationRequest,
+        effect: {
+          actionId: 'action-omni-http-write-0001', effectKey: 'effect-omni-http-write-0001',
+          resourceRef: 'resource-omni-http-test', operation: 'filesystem.modify'
+        }
+      })
+    })
+    assert.equal(response.status, 200)
+    assert.equal((await response.json()).status, 'active')
+  } finally {
     await new Promise((resolve) => server.close(resolve))
   }
 })

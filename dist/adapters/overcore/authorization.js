@@ -176,6 +176,33 @@ function parseAuthorizationRequest(value, fingerprinter) {
         envelope
     };
 }
+function parseEffectRevalidation(value, fingerprinter) {
+    const input = closedRecord(value, 'effectRevalidation', ['contractVersion', 'authorizationRequest', 'effect']);
+    if (input.contractVersion !== '1.0') {
+        throw new ContractValidationError('effectRevalidation.contractVersion', 'versao desconhecida');
+    }
+    const effect = closedRecord(input.effect, 'effectRevalidation.effect', [
+        'actionId', 'effectKey', 'resourceRef', 'operation'
+    ]);
+    const parsed = {
+        actionId: identifier(effect.actionId, 'effectRevalidation.effect.actionId'),
+        effectKey: matchingString(effect.effectKey, 'effectRevalidation.effect.effectKey', EFFECT_KEY),
+        resourceRef: identifier(effect.resourceRef, 'effectRevalidation.effect.resourceRef'),
+        operation: matchingString(effect.operation, 'effectRevalidation.effect.operation', OPERATION)
+    };
+    const request = parseAuthorizationRequest(input.authorizationRequest, fingerprinter);
+    const action = request.envelope.actions.find((candidate) => candidate.actionId === parsed.actionId);
+    if (action === undefined ||
+        action.scope !== 'request-resource' ||
+        action.effectMode !== 'journaled' ||
+        action.effectClass !== 'reversible-change' ||
+        action.effectKey !== parsed.effectKey ||
+        action.resourceRef !== parsed.resourceRef ||
+        action.operation !== parsed.operation) {
+        throw new ContractValidationError('effectRevalidation.effect', 'efeito nao corresponde a uma acao reversivel autorizavel');
+    }
+    return { request, effect: parsed };
+}
 export class OvercoreAuthorityAdapter {
     evaluator;
     fingerprinter;
@@ -213,6 +240,25 @@ export class OvercoreAuthorityAdapter {
             attestationRef: this.fingerprinter.stableId('attestation-omni-local', request.authorizationRequestId)
         };
         return { ...base, decisionFingerprint: this.fingerprinter.fingerprint(base) };
+    }
+    revalidateEffect(input) {
+        const revalidation = parseEffectRevalidation(input, this.fingerprinter);
+        const evaluation = this.evaluator.evaluate(revalidation.request.envelope);
+        const actionDecision = evaluation.actionDecisions.find((item) => item.actionId === revalidation.effect.actionId);
+        const active = evaluation.outcome !== 'deny' && actionDecision?.outcome === 'permit';
+        const base = {
+            contractVersion: '1.0',
+            revalidationId: this.fingerprinter.stableId('effect-revalidation', `${revalidation.request.authorizationRequestId}:${revalidation.effect.effectKey}:${evaluation.limits.notBefore}`),
+            checkedAt: evaluation.limits.notBefore,
+            status: active ? 'active' : 'revoked',
+            reasonCode: active
+                ? 'within-delegated-authority'
+                : actionDecision?.reasonCode ?? 'plan-mismatch',
+            authorizationRequestId: revalidation.request.authorizationRequestId,
+            requestBinding: revalidation.request.requestBinding,
+            effectBinding: revalidation.effect
+        };
+        return { ...base, evidenceFingerprint: this.fingerprinter.fingerprint(base) };
     }
 }
 export function evaluateOvercoreAuthorizationRequest(input, options = {}) {

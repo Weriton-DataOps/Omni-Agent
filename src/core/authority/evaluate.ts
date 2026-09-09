@@ -15,6 +15,26 @@ function grantCovers(ceiling: AuthorityCeiling, action: AuthorityAction): boolea
   )
 }
 
+const REQUIRED_REVERSIBLE_MUTATION_CONTROLS = new Set<AuthorityAction['requestedControls'][number]>([
+  'checkpoint-before-mutation',
+  'verify-after-effect',
+  'reconcile-before-retry',
+  'revocation-check-before-effect'
+])
+
+function isControlledReversibleMutation(action: AuthorityAction, maximumRisk: AuthorityRisk): boolean {
+  if (
+    maximumRisk !== 'medium' ||
+    action.scope !== 'request-resource' ||
+    action.operation !== 'filesystem.modify' ||
+    action.effectMode !== 'journaled' ||
+    action.effectClass !== 'reversible-change' ||
+    action.riskLevel !== 'medium'
+  ) return false
+  const controls = new Set(action.requestedControls)
+  return [...REQUIRED_REVERSIBLE_MUTATION_CONTROLS].every((control) => controls.has(control))
+}
+
 function reasonFor(
   ceiling: AuthorityCeiling,
   action: AuthorityAction,
@@ -22,10 +42,18 @@ function reasonFor(
   now: Date
 ): AuthorityReason {
   if (ceiling.expiresAt !== undefined && Date.parse(ceiling.expiresAt) <= now.getTime()) return 'authority-expired'
-  if (maximumRisk !== 'low') return 'risk-policy'
-  if (action.riskLevel !== 'low' || action.effectMode !== 'none') return 'risk-policy'
   if (action.scope === 'runtime-internal' && action.effectClass !== 'runtime-internal') return 'plan-mismatch'
-  if (action.scope === 'request-resource' && action.effectClass !== 'read-only') return 'risk-policy'
+  if (action.scope === 'runtime-internal' && (
+    maximumRisk !== 'low' || action.riskLevel !== 'low' || action.effectMode !== 'none'
+  )) return 'risk-policy'
+  if (action.scope === 'request-resource' && action.effectClass === 'read-only' && (
+    maximumRisk !== 'low' || action.riskLevel !== 'low' || action.effectMode !== 'none'
+  )) return 'risk-policy'
+  if (action.scope === 'request-resource' && action.effectClass === 'reversible-change' &&
+    !isControlledReversibleMutation(action, maximumRisk)) return 'risk-policy'
+  if (action.scope === 'request-resource' && !['read-only', 'reversible-change'].includes(action.effectClass)) {
+    return 'risk-policy'
+  }
   if (!grantCovers(ceiling, action)) return 'outside-delegated-authority'
   return 'within-delegated-authority'
 }

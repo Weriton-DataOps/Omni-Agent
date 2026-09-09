@@ -1,47 +1,53 @@
-# Ponte de autoridade Omni ↔ Overcore
+# Ponte de autoridade Omni <-> Overcore
 
 ## Responsabilidades
 
 ```text
 Overcore                         Omni
 --------                         ----
-monta o plano                    avalia o crachá
-emite o pedido     -- HTTP -->   aplica sua autoridade
-valida a decisão  <-- JSON --   permite, restringe ou nega
-faz enforcement                 não executa a tarefa
+monta o plano                    avalia o cracha
+emite o pedido     -- HTTP -->   aplica a autoridade delegada
+valida a decisao  <-- JSON --    permite, restringe ou nega
+faz enforcement                 nao executa a tarefa
 ```
 
-O núcleo `runtime/decisor-autoridade.mjs` não conhece Overcore, banco, SDK ou Task Manager. Ele
-avalia um envelope neutro: teto concedido, ações, efeitos, risco e controles.
+O nucleo de autoridade do Omni nao conhece banco, SDK ou Task Manager. Ele avalia
+um envelope neutro: teto concedido, acoes, efeitos, risco e controles.
 
-O arquivo `adaptadores/overcore-authority-http.mjs` é a única peça específica da integração. Ele:
+O adaptador HTTP local e a unica peca especifica da integracao. Ele confirma o
+destino e o fingerprint do pedido, projeta-o para o nucleo e devolve uma decisao
+vinculada. Nenhuma memoria, personalidade, conversa ou estado privado do Omni
+atravessa essa fronteira.
 
-1. recebe `AuthorizationRequest v1` por HTTP em loopback;
-2. confirma destino e fingerprint;
-3. projeta o pedido para o envelope neutro;
-4. pede a decisão ao núcleo do Omni;
-5. devolve `AuthorizationDecision v1` com fingerprint novo.
+## Escopo ativo
 
-Nenhuma memória, personalidade, conversa ou estado privado do Omni atravessa essa fronteira.
+O Omni permite leitura explicitamente concedida para o recurso exato, montagem
+interna de relatorio e uma unica classe de escrita:
 
-## Primeiro corte
+- `filesystem.modify` sobre recurso explicitamente concedido;
+- `effectMode: journaled` e `effectClass: reversible-change`;
+- risco maximo e risco da acao iguais a `medium`;
+- os quatro controles: `checkpoint-before-mutation`, `verify-after-effect`,
+  `reconcile-before-retry` e `revocation-check-before-effect`.
 
-O primeiro gate permite apenas:
-
-- leitura explicitamente concedida para o recurso exato;
-- montagem interna do relatório;
-- risco baixo e nenhum efeito material;
-- controles pedidos preservados integralmente;
-- decisão temporária de no máximo cinco minutos.
-
-Escrita, publicação, segredo, privilégio, custo e risco acima de baixo são negados neste corte. Isso
-não limita a autoridade futura do Omni: apenas mantém a primeira integração proporcional ao teste
-somente leitura aprovado pelo proprietário.
+Publicacao, segredo, privilegio, custo, efeito irreversivel e qualquer fronteira
+de expansao continuam negados. Nao e permissao ampla de escrita: e o primeiro
+corredor reversivel para o Harness do Overcore.
 
 ## Transporte local
 
-- endpoint: `POST /v1/authority/evaluate`;
+- decisao inicial: `POST /v1/authority/evaluate`;
+- revalidacao antes de cada efeito: `POST /v1/authority/revalidate-effect`;
 - host: sempre `127.0.0.1`;
-- porta padrão: `47832`, configurável no adaptador;
-- autenticação: token efêmero ou segredo local com no mínimo 16 caracteres;
-- o adaptador não persiste o corpo recebido nem a decisão bruta.
+- porta padrao: `47832`, configuravel no adaptador;
+- autenticacao: token local de no minimo 16 caracteres;
+- o adaptador nao persiste o corpo recebido nem a decisao bruta.
+
+Na revalidacao, o Overcore envia o pedido original e a ligacao exata do efeito:
+`actionId`, `effectKey`, `resourceRef` e `operation`. O Omni reavalia a politica
+e a expiracao imediatamente antes da escrita. Falha de rede, expiracao, mudanca
+de plano ou negacao atual devem bloquear o efeito no Overcore.
+
+O status `revoked` significa apenas "nao esta valido agora". Uma lista duravel
+de revogacoes individuais continua sendo extensao futura; esta versao nao finge
+que possui esse estado.

@@ -78,6 +78,23 @@ export interface AuthorizationDecision {
   decisionFingerprint: DocumentFingerprint
 }
 
+export interface EffectRevalidationDecision {
+  contractVersion: '1.0'
+  revalidationId: string
+  checkedAt: string
+  status: 'active' | 'revoked'
+  reasonCode: AuthorityEvaluation['actionDecisions'][number]['reasonCode']
+  authorizationRequestId: string
+  requestBinding: RequestBinding
+  effectBinding: {
+    actionId: string
+    effectKey: string
+    resourceRef: string
+    operation: string
+  }
+  evidenceFingerprint: DocumentFingerprint
+}
+
 function identifier(value: unknown, path: string): string {
   return matchingString(value, path, IDENTIFIER)
 }
@@ -280,6 +297,46 @@ function parseAuthorizationRequest(value: unknown, fingerprinter: DocumentFinger
   }
 }
 
+interface ParsedEffectRevalidation {
+  request: ParsedAuthorizationRequest
+  effect: {
+    actionId: string
+    effectKey: string
+    resourceRef: string
+    operation: string
+  }
+}
+
+function parseEffectRevalidation(value: unknown, fingerprinter: DocumentFingerprinter): ParsedEffectRevalidation {
+  const input = closedRecord(value, 'effectRevalidation', ['contractVersion', 'authorizationRequest', 'effect'])
+  if (input.contractVersion !== '1.0') {
+    throw new ContractValidationError('effectRevalidation.contractVersion', 'versao desconhecida')
+  }
+  const effect = closedRecord(input.effect, 'effectRevalidation.effect', [
+    'actionId', 'effectKey', 'resourceRef', 'operation'
+  ])
+  const parsed = {
+    actionId: identifier(effect.actionId, 'effectRevalidation.effect.actionId'),
+    effectKey: matchingString(effect.effectKey, 'effectRevalidation.effect.effectKey', EFFECT_KEY),
+    resourceRef: identifier(effect.resourceRef, 'effectRevalidation.effect.resourceRef'),
+    operation: matchingString(effect.operation, 'effectRevalidation.effect.operation', OPERATION)
+  }
+  const request = parseAuthorizationRequest(input.authorizationRequest, fingerprinter)
+  const action = request.envelope.actions.find((candidate) => candidate.actionId === parsed.actionId)
+  if (
+    action === undefined ||
+    action.scope !== 'request-resource' ||
+    action.effectMode !== 'journaled' ||
+    action.effectClass !== 'reversible-change' ||
+    action.effectKey !== parsed.effectKey ||
+    action.resourceRef !== parsed.resourceRef ||
+    action.operation !== parsed.operation
+  ) {
+    throw new ContractValidationError('effectRevalidation.effect', 'efeito nao corresponde a uma acao reversivel autorizavel')
+  }
+  return { request, effect: parsed }
+}
+
 export class OvercoreAuthorityAdapter {
   constructor(
     private readonly evaluator: AuthorityEvaluator,
@@ -316,6 +373,29 @@ export class OvercoreAuthorityAdapter {
       attestationRef: this.fingerprinter.stableId('attestation-omni-local', request.authorizationRequestId)
     }
     return { ...base, decisionFingerprint: this.fingerprinter.fingerprint(base) }
+  }
+
+  revalidateEffect(input: unknown): EffectRevalidationDecision {
+    const revalidation = parseEffectRevalidation(input, this.fingerprinter)
+    const evaluation = this.evaluator.evaluate(revalidation.request.envelope)
+    const actionDecision = evaluation.actionDecisions.find((item) => item.actionId === revalidation.effect.actionId)
+    const active = evaluation.outcome !== 'deny' && actionDecision?.outcome === 'permit'
+    const base = {
+      contractVersion: '1.0' as const,
+      revalidationId: this.fingerprinter.stableId(
+        'effect-revalidation',
+        `${revalidation.request.authorizationRequestId}:${revalidation.effect.effectKey}:${evaluation.limits.notBefore}`
+      ),
+      checkedAt: evaluation.limits.notBefore,
+      status: active ? 'active' as const : 'revoked' as const,
+      reasonCode: active
+        ? 'within-delegated-authority' as const
+        : actionDecision?.reasonCode ?? 'plan-mismatch' as const,
+      authorizationRequestId: revalidation.request.authorizationRequestId,
+      requestBinding: revalidation.request.requestBinding,
+      effectBinding: revalidation.effect
+    }
+    return { ...base, evidenceFingerprint: this.fingerprinter.fingerprint(base) }
   }
 }
 

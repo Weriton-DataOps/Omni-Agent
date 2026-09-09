@@ -9,6 +9,7 @@ import type { FormatsPlugin } from 'ajv-formats'
 import { AuthorityService } from '../src/application/evaluate-authority.js'
 import { NodeDocumentFingerprinter } from '../src/adapters/node/node-document-fingerprinter.js'
 import {
+  OvercoreAuthorityAdapter,
   evaluateOvercoreAuthorizationRequest
 } from '../src/adapters/overcore/authorization.js'
 import {
@@ -66,6 +67,34 @@ function requestFixture(): Record<string, unknown> {
       journaledEffectCount: 0
     }
   }
+  return { ...base, authorizationRequestFingerprint: fingerprinter.fingerprint(base) }
+}
+
+function reversibleMutationRequest(): Record<string, unknown> {
+  const input = requestFixture()
+  const base = structuredClone(input) as Record<string, unknown>
+  const ceiling = base.authorityCeiling as Record<string, unknown>
+  ceiling.grants = [{ resourceRef: 'resource-omni-ts-test', operations: ['filesystem.modify'] }]
+  const actions = base.actions as Array<Record<string, unknown>>
+  actions[0] = {
+    ...actions[0],
+    actionId: 'action-omni-ts-write-0001',
+    operation: 'filesystem.modify',
+    effectMode: 'journaled',
+    effectKey: 'effect-omni-ts-write-0001',
+    effectClass: 'reversible-change',
+    riskLevel: 'medium',
+    requestedControls: [
+      'checkpoint-before-mutation',
+      'verify-after-effect',
+      'reconcile-before-retry',
+      'revocation-check-before-effect'
+    ]
+  }
+  base.riskSummary = {
+    maximumRisk: 'medium', triggeredBoundaries: [], requestResourceActionCount: 1, journaledEffectCount: 1
+  }
+  delete base.authorizationRequestFingerprint
   return { ...base, authorizationRequestFingerprint: fingerprinter.fingerprint(base) }
 }
 
@@ -174,4 +203,45 @@ test('schemas emitidos preservam fingerprints pinados de proveniência', async (
     const actual = fingerprinter.fingerprint(document).value
     assert.equal(actual, expected)
   }
+})
+
+test('autoridade permite somente mutacao reversivel journaled com todos os controles e revalida o mesmo efeito', () => {
+  const input = reversibleMutationRequest()
+  const adapter = new OvercoreAuthorityAdapter(
+    new AuthorityService({ now: () => fixedAt }),
+    fingerprinter
+  )
+  const decision = adapter.evaluate(input)
+  assert.equal(decision.outcome, 'permit-with-constraints')
+  assert.equal(decision.actionDecisions[0]?.outcome, 'permit')
+
+  const active = adapter.revalidateEffect({
+    contractVersion: '1.0',
+    authorizationRequest: input,
+    effect: {
+      actionId: 'action-omni-ts-write-0001',
+      effectKey: 'effect-omni-ts-write-0001',
+      resourceRef: 'resource-omni-ts-test',
+      operation: 'filesystem.modify'
+    }
+  })
+  assert.equal(active.status, 'active')
+
+  const missingControl = structuredClone(input)
+  const actions = missingControl.actions as Array<Record<string, unknown>>
+  if (actions[0]) actions[0].requestedControls = ['checkpoint-before-mutation']
+  delete missingControl.authorizationRequestFingerprint
+  missingControl.authorizationRequestFingerprint = fingerprinter.fingerprint(missingControl)
+  assert.equal(adapter.evaluate(missingControl).outcome, 'deny')
+
+  assert.throws(() => adapter.revalidateEffect({
+    contractVersion: '1.0',
+    authorizationRequest: input,
+    effect: {
+      actionId: 'action-omni-ts-write-0001',
+      effectKey: 'effect-omni-ts-other-0001',
+      resourceRef: 'resource-omni-ts-test',
+      operation: 'filesystem.modify'
+    }
+  }), /efeito nao corresponde/i)
 })

@@ -57,14 +57,21 @@ export function createOvercoreAuthorityServer(options: OvercoreAuthorityServerOp
         send(response, 200, { status: 'ready' })
         return
       }
-      if (request.method !== 'POST' || url.pathname !== '/v1/authority/evaluate') {
+      if (request.method !== 'POST' || ![
+        '/v1/authority/evaluate',
+        '/v1/authority/revalidate-effect'
+      ].includes(url.pathname)) {
         send(response, 404, { error: 'not-found' })
         return
       }
-      send(response, 200, adapter.evaluate(await bodyOf(request)))
+      const body = await bodyOf(request)
+      const result = url.pathname === '/v1/authority/evaluate'
+        ? adapter.evaluate(body)
+        : adapter.revalidateEffect(body)
+      send(response, 200, result)
     } catch (error: unknown) {
       send(response, 400, {
-        error: 'invalid-authorization-request',
+        error: 'invalid-authority-request',
         message: error instanceof Error ? error.message : String(error)
       })
     }
