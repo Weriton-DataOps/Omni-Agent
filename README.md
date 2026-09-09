@@ -1,8 +1,8 @@
 # Omni
 
 Núcleo canônico de um único agente pessoal: conversa, continuidade de trabalho, memória, contexto,
-execução e aprendizado operacional. Interface, chat e Realtime permanecem adiados até a validação
-conversacional do núcleo.
+execução e aprendizado operacional. A primeira interface local está em `apps/omni-desktop`, com
+texto, voz e sessões Claude/VS Code. Consulte seu README para validações e limites desta versão.
 
 ## O que funciona hoje
 

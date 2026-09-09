@@ -35,9 +35,31 @@ function isControlledReversibleMutation(action: AuthorityAction, maximumRisk: Au
   return [...REQUIRED_REVERSIBLE_MUTATION_CONTROLS].every((control) => controls.has(control))
 }
 
+/**
+ * Um readback não é uma nova capacidade material: é a prova exigida para a
+ * única escrita reversível permitida. Ele só acompanha uma mutação já válida,
+ * no mesmo recurso e no mesmo envelope de risco médio.
+ */
+function isVerificationReadForControlledMutation(
+  action: AuthorityAction,
+  actions: readonly AuthorityAction[],
+  maximumRisk: AuthorityRisk
+): boolean {
+  return maximumRisk === 'medium' &&
+    action.scope === 'request-resource' &&
+    action.operation === 'filesystem.read' &&
+    action.effectMode === 'none' &&
+    action.effectClass === 'read-only' &&
+    action.riskLevel === 'low' &&
+    actions.some((candidate) =>
+      candidate.resourceRef === action.resourceRef && isControlledReversibleMutation(candidate, maximumRisk)
+    )
+}
+
 function reasonFor(
   ceiling: AuthorityCeiling,
   action: AuthorityAction,
+  actions: readonly AuthorityAction[],
   maximumRisk: AuthorityRisk,
   now: Date
 ): AuthorityReason {
@@ -46,9 +68,12 @@ function reasonFor(
   if (action.scope === 'runtime-internal' && (
     maximumRisk !== 'low' || action.riskLevel !== 'low' || action.effectMode !== 'none'
   )) return 'risk-policy'
-  if (action.scope === 'request-resource' && action.effectClass === 'read-only' && (
-    maximumRisk !== 'low' || action.riskLevel !== 'low' || action.effectMode !== 'none'
-  )) return 'risk-policy'
+  if (action.scope === 'request-resource' && action.effectClass === 'read-only') {
+    const permittedAsStandaloneRead = maximumRisk === 'low' && action.riskLevel === 'low' && action.effectMode === 'none'
+    if (!permittedAsStandaloneRead && !isVerificationReadForControlledMutation(action, actions, maximumRisk)) {
+      return 'risk-policy'
+    }
+  }
   if (action.scope === 'request-resource' && action.effectClass === 'reversible-change' &&
     !isControlledReversibleMutation(action, maximumRisk)) return 'risk-policy'
   if (action.scope === 'request-resource' && !['read-only', 'reversible-change'].includes(action.effectClass)) {
@@ -66,7 +91,7 @@ export function evaluateAuthority(
   const actionDecisions: AuthorityActionDecision[] = envelope.actions.map((action) => {
     const reasonCode: AuthorityReason = boundaryTriggered
       ? 'risk-policy'
-      : reasonFor(envelope.ceiling, action, envelope.maximumRisk, now)
+      : reasonFor(envelope.ceiling, action, envelope.actions, envelope.maximumRisk, now)
     const permitted = reasonCode === 'within-delegated-authority'
     return {
       actionId: action.actionId,

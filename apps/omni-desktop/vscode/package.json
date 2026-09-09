@@ -1,0 +1,7 @@
+{
+  "name": "omni-desktop-bridge", "displayName": "Omni Desktop — sessão Claude",
+  "publisher": "omni-local", "version": "0.1.1", "engines": { "vscode": "^1.90.0" },
+  "description": "Retoma uma sessão do Omni Desktop no terminal Claude do projeto.",
+  "main": "./main.cjs", "activationEvents": ["onUri", "onStartupFinished"],
+  "capabilities": { "untrustedWorkspaces": { "supported": false } }
+}

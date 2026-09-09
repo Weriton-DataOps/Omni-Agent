@@ -245,3 +245,38 @@ test('autoridade permite somente mutacao reversivel journaled com todos os contr
     }
   }), /efeito nao corresponde/i)
 })
+
+test('readback do mesmo recurso acompanha apenas a mutação reversível válida', () => {
+  const input = reversibleMutationRequest()
+  const base = structuredClone(input) as Record<string, unknown>
+  const ceiling = base.authorityCeiling as Record<string, unknown>
+  ceiling.grants = [{ resourceRef: 'resource-omni-ts-test', operations: ['filesystem.modify', 'filesystem.read'] }]
+  const actions = base.actions as Array<Record<string, unknown>>
+  actions.push({
+    actionId: 'action-omni-ts-readback-0001',
+    stepRef: 'step-omni-ts-readback-0001',
+    position: 2,
+    scope: 'request-resource',
+    resourceRef: 'resource-omni-ts-test',
+    operation: 'filesystem.read',
+    effectMode: 'none',
+    effectClass: 'read-only',
+    riskLevel: 'low',
+    requestedControls: ['sanitize-output']
+  })
+  const risk = base.riskSummary as Record<string, unknown>
+  risk.requestResourceActionCount = 2
+  delete base.authorizationRequestFingerprint
+  base.authorizationRequestFingerprint = fingerprinter.fingerprint(base)
+
+  const decision = evaluateOvercoreAuthorizationRequest(base, { at: fixedAt })
+  assert.equal(decision.outcome, 'permit-with-constraints')
+  assert.deepEqual(decision.actionDecisions.map((item) => item.outcome), ['permit', 'permit'])
+
+  const readOnlyMedium = structuredClone(base)
+  const mediumActions = readOnlyMedium.actions as Array<Record<string, unknown>>
+  mediumActions.shift()
+  delete readOnlyMedium.authorizationRequestFingerprint
+  readOnlyMedium.authorizationRequestFingerprint = fingerprinter.fingerprint(readOnlyMedium)
+  assert.equal(evaluateOvercoreAuthorizationRequest(readOnlyMedium, { at: fixedAt }).outcome, 'deny')
+})

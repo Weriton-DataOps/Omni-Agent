@@ -178,5 +178,8 @@ o conjunto completo de gates prova aderência comportamental.
 
 ## Estado da interface
 
-Interface, chat e Realtime seguem fora da arquitetura ativa. Primeiro o núcleo será validado por
-conversa real; depois os canais consumirão os mesmos elementos de contexto em projeções próprias.
+O aplicativo `apps/omni-desktop` adiciona os canais de texto e voz ao núcleo existente. Cada envio
+monta o contexto canônico antes da inferência; sessão Claude, memória local e sincronização
+PostgreSQL usam as mesmas fontes do Omni. O Overcore permanece fora desta integração.
+O estado de implantação e os gates pendentes estão em
+`docs/planejamento/2026-09-09-omni-desktop.md`.

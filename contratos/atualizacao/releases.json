@@ -212,16 +212,16 @@
       ]
     },
     {
+      "version": "0.22.2",
+      "changes": [
+        "Substituiu o atalho de inicializacao visivel por um lancador silencioso via wscript, preservando o PostgreSQL dedicado e o broker local em segundo plano."
+      ]
+    },
+    {
       "version": "0.22.3",
       "changes": [
         "Permitiu a primeira escrita reversivel do Overcore somente com diario, checkpoint, verificacao, reconciliacao e revalidacao imediata pelo Omni.",
         "Adicionou revalidacao HTTP local vinculada ao pedido e ao effectKey antes de filesystem.modify, mantendo negados efeitos irreversiveis, segredo, privilegio e publicacao."
-      ]
-    },
-    {
-      "version": "0.22.2",
-      "changes": [
-        "Substituiu o atalho de inicializacao visivel por um lancador silencioso via wscript, preservando o PostgreSQL dedicado e o broker local em segundo plano."
       ]
     }
   ]
