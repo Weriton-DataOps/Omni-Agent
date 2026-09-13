@@ -250,6 +250,15 @@
       "provenance": { "schemaId": "https://github.com/Weriton-DataOps/Omni-Agent/contratos/integracao/delegacao.schema.json", "canonicalSha256": "7448a6fa0986ce42da13c498e2b6ca103c182cb52dd5cb9e0e45567e63e344b5", "typeMode": "runtime-structural", "typeSource": "runtime/porta-delegacao.mjs", "bindingSource": null, "parityTest": "testes/porta-delegacao.test.mjs" }
     },
     {
+      "path": "contratos/interface/omni-desktop.json",
+      "kind": "policy",
+      "owner": "apps/omni-desktop/src/main/body-contract.ts",
+      "validation": { "mode": "manual", "decoder": "apps/omni-desktop/src/main/body-contract.ts", "schema": null, "parityTest": "apps/omni-desktop/tests/controller.test.ts" },
+      "privacy": { "classification": "public-contract", "rawUserData": false },
+      "payload": { "mode": "direct", "target": null },
+      "provenance": null
+    },
+    {
       "path": "contratos/memoria/garbage-collection.json",
       "kind": "policy",
       "owner": "runtime/memoria.mjs",

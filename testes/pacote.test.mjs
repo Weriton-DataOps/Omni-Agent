@@ -230,6 +230,7 @@ test('plugin contém somente o núcleo declarado', async () => {
   await stat(file('contratos/contexto/persistencia.json'))
   await stat(file('contratos/arquitetura/escopo.json'))
   await stat(file('contratos/arquitetura/invariantes.json'))
+  await stat(file('contratos/interface/omni-desktop.json'))
   await stat(file('hooks/hooks.json'))
   await stat(file('contratos/personalidade/omni-persona-v1.md'))
   await stat(file('contratos/personalidade/omni-persona-v2.md'))
@@ -242,10 +243,10 @@ test('fronteiras mantêm interface e iniciativas externas independentes do Omni'
   assert.deepEqual(scope.activeAgents, ['omni'])
   assert.deepEqual(scope.embeddedInitiatives, [])
   assert.equal(scope.sections['31'], 'out-of-scope-agent-selection')
-  assert.equal(scope.sections['35'], 'deferred-interface')
+  assert.equal(scope.sections['35'], 'omni-desktop-body-contract-active')
   assert.equal(invariants.identity.agentCount, 1)
-  assert.equal(invariants.availability.implemented, false)
-  assert.equal(invariants.completion.conversationValidationRequiredBeforeInterface, true)
+  assert.equal(invariants.availability.implemented, true)
+  assert.equal(invariants.completion.conversationValidationRequiredBeforeInterface, false)
   assert.equal(invariants.scope.backlogExecution, 'prioritize-against-current-definition-of-done')
   assert.equal(
     invariants.boundaries.agentOrchestration,

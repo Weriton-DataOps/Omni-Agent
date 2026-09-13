@@ -3,7 +3,8 @@ import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { Controller } from './controller'
 import { Store } from './store'
-import { home, root, mintVoiceToken, transcribeAudio } from './runtime'
+import { home, root, broker, mintVoiceToken, transcribeAudio } from './runtime'
+import { CredentialIntake } from './credential-intake'
 let window: BrowserWindow | null = null
 let tray: Tray | null = null
 let quitting = false
@@ -11,10 +12,18 @@ let shuttingDown = false
 const page = join(import.meta.dirname, '../renderer/index.html')
 const trustedUrl = process.env.ELECTRON_RENDERER_URL || pathToFileURL(page).href
 const store = new Store(join(home, 'desktop'))
+const credentialIntake = new CredentialIntake(broker)
 const controller = new Controller(store, snapshot => {
   if (window && !window.isDestroyed()) window.webContents.send('omni:change', snapshot)
 })
 const id = (v: unknown) => { if (typeof v !== 'string' || !/^[a-f0-9-]{36}$/i.test(v)) throw new Error('Identificador inválido.'); return v }
+const externalUrl = (value: unknown) => {
+  if (typeof value !== 'string' || value.length > 2048) throw new Error('Link inválido.')
+  let url: URL
+  try { url = new URL(value) } catch { throw new Error('Link inválido.') }
+  if (!['https:', 'http:'].includes(url.protocol) || !url.hostname || url.username || url.password) throw new Error('Link inválido.')
+  return url.href
+}
 function register(name: string, handler: (...args: any[]) => unknown) {
   ipcMain.handle(`omni:${name}`, (event, ...args) => {
     if (event.sender !== window?.webContents || event.senderFrame !== window.webContents.mainFrame || event.senderFrame.url !== trustedUrl) throw new Error('Origem inválida.')
@@ -28,11 +37,12 @@ else {
   app.setAppUserModelId('local.omni.desktop')
   app.on('second-instance', show)
   app.on('before-quit', event => {
+    credentialIntake.discard()
     if (quitting) return
     event.preventDefault()
     if (shuttingDown) return
     shuttingDown = true
-    for (const key of controller.active.keys()) controller.cancel(key)
+    controller.prepareShutdown()
     void (async () => {
       const deadline = Date.now() + 8000
       while (controller.active.size && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 100))
@@ -46,6 +56,8 @@ else {
     window.setMenuBarVisibility(false)
     window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
     window.webContents.on('will-navigate', event => event.preventDefault())
+    window.webContents.on('render-process-gone', () => credentialIntake.discard())
+    window.on('hide', () => credentialIntake.discard())
     window.webContents.session.setPermissionRequestHandler((contents, permission, callback, details) => {
       callback(contents === window?.webContents && permission === 'media' && contents.getURL() === trustedUrl && 'mediaTypes' in details && (details.mediaTypes || []).every((t: string) => t === 'audio'))
     })
@@ -57,7 +69,14 @@ else {
     tray.on('click', show)
     register('snapshot', () => controller.snapshot())
     register('create', async () => { const result = await store.create(root); controller.emit(); return result })
+    register('vscode-workspace', async (workspace, title, sessionId) => {
+      if (typeof workspace !== 'string' || typeof title !== 'string' || workspace.length > 1000 || title.length > 200) throw new Error('Projeto do VS Code inválido.')
+      const target = resolve(workspace)
+      return controller.openVsCodeConversation(target, title, sessionId === undefined ? undefined : id(sessionId))
+    })
     register('delegate', (value, text) => { if (typeof text !== 'string') throw new Error('Mensagem inválida.'); return controller.delegate(id(value), text) })
+    register('consume-task', value => controller.consumeTask(id(value)))
+    register('acknowledge-returns', value => controller.acknowledgeReturns(id(value)))
     register('workspace', async value => {
       const c = store.get(id(value)); await controller.assertIdle(c)
       if (c.sessionId) throw new Error('Crie uma nova conversa para trocar de projeto e preservar a sessão atual.')
@@ -66,11 +85,17 @@ else {
       c.workspace = resolve(result.filePaths[0]); await store.save(); controller.emit()
     })
     register('send', (value, text, channel) => { if (typeof text !== 'string') throw new Error('Mensagem inválida.'); return controller.send(id(value), text, channel === 'voice' ? 'voice' : 'text') })
+    register('send-attachments', (value, text, channel, attachments) => { if (typeof text !== 'string') throw new Error('Invalid message.'); return controller.send(id(value), text, channel === 'voice' ? 'voice' : 'text', attachments) })
     register('cancel', value => controller.cancel(id(value)))
     register('decide', (value, allow) => controller.decide(id(value), allow === true))
     register('sessions', value => controller.sessions(id(value)))
     register('resume', (value, sessionId) => controller.resume(id(value), id(sessionId)))
     register('editor', async value => { await shell.openExternal(await controller.handoff(id(value))) })
+    register('credential-prepare', value => credentialIntake.prepare(value))
+    register('credential-test', value => credentialIntake.test(value))
+    register('credential-save', value => credentialIntake.save(value))
+    register('credential-discard', () => credentialIntake.discard())
+    register('open-url', async value => { await shell.openExternal(externalUrl(value)) })
     register('voice', async value => { store.get(id(value)); return mintVoiceToken() })
     register('transcribe', transcribeAudio)
     register('hide', () => window?.hide())

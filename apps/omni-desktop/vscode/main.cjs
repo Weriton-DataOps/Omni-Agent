@@ -19,6 +19,15 @@ exports.activate = context => {
   context.subscriptions.push({ dispose: () => { clearInterval(reportTimer); void fs.unlink(registryPath()).catch(() => {}) } })
   context.subscriptions.push(vscode.window.registerUriHandler({ async handleUri(uri) {
     try {
+      if (uri.path === '/workspace') {
+        const workspace = new URLSearchParams(uri.query).get('path')
+        if (!workspace || !path.isAbsolute(workspace)) return
+        await fs.access(workspace)
+        const current = vscode.workspace.workspaceFolders?.some(folder => path.resolve(folder.uri.fsPath).toLowerCase() === path.resolve(workspace).toLowerCase())
+        if (!current) await vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(workspace), { forceNewWindow: true })
+        else await vscode.commands.executeCommand('workbench.action.focusActiveEditorGroup')
+        return
+      }
       const nonce = new URLSearchParams(uri.query).get('nonce')
       if (uri.path !== '/session' || !/^[a-f0-9-]{36}$/i.test(nonce || '')) return
       const requestPath = path.join(base(), `handoff-${nonce}.json`)

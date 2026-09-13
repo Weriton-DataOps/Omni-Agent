@@ -31,19 +31,19 @@
     "externalCanVerifyOrClose": false
   },
   "interface": {
-    "chat": "deferred-until-conversation-validation",
-    "realtime": "deferred-until-conversation-validation",
-    "section35": "external-execution-environment-reference-only"
+    "chat": "omni-desktop-active-with-typed-body-contract",
+    "realtime": "omni-desktop-audio-surface-when-credential-available",
+    "section35": "omni-desktop-body-contract-active"
   },
   "sections": {
     "15-18": "external-execution-environment-reference-only",
     "27-30": "omni-active",
     "31": "out-of-scope-agent-selection",
     "32-34": "omni-active",
-    "35": "deferred-interface",
+    "35": "omni-desktop-body-contract-active",
     "36-37": "external-overcore",
     "38": "external-oracle",
-    "39": "omni-requirement-interface-dependent",
+    "39": "omni-desktop-interface-active",
     "40-46": "omni-invariants"
   }
 }

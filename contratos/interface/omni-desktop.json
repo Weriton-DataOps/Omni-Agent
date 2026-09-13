@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "contract": "omni-desktop-body-v1",
+  "identity": {
+    "name": "Omni Desktop",
+    "role": "corpo-local-da-presenca-e-coordenacao-do-omni",
+    "sourceOfTruth": "controller-state-and-typed-ipc",
+    "notSourceOfTruth": ["pixels", "css", "dom", "raw-chat-history"]
+  },
+  "surfaces": [
+    {
+      "id": "central-chat",
+      "purpose": "receber pedidos do proprietario e coordenar trabalho",
+      "actions": ["conversar", "delegar-subagente", "encaminhar-para-sessao", "receber-sintese"]
+    },
+    {
+      "id": "omni-subagent-queue",
+      "purpose": "mostrar execucao e avaliacao automatica de trabalho paralelo do Omni",
+      "actions": ["observar-status", "avaliar-retorno", "devolver-correcao-ao-executor", "entregar-sintese-automaticamente", "consultar-relato-original"]
+    },
+    {
+      "id": "vscode-session-chat",
+      "purpose": "controlar uma sessao Claude vinculada ao projeto no VS Code",
+      "actions": ["encaminhar-comando", "acompanhar-recebimento", "correlacionar-relato", "abrir-no-vscode"]
+    },
+    {
+      "id": "overcore",
+      "purpose": "reservar integracao futura por contrato",
+      "actions": []
+    },
+    {
+      "id": "oracle",
+      "purpose": "reservar retorno futuro por contrato",
+      "actions": []
+    },
+    {
+      "id": "audio",
+      "purpose": "entrada e conversa por voz quando disponivel",
+      "actions": ["ditar", "transcrever", "abrir-realtime"]
+    }
+  ],
+  "routing": {
+    "centralOwns": ["subagentes-do-omni", "resultados-consumidos", "conversas-gerais", "autorizacao-do-proprietario-para-pedidos-encaminhados"],
+    "externalOwns": ["execucao-no-projeto", "verificacao-local", "historico-bruto-do-vscode"],
+    "reportDestination": "conversa-que-originou-o-pedido",
+    "correlation": "editor-request-id"
+  },
+  "guardrails": [
+    "O estado tipado do controller e a fonte de verdade da interface; nunca inferir estado visual por texto ou pixels.",
+    "O Omni avalia automaticamente cada retorno e entrega a sintese na conversa de origem sem depender de clique no card. Se faltar execucao ou informacao recuperavel dentro do escopo autorizado, devolve uma correcao concreta ao mesmo executor e informa o proprietario do que encaminhou.",
+    "O card volta a executar durante correcoes; a central permanece disponivel. O indicador pensando cobre apenas o recebimento do pedido, encaminhamento e confirmacao no chat, nao a execucao do subagente.",
+    "Correcoes preservam objetivo, executor e correlacao; relato nao amplia autorizacao. Cancelamento impede retomada automatica. Apos tres correcoes ou repeticao sem progresso, informe o bloqueio real em vez de reenviar indefinidamente. So peca decisao por informacao nova indispensavel ou mudanca de escopo.",
+    "Uma conversa VS Code e um controle remoto da sessao vinculada; o Omni encaminha, observa e resume, mas nao executa localmente no lugar dela.",
+    "Quando o pedido pertence a um projeto com sessao VS Code vinculada, o chat central encaminha para essa sessao; ele nao substitui o executor por uma tarefa local.",
+    "Uma instrucao do proprietario no chat central segue para a sessao executora como autorizacao vinculada ao pedido. A sessao nao pede um segundo aval apenas porque a mensagem chegou pelo Omni.",
+    "A autorizacao vinculada cobre a execucao necessaria ao escopo, inclusive publicacao, deploy, promocao ou escrita remota quando fizerem parte explicita da entrega. A sessao para e devolve ao Omni somente ampliacao material de alvo ou escopo, acao destrutiva ou irreversivel nao coberta, ou conflito real de seguranca.",
+    "Relatos externos voltam somente para a conversa originadora por correlacao; a caixa tecnica de recebimento nunca define o destino de exibicao.",
+    "Overcore e Oracle nao recebem trabalho antes de seus contratos estarem ativos.",
+    "O corpo informa capacidades e estado, transporta a autorizacao ja dada pelo proprietario e nao transforma relato em verificacao independente."
+  ],
+  "projection": {
+    "maximumActivities": 24,
+    "maximumCharacters": 6000,
+    "exclude": ["segredos", "credenciais", "conteudo-bruto-de-conversas", "detalhes-de-layout"]
+  }
+}

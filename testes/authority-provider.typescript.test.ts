@@ -276,7 +276,33 @@ test('readback do mesmo recurso acompanha apenas a mutação reversível válida
   const readOnlyMedium = structuredClone(base)
   const mediumActions = readOnlyMedium.actions as Array<Record<string, unknown>>
   mediumActions.shift()
+  const mediumRisk = readOnlyMedium.riskSummary as Record<string, unknown>
+  mediumRisk.requestResourceActionCount = 1
+  mediumRisk.journaledEffectCount = 0
   delete readOnlyMedium.authorizationRequestFingerprint
   readOnlyMedium.authorizationRequestFingerprint = fingerprinter.fingerprint(readOnlyMedium)
   assert.equal(evaluateOvercoreAuthorizationRequest(readOnlyMedium, { at: fixedAt }).outcome, 'deny')
+})
+
+test('schema PostgreSQL só é liberado como sonda reversível com leitura do mesmo serviço', () => {
+  const base = reversibleMutationRequest()
+  const ceiling = base.authorityCeiling as Record<string, unknown>
+  ceiling.grants = [{ resourceRef: 'resource-omni-ts-test', operations: ['database.schema.modify', 'database.schema.read'] }]
+  const actions = base.actions as Array<Record<string, unknown>>
+  actions[0] = {
+    ...actions[0], actionId: 'action-omni-ts-postgres-write-0001',
+    operation: 'database.schema.modify', effectKey: 'effect-omni-ts-postgres-write-0001'
+  }
+  actions.push({
+    actionId: 'action-omni-ts-postgres-readback-0001', stepRef: 'step-omni-ts-postgres-readback-0001',
+    position: 2, scope: 'request-resource', resourceRef: 'resource-omni-ts-test',
+    operation: 'database.schema.read', effectMode: 'none', effectClass: 'read-only', riskLevel: 'low',
+    requestedControls: ['sanitize-output']
+  })
+  const risk = base.riskSummary as Record<string, unknown>
+  risk.requestResourceActionCount = 2
+  delete base.authorizationRequestFingerprint
+  base.authorizationRequestFingerprint = fingerprinter.fingerprint(base)
+  const decision = evaluateOvercoreAuthorizationRequest(base, { at: fixedAt })
+  assert.deepEqual(decision.actionDecisions.map((item) => item.outcome), ['permit', 'permit'])
 })

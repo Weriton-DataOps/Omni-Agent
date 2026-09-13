@@ -53,6 +53,7 @@ fora do Git.
 | identidade ativa | `contratos/personalidade/manifest.json` |
 | identidade verificável da release | `contratos/atualizacao/integridade.json` |
 | papel operacional | `contratos/arquitetura/invariantes.json` |
+| corpo local e limites da interface | `contratos/interface/omni-desktop.json` + `apps/omni-desktop/src/main/body-contract.ts` |
 | sensores | `hooks/hooks.json` + `runtime/observador.mjs` |
 | ciclo vivo | `runtime/ciclo-operacional.mjs` |
 | autoridade responsável | `contratos/operacao/autoridade.json` |

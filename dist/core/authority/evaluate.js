@@ -12,7 +12,7 @@ const REQUIRED_REVERSIBLE_MUTATION_CONTROLS = new Set([
 function isControlledReversibleMutation(action, maximumRisk) {
     if (maximumRisk !== 'medium' ||
         action.scope !== 'request-resource' ||
-        action.operation !== 'filesystem.modify' ||
+        !['filesystem.modify', 'database.schema.modify'].includes(action.operation) ||
         action.effectMode !== 'journaled' ||
         action.effectClass !== 'reversible-change' ||
         action.riskLevel !== 'medium')
@@ -28,11 +28,14 @@ function isControlledReversibleMutation(action, maximumRisk) {
 function isVerificationReadForControlledMutation(action, actions, maximumRisk) {
     return maximumRisk === 'medium' &&
         action.scope === 'request-resource' &&
-        action.operation === 'filesystem.read' &&
+        ['filesystem.read', 'database.schema.read'].includes(action.operation) &&
         action.effectMode === 'none' &&
         action.effectClass === 'read-only' &&
         action.riskLevel === 'low' &&
-        actions.some((candidate) => candidate.resourceRef === action.resourceRef && isControlledReversibleMutation(candidate, maximumRisk));
+        actions.some((candidate) => candidate.resourceRef === action.resourceRef &&
+            isControlledReversibleMutation(candidate, maximumRisk) &&
+            ((action.operation === 'filesystem.read' && candidate.operation === 'filesystem.modify') ||
+                (action.operation === 'database.schema.read' && candidate.operation === 'database.schema.modify')));
 }
 function reasonFor(ceiling, action, actions, maximumRisk, now) {
     if (ceiling.expiresAt !== undefined && Date.parse(ceiling.expiresAt) <= now.getTime())

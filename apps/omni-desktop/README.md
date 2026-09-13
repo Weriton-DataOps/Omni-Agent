@@ -11,13 +11,11 @@ runtime existente. Fechar a janela a esconde na bandeja; Encerrar Omni cancela a
 preserva o histórico e encerra o aplicativo. PostgreSQL e broker continuam disponíveis aos
 outros clientes do Omni.
 
-A conversa permite escolher o projeto antes do primeiro envio, retomar uma sessão Claude
-desse projeto e acompanhar texto em streaming. O mesmo sessionId é usado nos turnos seguintes.
-A ponte local `omni-local.omni-desktop-bridge` abre a sessão em um terminal Claude dentro do VS Code.
-O handoff usa nonce descartável, valida o vínculo no histórico local e mantém lease para
-impedir escrita simultânea pelo Desktop. A extensão resolve o executável Claude instalado,
-sem receber comandos arbitrários da URI. Para reimportar falas feitas no terminal, use
-Retomar sessão Claude após encerrar a sessão no terminal.
+O card **Chat central** volta ao Omni. Cards de projeto abrem uma conversa de coordenação
+vinculada ao ID da sessão Claude real. A seleção fica destacada e o alvo aparece numa linha
+compacta acima do chat. O histórico do editor é uma consulta separada, com autor/horário;
+compactações, instruções internas e mensagens técnicas não são tratadas como falas do usuário.
+Nenhum transcript é apagado. A projeção anterior fica arquivada localmente na migração.
 
 ### Execuções e continuidade de trabalho
 
@@ -25,9 +23,28 @@ A lateral esquerda mantém a sessão atual e o acesso ao histórico no topo. Aba
 o painel **Execuções** mostra tarefas ativas ou aguardando retorno, por origem:
 **Omni**, **VS Code**, **Overcore** e **Oracle**. Overcore e Oracle são marcados como
 indisponíveis até que seus contratos de integração existam; não representam trabalho
-inventado. Uma mensagem enviada enquanto uma conversa do Omni estiver ocupada abre uma
-nova tarefa paralela no mesmo projeto, preservando a conversa anterior e mantendo o chat
-pronto para a próxima instrução.
+inventado. O coordenador interpreta pedidos em uma fila persistida sem bloquear a caixa de
+texto. Conversa simples recebe resposta; trabalho local vai a um subagente; trabalho de projeto
+é encaminhado exclusivamente à sessão validada. O coordenador não tem ferramentas de execução.
+
+Pedidos externos mantêm ID, conversa de origem, sessão destinatária, estado e evidência do
+retorno. O mensageiro envia uma vez; o monitor observa confirmações e relatos correlacionados
+no histórico real. Após o relato, o Omni gera uma síntese na origem. Envio não significa execução,
+e relato não é verificação independente. Sessão desconectada e entrega incerta são explícitas.
+O Omni avalia cada retorno automaticamente. Se faltar execução ou uma informação que o
+executor pode obter dentro do pedido autorizado, envia uma correção ao mesmo subagente ou
+sessão e publica uma atualização na conversa de origem. O card volta a indicar execução;
+a central permanece livre. Resultados finais são entregues sem clique, com os relatos
+originais disponíveis nos detalhes. Cancelamentos impedem retomada automática. As tentativas
+são persistidas, limitadas a três correções e interrompidas se o mesmo relato voltar sem
+avanço. O limite não impede reconhecer sucesso na última tentativa. Apenas decisões novas
+indispensáveis voltam ao proprietário; uma pausa operacional é informada sem pedir novamente
+a autorização original.
+
+Cada chamada Claude de planejamento, envio ou síntese mantém teto de US$ 0,75. A tarefa na
+sessão externa mantém os limites e permissões dessa sessão, não os do mensageiro. O teste
+`node scripts/live-coordination.mjs` cria um receptor isolado sem ferramentas, também limitado
+a US$ 0,75, e testa cálculo, envio, retorno e síntese sem tocar em projetos reais.
 
 A extensão VS Code 0.1.1 registra a cada quatro segundos as janelas e as sessões Omni
 que ela abriu, em um arquivo local efêmero. O Desktop só aceita registros recentes e
@@ -52,9 +69,11 @@ O supervisor não declara a migração inversa PostgreSQL → cache de memória 
 essa capacidade não existe no broker atual. A perda do cache exige restauração própria,
 apesar da cópia durável existente. Esse limite é anterior à interface.
 
-O crachá existente continua no runtime. A integração Claude usa o modo normal de permissões,
-configuração do projeto e decisões por chamada na interface. Não há bypass de permissões nem
-tradução automática de todo o crachá para regras do SDK nesta versão.
+O crachá existente continua no runtime. O Omni Desktop opera como o agente pessoal local já
+autorizado pelo proprietário: comandos e ferramentas do Claude não voltam à interface como
+cartões de permissão por chamada. A autorização persistente é aplicada pelo SDK no processo
+local do Omni; permissões do navegador seguem separadas e continuam restritas ao microfone da
+própria janela confiável.
 
 ## Voz
 

@@ -19,12 +19,10 @@ try {
   await page.getByRole('heading', { name: 'O que vamos fazer?' }).waitFor({ timeout: 60000 })
   const exposed = await page.evaluate(() => ({ methods: Object.keys(window.omni).sort(), node: typeof window.require, studio: typeof window.studio }))
   assert.equal(exposed.node, 'undefined'); assert.equal(exposed.studio, 'undefined')
-  assert.equal(exposed.methods.length, 14)
+  for (const method of ['prepareCredential', 'testCredential', 'saveCredential', 'discardCredentials']) assert.ok(exposed.methods.includes(method))
+  assert.equal(exposed.methods.includes('registerCredential'), false)
   await page.getByRole('button', { name: '＋ Nova sessão' }).click()
   assert.equal((await page.evaluate(() => window.omni.snapshot())).conversations.length, 2)
-  await page.getByRole('button', { name: 'Retomar sessão Claude' }).click()
-  await page.getByText('Sessões deste projeto', { exact: true }).waitFor()
-  await page.getByRole('button', { name: 'Fechar ×' }).click()
   if (process.argv.includes('--design')) {
     // Isolated test process only: no minting, microphone audio or private memory leaves the app.
     await app.evaluate(({ ipcMain }) => {
@@ -62,10 +60,6 @@ try {
     })
     assert.equal(await page.locator('.brand>div').evaluate(e => e.firstChild.textContent), 'Omni')
     assert.equal(await page.evaluate(() => document.documentElement.scrollHeight > innerHeight), false)
-    await page.getByRole('button', { name: 'Atalhos' }).click()
-    await page.getByText('Do seu jeito.').waitFor()
-    await page.keyboard.press('Escape')
-    assert.equal(await page.locator('.shortcut-help').count(), 0)
     await page.getByRole('button', { name: 'Configurações de áudio' }).click()
     await page.getByRole('heading', { name: 'Escutar e responder do jeito certo.' }).waitFor()
     await page.getByRole('combobox', { name: 'Microfone' }).waitFor()

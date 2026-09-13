@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { microphoneId, outputId, realtimeVoice, realtimeVoices, setMicrophoneId, setOutputId, setRealtimeVoice } from './audioSettings'
 
 type Device = { id: string; label: string }
-export function AudioSettings({ onClose }: { onClose: () => void }) {
+export function AudioSettings({ onClose, onCredentials }: { onClose: () => void; onCredentials: () => void }) {
   const [inputs, setInputs] = useState<Device[]>([])
   const [outputs, setOutputs] = useState<Device[]>([])
   const [problem, setProblem] = useState('')
@@ -34,5 +34,6 @@ export function AudioSettings({ onClose }: { onClose: () => void }) {
     <label>Saída de áudio<select aria-label="Saída de áudio" value={output} onChange={event => chooseOutput(event.target.value)}><option value="">Padrão do sistema</option>{outputs.map(device => <option key={device.id} value={device.id}>{device.label}</option>)}</select></label>
     <label>Voz do Omni<select aria-label="Voz do Omni" value={voice} onChange={event => chooseVoice(event.target.value)}>{realtimeVoices.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label>
     <p className="audio-note">Para calibrar o ruído do ambiente, use <kbd>Ctrl + 9</kbd> em silêncio.</p>
+    <button type="button" className="open-credentials" onClick={onCredentials}>Crachá · acessos e tokens</button>
   </section>
 }

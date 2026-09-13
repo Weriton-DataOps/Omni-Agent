@@ -1,10 +1,12 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import type { Snapshot } from '../shared/contracts'
+import type { AttachmentInput, Snapshot, Activity, EditorRequest } from '../shared/contracts'
 import { Voice } from './voice'
+import { pendingCoordinationTurns } from '../shared/coordination-state'
 import { RealtimePanel } from './RealtimePanel'
 import { Dictation } from './dictation'
 import { AudioSettings } from './AudioSettingsPanel'
+import { CredentialSettings } from './CredentialSettingsPanel'
 import './style.css'
 import './heritage.css'
 const labels: Record<string, string> = { idle: 'Pronto', running: 'Trabalhando', 'needs-input': 'Sua decisão', completed: 'Rodada concluída', interrupted: 'Interrompida', failed: 'Precisa de atenção', editor: 'No VS Code' }
@@ -12,6 +14,7 @@ function App() {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
   const [selected, select] = useState('')
   const [draft, setDraft] = useState('')
+  const [attachments, setAttachments] = useState<AttachmentInput[]>([])
   const [error, setError] = useState('')
   const [voiceStatus, setVoiceStatus] = useState('Voz desligada')
   const [realtime, setRealtime] = useState(false)
@@ -20,39 +23,140 @@ function App() {
   const [dictationLevel, setDictationLevel] = useState(0)
   const [help, setHelp] = useState(false)
   const [audioSettings, setAudioSettings] = useState(false)
+  const [credentialSettings, setCredentialSettings] = useState(false)
   const [conversationMenu, setConversationMenu] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [followingLatest, setFollowingLatest] = useState(true)
+  const [runningSeconds, setRunningSeconds] = useState(0)
+  const [submitting, setSubmitting] = useState<Record<string, number>>({})
+  const submit = async (id: string, text: string, channel: 'text' | 'voice', outgoing?: AttachmentInput[]) => {
+    setSubmitting(previous => ({ ...previous, [id]: (previous[id] || 0) + 1 }))
+    try {
+      await window.omni.send(id, text, channel, outgoing)
+      setSnapshot(await window.omni.snapshot())
+    } finally {
+      setSubmitting(previous => ({ ...previous, [id]: Math.max(0, (previous[id] || 0) - 1) }))
+    }
+  }
+  const [delivery, setDelivery] = useState<{ conversationId: string; messageId: string } | null>(null)
   const amplitude = useRef(0)
   const dictation = useRef<Dictation | null>(null)
-  const [sessions, setSessions] = useState<{ id: string; title: string }[] | null>(null)
   const stateRef = useRef(snapshot); stateRef.current = snapshot
-  const tail = useRef<HTMLDivElement>(null)
+  const messages = useRef<HTMLDivElement>(null)
+  const composerInput = useRef<HTMLTextAreaElement>(null)
+  const attachmentPicker = useRef<HTMLInputElement>(null)
+  const followLatestRef = useRef(true)
+  const displayedConversation = useRef('')
+  const navigationEpoch = useRef(0)
   const voice = useRef<Voice | null>(null)
   const act = async (action: () => Promise<unknown>) => { setError(''); try { await action() } catch (e) { setError((e as Error).message.replace(/^Error invoking remote method '[^']+': Error: /, '')) } }
+  useEffect(() => {
+    const pasteImage = (event: ClipboardEvent) => {
+      if (document.activeElement !== composerInput.current) return
+      const files = Array.from(event.clipboardData?.files || []).filter(file => file.type.startsWith('image/'))
+      if (!files.length) return
+      event.preventDefault()
+      void addImageFiles(files)
+    }
+    window.addEventListener('paste', pasteImage)
+    return () => window.removeEventListener('paste', pasteImage)
+  })
   useEffect(() => {
     void window.omni.snapshot().then(setSnapshot)
     const off = window.omni.onChange(setSnapshot)
     voice.current = new Voice(window.omni, setVoiceStatus, async (id, text) => {
-      await window.omni.send(id, text, 'voice')
+      await submit(id, text, 'voice')
       const updated = await window.omni.snapshot()
-      return updated.conversations.find(c => c.id === id)?.messages.filter(m => m.role === 'assistant').at(-1)?.text || 'Não recebi uma resposta.'
+      const conversation = updated.conversations.find(c => c.id === id)
+      if (conversation?.kind === 'external' || conversation?.kind === 'central') return 'Pedido recebido. Vou organizar o encaminhamento e acompanhar por esta conversa.'
+      return conversation?.messages.filter(m => m.role === 'assistant').at(-1)?.text || 'Não recebi uma resposta.'
     }, n => { amplitude.current = n })
     dictation.current = new Dictation(window.omni, setDictationStatus, text => setDraft(previous => [previous, text].filter(Boolean).join(' ')), setDictationLevel)
     const unload = () => { voice.current?.stop(); dictation.current?.cancel() }
     window.addEventListener('beforeunload', unload)
     return () => { off(); unload(); window.removeEventListener('beforeunload', unload) }
   }, [])
-  const current = snapshot?.conversations.find(c => c.id === selected) || snapshot?.conversations[0]
-  useEffect(() => { tail.current?.scrollIntoView({ behavior: 'smooth' }) }, [current?.messages.at(-1)?.text])
-  const change = (id: string) => { closeVoice(); dictation.current?.cancel(); setDictationStatus(''); setDictationLevel(0); select(id); setSessions(null); setConversationMenu(false); setDraft('') }
-  const send = () => {
-    if (!current || !draft.trim()) return
-    const text = draft
-    setDraft('')
-    if (['running', 'needs-input'].includes(current.phase)) {
-      void act(async () => change(await window.omni.delegate(current.id, text)))
-      return
+  const primaryConversation = snapshot?.conversations.find(c => c.kind === 'central' && c.primary) || snapshot?.conversations.find(c => c.kind === 'central')
+  const current = snapshot?.conversations.find(c => c.id === selected && c.kind !== 'task') || primaryConversation || snapshot?.conversations[0]
+  const visibleId = useRef(current?.id); visibleId.current = current?.id
+  const busy = current ? ['running', 'needs-input'].includes(current.phase) : false
+  const pendingTurns = pendingCoordinationTurns(current, snapshot?.conversations || [])
+  const pendingCoordination = pendingTurns.length > 0 || !!(current && submitting[current.id])
+  const thinking = busy || pendingCoordination
+  useEffect(() => {
+    if (!thinking) { setRunningSeconds(0); return }
+    setRunningSeconds(0)
+    const timer = window.setInterval(() => setRunningSeconds(seconds => seconds + 1), 1000)
+    return () => window.clearInterval(timer)
+  }, [thinking, current?.id, pendingTurns[0]?.id])
+  useEffect(() => {
+    const input = composerInput.current
+    if (!input) return
+    input.style.height = 'auto'
+    const cap = 21 * 8
+    input.style.height = `${Math.min(input.scrollHeight, cap)}px`
+    input.style.overflowY = input.scrollHeight > cap ? 'auto' : 'hidden'
+  }, [draft])
+  const scrollToLatest = () => {
+    followLatestRef.current = true; setFollowingLatest(true)
+    messages.current?.scrollTo({ top: messages.current.scrollHeight, behavior: 'smooth' })
+  }
+  const openActivity = (activity: Activity) => { void act(async () => {
+    const intent = ++navigationEpoch.current
+    if (activity.source === 'omni' && activity.parentConversationId) {
+      if (!activity.outcome || !activity.conversationId) return
+      setDelivery({ conversationId: activity.parentConversationId, messageId: `report:${activity.conversationId}` })
+      try {
+        const parentId = await window.omni.consumeTask(activity.conversationId)
+        setSnapshot(await window.omni.snapshot())
+        if (intent !== navigationEpoch.current) return
+        change(parentId, true); window.setTimeout(scrollToLatest, 0)
+      } catch (error) { setDelivery(null); throw error }
+    } else if (activity.source === 'vscode' && activity.workspace) {
+      const id = await window.omni.openVsCodeWorkspace(activity.workspace, activity.title, activity.sessionId)
+      setSnapshot(await window.omni.snapshot()); if (intent === navigationEpoch.current) change(id)
+    } else if (activity.conversationId) change(activity.conversationId)
+  }) }
+  useEffect(() => {
+    if (!current) return
+    if (displayedConversation.current !== current.id) {
+      displayedConversation.current = current.id
+      followLatestRef.current = true; setFollowingLatest(true)
     }
-    void act(() => window.omni.send(current.id, text))
+    if (followLatestRef.current) messages.current?.scrollTo({ top: messages.current.scrollHeight })
+  }, [current?.id, current?.messages.at(-1)?.text, thinking])
+  const change = (id: string, keepDelivery = false) => { navigationEpoch.current++; if (!keepDelivery) setDelivery(null); closeVoice(); dictation.current?.cancel(); setError(''); setHistoryOpen(false); setDictationStatus(''); setDictationLevel(0); followLatestRef.current = true; setFollowingLatest(true); select(id); setConversationMenu(false); setDraft(''); setAttachments([]); void window.omni.acknowledgeReturns(id).catch(() => {}) }
+  useLayoutEffect(() => {
+    if (historyOpen) { followLatestRef.current = false; setFollowingLatest(false); messages.current?.scrollTo({ top: 0 }) }
+    else if (followLatestRef.current) messages.current?.scrollTo({ top: messages.current.scrollHeight })
+  }, [historyOpen])
+  const addImageFiles = async (files: File[]) => {
+    const eligible = files.filter(file => file.type.startsWith('image/') && file.size <= 5 * 1024 * 1024).slice(0, Math.max(0, 8 - attachments.length))
+    if (eligible.length !== files.length) setError('Use imagens de no mÃ¡ximo 5 MB; o limite Ã© oito anexos por mensagem.')
+    const items = await Promise.all(eligible.map(file => new Promise<AttachmentInput>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve({ kind: 'image', name: file.name, mime: file.type, data: String(reader.result) })
+      reader.onerror = () => reject(new Error('NÃ£o foi possÃ­vel ler a imagem.'))
+      reader.readAsDataURL(file)
+    })))
+    setAttachments(previous => [...previous, ...items].slice(0, 8))
+  }
+  const send = () => {
+    if (!current) return
+    const outgoing = [...attachments]
+    let text = draft
+    if (text.trim().length > 6000) {
+      outgoing.push({ kind: 'text', name: 'mensagem-longa.txt', mime: 'text/plain', text })
+      text = 'Texto longo enviado como anexo.'
+    }
+    if (!text.trim() && !outgoing.length) return
+    setDraft('')
+    setAttachments([])
+    const originId = current.id
+    setError('')
+    void submit(originId, text, 'text', outgoing).catch(e => {
+      if (visibleId.current === originId) setError((e as Error).message.replace(/^Error invoking remote method '[^']+': Error: /, ''))
+    })
   }
   const closeVoice = () => { voice.current?.stop(); setRealtime(false); setMuted(false) }
   const toggleVoice = () => {
@@ -60,8 +164,8 @@ function App() {
     if (!current || !snapshot?.state.voice || dictation.current?.active) return
     setMuted(false); setRealtime(true); void voice.current?.start(current.id)
   }
-  const shortcuts = useRef({ toggleVoice, realtime, sessions, help, audioSettings, conversationMenu })
-  shortcuts.current = { toggleVoice, realtime, sessions, help, audioSettings, conversationMenu }
+  const shortcuts = useRef({ toggleVoice, realtime, help, audioSettings, conversationMenu })
+  shortcuts.current = { toggleVoice, realtime, help, audioSettings, conversationMenu }
   useEffect(() => {
     let tap: ReturnType<typeof setTimeout> | undefined
     let pressed = false, held = false
@@ -71,7 +175,6 @@ function App() {
         e.preventDefault()
         if (shortcuts.current.audioSettings) setAudioSettings(false)
         else if (shortcuts.current.help) setHelp(false)
-        else if (shortcuts.current.sessions) setSessions(null)
         else if (shortcuts.current.conversationMenu) setConversationMenu(false)
         else if (shortcuts.current.realtime) closeVoice()
         else if (dictation.current?.active) { dictation.current.cancel(); setDictationStatus('') }
@@ -109,33 +212,98 @@ function App() {
     return () => { blur(); window.removeEventListener('keydown', down); window.removeEventListener('keyup', up); window.removeEventListener('blur', blur); document.removeEventListener('visibilitychange', visibility) }
   }, [])
   if (!snapshot || !current) return <div className="loading">◯ Preparando o Omni…</div>
-  const busy = ['running', 'needs-input'].includes(current.phase)
   const dictating = /^(Abrindo microfone|Gravando|Transcrevendo)/.test(dictationStatus)
   const activities = snapshot.state.activities || []
+  const selectedKey = current.kind === 'external' ? current.sessionId || current.id : current.id
+  const displayMessages = historyOpen ? current.editorHistory || [] : current.messages
+  const requests = snapshot.conversations.flatMap(c => (c.editorRequests || []).filter(r => (r.originConversationId || c.id) === current.id))
+  const showThinking = thinking
   return <div className="app">
     <aside className="sidebar"><div className="brand"><span className="sigil">◯</span><div>Omni<small>SEU ESPAÇO DE CONTINUIDADE</small></div></div>
       <div className="conversation-controls"><button className="new" onClick={() => void act(async () => change(await window.omni.create()))}>＋ Nova sessão</button><button className="conversation-toggle" aria-label="Todas as conversas" aria-expanded={conversationMenu} title="Todas as conversas" onClick={() => setConversationMenu(value => !value)}>⌄</button></div>
-      <button className="conversation current-conversation" onClick={() => setConversationMenu(value => !value)}><span>{current.title}</span><small><i className={current.phase === 'running' ? 'dot live' : 'dot'} />{labels[current.phase]}</small></button>
-      {conversationMenu && <nav className="conversation-menu" aria-label="Todas as conversas">{snapshot.conversations.map(c => <button key={c.id} className={'conversation ' + (c.id === current.id ? 'selected' : '')} onClick={() => change(c.id)}><span>{c.title}</span><small><i className={c.phase === 'running' ? 'dot live' : 'dot'} />{labels[c.phase]}</small></button>)}</nav>}
-      <div className="execution-panel"><div className="section-label">EXECUÇÕES</div><ActivityGroup label="OMNI" source="omni" activities={activities} onOpen={change} /><ActivityGroup label="VS CODE" source="vscode" activities={activities} onOpen={change} /><ActivityGroup label="OVERCORE" source="overcore" activities={activities} onOpen={change} /><ActivityGroup label="ORACLE" source="oracle" activities={activities} onOpen={change} /></div>
+      <button className={'conversation current-conversation ' + (current.id === primaryConversation?.id ? 'selected' : '')} aria-current={current.id === primaryConversation?.id ? 'page' : undefined} onClick={() => change(primaryConversation?.id || current.id)}><span>Chat central</span><small><i className={primaryConversation?.phase === 'running' ? 'dot live' : 'dot'} />{current.id === primaryConversation?.id ? 'Você está aqui' : 'Voltar ao Omni'}</small></button>
+      {conversationMenu && <nav className="conversation-menu" aria-label="Todas as conversas">{snapshot.conversations.filter(c => c.kind !== 'task').map(c => <button key={c.id} className={'conversation ' + (c.id === current.id ? 'selected' : '')} onClick={() => change(c.id)}><span>{c.title}</span><small><i className={c.phase === 'running' ? 'dot live' : 'dot'} />{labels[c.phase]}</small></button>)}</nav>}
+      <div className="execution-panel"><div className="section-label">EXECUÇÕES</div><ActivityGroup label="OMNI" source="omni" activities={activities} selectedKey={selectedKey} onSelect={openActivity} /><ActivityGroup label="VS CODE" source="vscode" activities={activities} selectedKey={selectedKey} onSelect={openActivity} /><ActivityGroup label="OVERCORE" source="overcore" activities={activities} selectedKey={selectedKey} onSelect={openActivity} /><ActivityGroup label="ORACLE" source="oracle" activities={activities} selectedKey={selectedKey} onSelect={openActivity} /></div>
       <div className="health"><i className={'dot ' + (snapshot.state.broker === 'ready' ? 'live' : 'warning')} />{snapshot.state.broker === 'ready' ? 'Continuidade conectada' : 'Continuidade local'}<small>{snapshot.state.synchronization}</small></div>
     </aside>
-    <main><header><div className="breadcrumbs">ESPAÇO PESSOAL <span>/</span> CONVERSA</div><div className="header-actions"><button onClick={() => setAudioSettings(true)} aria-label="Configurações de áudio" title="Áudio — microfone, saída e voz">⚙ Áudio</button><button onClick={() => void act(() => window.omni.openEditor(current.id))}>Abrir sessão no VS Code ↗</button></div></header>
-      <div className="project"><button disabled={!!current.sessionId || busy} onClick={() => void act(() => window.omni.chooseWorkspace(current.id))}>▱ {current.workspace.split(/[\\/]/).at(-1)} <span>⌄</span></button><button disabled={busy} onClick={() => void act(async () => setSessions(await window.omni.listSessions(current.id)))}>Retomar sessão Claude</button></div>
-      {sessions && <div className="session-picker"><button onClick={() => setSessions(null)}>Fechar ×</button><p>Sessões deste projeto</p>{sessions.length === 0 && <small>Nenhuma sessão encontrada.</small>}{sessions.map(s => <button key={s.id} onClick={() => void act(async () => { await window.omni.resume(current.id, s.id); setSessions(null) })}>{s.title}</button>)}</div>}
-      <div className="messages">{current.messages.length === 0 && <div className="welcome"><div className="orb">◯</div><span>ESTOU POR AQUI</span><h1>O que vamos fazer?</h1><p>Continue um assunto, abra um projeto<br/>ou me conte o que está pensando.</p></div>}{current.messages.map(m => <article key={m.id} className={m.role}><div className="speaker">{m.role === 'user' ? 'VOCÊ' : 'Omni'}{m.channel === 'voice' ? ' · VOZ' : ''}</div><div className="message-text">{m.text || (busy ? 'Preparando a resposta…' : '')}</div></article>)}<div ref={tail} /></div>
-      <div className="composer-area">{error && <div role="alert" className="error">{error}</div>}{snapshot.permissions.filter(p => p.conversationId === current.id).map(p => <div className="permission" key={p.id}><strong>Permitir {p.tool} nesta ação?</strong><pre>{p.detail}</pre><button onClick={() => void act(() => window.omni.decide(p.id, true))}>Permitir</button><button onClick={() => void act(() => window.omni.decide(p.id, false))}>Recusar</button></div>)}
-        <div className={'composer ' + (dictating ? 'dictating' : '')}>
-          {dictating ? <DictationFeedback status={dictationStatus} level={dictationLevel} /> : <textarea aria-label="Mensagem para o Omni" placeholder={busy ? 'Envie uma nova instrução para abrir uma tarefa paralela…' : 'Fale comigo…'} value={draft} onChange={e => setDraft(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send() } }} />}
-          {busy && <div className="composer-actions composer-stop"><button className="send" onClick={() => void act(() => window.omni.cancel(current.id))}>■ Parar</button></div>}
-        </div><div className="shortcut-strip"><button onClick={() => setHelp(!help)}>Atalhos <kbd>Ctrl + 0</kbd></button></div><div className="footnote">Claude · {labels[current.phase]} <span>Seu contexto acompanha a conversa</span></div>
+    <main><div className="chat-context"><span>{current.kind === 'external' ? current.title : 'Omni · Chat central'}{current.kind === 'external' && <small> · {current.sessionId?.slice(0, 8)} · {current.editorOnline === false ? 'sessão desconectada' : 'sessão vinculada'}</small>}</span>{current.kind === 'external' && <button onClick={() => setHistoryOpen(!historyOpen)} aria-pressed={historyOpen}>{historyOpen ? 'Voltar à conversa com o Omni' : `Histórico do VS Code (${current.editorHistory?.length || 0})`}</button>}</div>
+    <div className="messages" ref={messages} onScroll={event => { const element = event.currentTarget; const follows = element.scrollHeight - element.scrollTop - element.clientHeight < 60; followLatestRef.current = follows; setFollowingLatest(follows) }}>{displayMessages.length === 0 && <div className="welcome"><div className="orb">◯</div><span>{current.kind === 'external' ? 'OMNI · COORDENAÇÃO DO PROJETO' : 'ESTOU POR AQUI'}</span><h1>O que vamos fazer?</h1><p>{current.kind === 'external' ? 'Converse comigo sobre esta sessão. Eu encaminho o trabalho e acompanho o retorno.' : 'Continue um assunto, abra um projeto ou me conte o que está pensando.'}</p></div>}{historyOpen && <p className="history-notice">Histórico anterior do editor · somente consulta. Resumos internos e mensagens do sistema foram ocultados.</p>}{displayMessages.map(m => <article key={m.id} className={m.role}><div className="speaker">{m.author || (m.role === 'user' ? 'VOCÊ' : 'Omni')}{m.channel === 'voice' ? ' · VOZ' : ''}{historyOpen && m.at && <time> · {new Date(m.at).toLocaleString('pt-BR')}</time>}</div>{delivery?.conversationId === current.id && delivery.messageId === m.id
+      ? <DeliveredReport text={m.text} onProgress={() => { if (followLatestRef.current) messages.current?.scrollTo({ top: messages.current.scrollHeight }) }} />
+      : <MessageText text={m.text || (busy ? 'Preparando a resposta…' : '')} />}</article>)}{showThinking && <div className="thinking-indicator" role="status" aria-label={current.phase === 'needs-input' ? 'Aguardando decisão' : pendingCoordination ? 'Omni entendendo o pedido' : 'Omni trabalhando'}><span className="thinking-ring" /><span>{current.phase === 'needs-input' ? 'Aguardando uma decisão necessária' : pendingCoordination ? `Omni entendendo o pedido e definindo a execução · ${runningSeconds}s` : `Omni trabalhando · ${runningSeconds}s`}</span>{busy && <button onClick={() => void act(() => window.omni.cancel(current.id))} title="Interromper">■</button>}</div>}</div>
+      {!followingLatest && <button className="scroll-to-latest" onClick={scrollToLatest}>↓ Acompanhar resposta</button>}
+      <div className="composer-area">{requests.length > 0 && <details className="request-tracker"><summary>Pedidos acompanhados · {requests.filter(r => !['completed', 'blocked'].includes(r.status)).length} em acompanhamento</summary>{requests.slice(-8).map(r => <RequestProgress key={r.id} request={r} />)}</details>}{snapshot.conversations.filter(c => c.kind === 'task' && c.parentConversationId === current.id && c.acknowledgedAt).length > 0 && <details className="task-evidence"><summary>Relatórios originais dos subagentes</summary>{snapshot.conversations.filter(c => c.parentConversationId === current.id && c.acknowledgedAt).map(c => <details key={c.id}><summary>{c.title}</summary><MessageText text={c.resultText || c.messages.filter(m => m.role === 'assistant').at(-1)?.text || 'Sem relato.'} /></details>)}</details>}{error && <div role="alert" className="error">{error}</div>}{snapshot.permissions.filter(p => p.conversationId === current.id).map(p => <div className="permission" key={p.id}><strong>Permitir {p.tool} nesta ação?</strong><pre>{p.detail}</pre><button onClick={() => void act(() => window.omni.decide(p.id, true))}>Permitir</button><button onClick={() => void act(() => window.omni.decide(p.id, false))}>Recusar</button></div>)}
+        <div className={'composer ' + (dictating ? 'dictating' : '')} onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); void addImageFiles(Array.from(event.dataTransfer.files)) }}>
+          <input ref={attachmentPicker} className="attachment-picker" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple onChange={event => { void addImageFiles(Array.from(event.currentTarget.files || [])); event.currentTarget.value = '' }} />
+          {(attachments.length > 0 || draft.trim().length > 6000) && <div className="attachment-strip" aria-label="Anexos prontos para envio">
+            {attachments.map((attachment, index) => <div className="attachment-chip" key={`${attachment.name}-${index}`}><span className="attachment-number">#{index + 1}</span>{attachment.kind === 'image' && attachment.data ? <img src={attachment.data} alt="PrÃ©via do anexo" /> : <span className="text-attachment">TXT</span>}<span className="attachment-name">{attachment.name || 'imagem'}</span><button type="button" aria-label={`Remover anexo ${index + 1}`} onClick={() => setAttachments(items => items.filter((_, itemIndex) => itemIndex !== index))}>Ã—</button></div>)}
+            {draft.trim().length > 6000 && <div className="attachment-chip long-draft"><span className="attachment-number">#{attachments.length + 1}</span><span className="text-attachment">TXT</span><span className="attachment-name">mensagem-longa.txt</span><small>serÃ¡ enviada como anexo</small></div>}
+          </div>}
+          {!dictating && attachments.length > 0 && <div className="composer-tools"><small>{attachments.length}/8</small></div>}
+          {dictating ? <DictationFeedback status={dictationStatus} level={dictationLevel} /> : <textarea ref={composerInput} rows={1} spellCheck={false} aria-label="Mensagem para o Omni" placeholder={current.kind === 'external' ? `Fale com o Omni sobre ${current.title.replace(/^VS Code · /, '')}…` : 'Escreva, ou segure Ctrl + 0 para falar…'} value={draft} onChange={e => setDraft(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); setHistoryOpen(false); send() } }} />}
+        </div>
       </div>
       {help && <div className="shortcut-help"><button onClick={() => setHelp(false)} aria-label="Fechar atalhos">×</button><h2>Do seu jeito.</h2><p><kbd>Ctrl + Enter</kbd> Mostrar / recolher Omni</p><p><kbd>Ctrl + 0</kbd> Toque: abrir / fechar Realtime</p><p><kbd>Ctrl + 0</kbd> Segurar: ditar · soltar: transcrever no rascunho</p><p><kbd>Ctrl + 9</kbd> Calibrar ruído do ditado</p><p><kbd>Enter</kbd> Enviar · <kbd>Shift + Enter</kbd> Nova linha</p><p><kbd>Esc</kbd> Fechar painel / cancelar ditado / recolher Omni</p><small>Voz e ditado usam a OpenAI. O chat continua na sua sessão Claude.</small></div>}
-      {audioSettings && <AudioSettings onClose={() => setAudioSettings(false)} />}
+      {audioSettings && <AudioSettings onClose={() => setAudioSettings(false)} onCredentials={() => { setAudioSettings(false); setCredentialSettings(true) }} />}
+      {credentialSettings && <CredentialSettings onClose={() => setCredentialSettings(false)} />}
       {realtime && <RealtimePanel status={voiceStatus} amplitude={amplitude} muted={muted} onMute={() => { voice.current?.mute(!muted); setMuted(!muted) }} onClose={closeVoice} />}
     </main>
-    <aside className="inspector"><div className="section-label">CONTINUIDADE</div><h2>O que fica com você</h2><div className="memory-card"><span>Memória compartilhada</span><strong>{snapshot.state.memory.confirmed} <small>confirmadas</small></strong><p>{snapshot.state.memory.candidates} candidatas em avaliação</p></div><div className="section-label">MISSÕES ATIVAS</div>{snapshot.state.missions.length === 0 ? <p className="muted">As missões aparecem aqui quando disponíveis.</p> : snapshot.state.missions.slice(0, 8).map(m => <div className="mission" key={m.id}><i className="dot" /><span>{m.objective}<small>{m.state}</small></span></div>)}<div className="section-label timeline-label">NESTA CONVERSA</div><div className="timeline">{current.events.length === 0 ? <p className="muted">As ações e verificações aparecem durante o trabalho.</p> : current.events.slice(-12).reverse().map((e, i) => <div key={i}><small>{new Date(e.at).toLocaleTimeString('pt-BR')}</small><span>{e.text}</span></div>)}</div><div className="workspace-path" title={current.workspace}>{current.workspace}<small>{current.sessionId ? `Sessão ${current.sessionId.slice(0, 8)}` : 'Sessão criada no primeiro envio'}</small></div></aside>
+    <aside className="inspector settings-panel"><div className="section-label">CONFIGURAÇÕES</div><div className="inspector-actions"><button onClick={() => setAudioSettings(true)} aria-label="Configurações de áudio" title="Áudio — microfone, saída e voz">⚙ Áudio</button><button onClick={() => setCredentialSettings(true)} aria-label="Crachá de acessos" title="Crachá — acessos e tokens">◉ Crachá</button></div></aside>
   </div>
+}
+function DeliveredReport({ text, onProgress }: { text: string; onProgress: () => void }) {
+  const [visible, setVisible] = useState(0)
+  const [showAll, setShowAll] = useState(false)
+  const points = Array.from(text)
+  const complete = showAll || visible >= points.length
+  const progress = useRef(onProgress); progress.current = onProgress
+  useEffect(() => {
+    if (showAll) return
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) { setVisible(points.length); return }
+    const started = performance.now()
+    const duration = Math.min(6000, Math.max(900, points.length * 6))
+    const timer = window.setInterval(() => {
+      const count = Math.min(points.length, Math.floor(points.length * (performance.now() - started) / duration))
+      setVisible(count)
+      if (count >= points.length) window.clearInterval(timer)
+    }, 32)
+    return () => window.clearInterval(timer)
+  }, [text, showAll])
+  useLayoutEffect(() => { progress.current() }, [visible, complete])
+  return <div className={'report-delivery ' + (complete ? 'delivered' : 'writing')}>
+    <div className="delivery-status"><span role="status">{complete ? '✓ Resultado recebido no chat central' : 'Escrevendo resultado do subagente…'}</span>{!complete && <button onClick={() => setShowAll(true)}>Mostrar tudo</button>}</div>
+    <MessageText text={text} revealCharacters={complete ? undefined : visible} />
+  </div>
+}
+function MessageText({ text, revealCharacters }: { text: string; revealCharacters?: number }) {
+  let remaining = revealCharacters ?? Infinity
+  const take = (value: string) => {
+    const characters = Array.from(value)
+    const visible = characters.slice(0, Math.max(0, remaining)).join('')
+    remaining -= characters.length
+    return visible
+  }
+  const inline = (value: string) => value.split(/(`[^`]+`|\*\*[^*]+\*\*|https?:\/\/[^\s<>()\[\]{}]+)/g).filter(Boolean).map((part, index) => {
+    if (remaining <= 0) return null
+    if (part.startsWith('`') && part.endsWith('`')) return <code key={index}>{take(part.slice(1, -1))}</code>
+    if (part.startsWith('**') && part.endsWith('**')) return <strong key={index}>{take(part.slice(2, -2))}</strong>
+    if (/^https?:\/\//i.test(part)) {
+      const url = part.replace(/[.,;:!?]+$/, '')
+      const ending = part.slice(url.length)
+      return <React.Fragment key={index}><a className="chat-link" href={url} onClick={event => { event.preventDefault(); void window.omni.openUrl(url) }} title="Abrir no navegador">{take(url)}</a>{ending && take(ending)}</React.Fragment>
+    }
+    return take(part)
+  })
+  const blocks = text.split(/\n{2,}/)
+  return <div className="message-text">{blocks.map((block, index) => {
+    if (remaining <= 0) return null
+    if (/^```[\s\S]*```$/.test(block.trim())) return <pre key={index}><code>{take(block.trim().replace(/^```\w*\n?/, '').replace(/```$/, ''))}</code></pre>
+    const lines = block.split('\n')
+    if (lines.every(line => /^[-*]\s+/.test(line))) return <ul key={index}>{lines.map((line, item) => remaining > 0 ? <li key={item}>{inline(line.replace(/^[-*]\s+/, ''))}</li> : null)}</ul>
+    if (lines.every(line => /^\d+[.)]\s+/.test(line))) return <ol key={index}>{lines.map((line, item) => remaining > 0 ? <li key={item}>{inline(line.replace(/^\d+[.)]\s+/, ''))}</li> : null)}</ol>
+    const heading = block.match(/^(#{1,3})\s+(.+)$/)
+    if (heading) return <h3 key={index}>{inline(heading[2])}</h3>
+    return <p key={index}>{lines.map((line, lineIndex) => remaining > 0 ? <React.Fragment key={lineIndex}>{inline(line)}{remaining > 0 && lineIndex < lines.length - 1 && <br />}</React.Fragment> : null)}</p>
+  })}</div>
 }
 function DictationFeedback({ status, level }: { status: string; level: number }) {
   const listening = !status.startsWith('Transcrevendo')
@@ -146,8 +314,12 @@ function DictationFeedback({ status, level }: { status: string; level: number })
     <span className="dictation-label">{label}</span>
   </div>
 }
-function ActivityGroup({ label, source, activities, onOpen }: { label: string; source: 'omni' | 'vscode' | 'overcore' | 'oracle'; activities: Snapshot['state']['activities']; onOpen: (id: string) => void }) {
+function RequestProgress({ request }: { request: EditorRequest }) {
+  const status = { sending: 'Encaminhando', sent: 'Enviado · aguardando recebimento', received: 'Recebido · aguardando relato', reported: 'Relato disponível', summarizing: 'Omni preparando síntese', completed: 'Relato sintetizado', blocked: 'Decisão ou bloqueio', uncertain: 'Entrega não confirmada' }[request.status]
+  return <details className="request-progress"><summary>{request.targetName || 'Sessão do projeto'} · {status}{request.disconnected && !request.summary ? ' · sessão desconectada' : ''}</summary><p>{request.text}</p>{request.summaryError && <p>{request.summaryError}</p>}{request.report && <><small>Relato do executor · {request.evidenceId?.slice(0, 8)} · não é verificação independente</small><MessageText text={request.report} /></>}</details>
+}
+function ActivityGroup({ label, source, activities, selectedKey, onSelect }: { label: string; source: Activity['source']; activities: Activity[]; selectedKey: string; onSelect: (activity: Activity) => void }) {
   const items = activities.filter(activity => activity.source === source)
-  return <section className="activity-group"><h3>{label}</h3>{items.length === 0 ? <p className="empty-activity">Nada em execução.</p> : items.map(activity => <button className={'activity ' + activity.status} key={activity.id} onClick={() => activity.conversationId && onOpen(activity.conversationId)} disabled={!activity.conversationId && activity.status === 'unavailable'}><i className={'activity-status ' + activity.status} /><span>{activity.title}<small>{activity.detail}</small></span></button>)}</section>
+  return <section className="activity-group"><h3>{label}</h3>{items.length === 0 ? <p className="empty-activity">Nada em execução.</p> : items.map(activity => <button className={'activity source-' + activity.source + ' ' + activity.status + (activity.parentConversationId ? ' subagent' : '') + (activity.child ? ' has-child' : '') + (activity.attention ? ' attention-' + activity.attention : '') + ((activity.sessionId || activity.conversationId) === selectedKey ? ' selected' : '')} aria-current={(activity.sessionId || activity.conversationId) === selectedKey ? 'page' : undefined} key={activity.id} onClick={() => onSelect(activity)} aria-disabled={activity.source === 'omni' && !!activity.parentConversationId && !activity.outcome} disabled={activity.status === 'unavailable'}><i className={'activity-status ' + activity.status} aria-hidden="true" /><span className="activity-parent-copy">{activity.title}<small>{(activity.sessionId || activity.conversationId) === selectedKey ? 'Selecionado · ' : ''}{activity.detail}</small></span>{activity.child && <span className={'activity-child ' + activity.child.status} aria-label={`${activity.child.title}: ${activity.child.status === 'running' ? 'em execução' : 'concluído'}`}><i aria-hidden="true" /><small>{activity.child.title}</small></span>}{activity.attention === 'return' && <i className="activity-return" aria-label="Retorno aguardando leitura" title="Retorno aguardando leitura" />}{activity.outcome && <i className={'activity-outcome ' + activity.outcome} aria-label={activity.outcome === 'completed' ? 'Concluído' : 'Não concluído'} />}</button>)}</section>
 }
 createRoot(document.getElementById('root')!).render(<App />)

@@ -61,14 +61,14 @@
     ]
   },
   "availability": {
-    "continuousPresence": "requirement-deferred-interface",
-    "implemented": false,
-    "reason": "section-35-deferred-by-owner"
+    "continuousPresence": "omni-desktop-body-contract-v1",
+    "implemented": true,
+    "reason": "desktop-controller-injects-typed-body-state-into-coordinator-turns"
   },
   "excludedOrDeferredSections": {
     "31": "out-of-scope-agent-selection",
     "15-18": "external-execution-environment-reference-only",
-    "35": "deferred-interface",
+    "35": "omni-desktop-body-contract-active",
     "36": "external-overcore",
     "37": "external-overcore",
     "38": "external-oracle",
@@ -76,6 +76,6 @@
   },
   "completion": {
     "mayClaimFunctionalOnlyWithCodeContractTestAndRepeatableEvidence": true,
-    "conversationValidationRequiredBeforeInterface": true
+    "conversationValidationRequiredBeforeInterface": false
   }
 }

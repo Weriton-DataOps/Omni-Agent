@@ -3,6 +3,25 @@ import { parseCredentialMetadata } from '../../contracts/credential-metadata.js'
 const PIPE_NAME = '\\\\.\\pipe\\omni-access-broker-v8';
 const MAX_RESPONSE_BYTES = 64 * 1024;
 const TIMESTAMP_KEYS = ['issuedAt', 'expiresAt', 'statusChangedAt', 'lastCheckedAt', 'lastSuccessAt', 'unusableSince', 'lastFailureAt', 'revokedAt', 'nextCheckAt', 'nextRetryAt'];
+function verificationResult(value) {
+    const item = record(value);
+    if (!['authenticated', 'invalid-token', 'insufficient-scope', 'timeout', 'unavailable', 'rate-limited', 'unsupported'].includes(String(item.outcome)) ||
+        typeof item.checkedAt !== 'string' || !Number.isFinite(Date.parse(item.checkedAt)) ||
+        typeof item.method !== 'string' || !/^[a-z0-9-]{1,80}$/u.test(item.method) || typeof item.summary !== 'string' || item.summary.length > 400) {
+        throw new Error('Access broker credential verification response is invalid.');
+    }
+    return { outcome: item.outcome, checkedAt: new Date(item.checkedAt).toISOString(), method: item.method, summary: item.summary };
+}
+function registrationReceipt(value) {
+    const item = record(value);
+    for (const key of ['credentialId', 'providerRef', 'accountRef', 'environmentRef'])
+        safeIdentifier(String(item[key] ?? ''), key);
+    if (!Number.isSafeInteger(item.version) || Number(item.version) < 1 || typeof item.secretRef !== 'string' || !/^credential-ref:[a-zA-Z0-9._:-]{1,140}$/u.test(item.secretRef) ||
+        !['unverified', 'active', 'expired', 'suspect', 'invalid', 'revoked', 'disabled', 'replaced'].includes(String(item.status)) ||
+        (item.expiresAt !== null && (typeof item.expiresAt !== 'string' || !Number.isFinite(Date.parse(item.expiresAt)))))
+        throw new Error('Access broker credential receipt is invalid.');
+    return { credentialId: String(item.credentialId), version: Number(item.version), providerRef: String(item.providerRef), accountRef: String(item.accountRef), environmentRef: String(item.environmentRef), secretRef: item.secretRef, status: String(item.status), expiresAt: item.expiresAt === null ? null : new Date(String(item.expiresAt)).toISOString() };
+}
 function record(value) {
     if (value === null || typeof value !== 'object' || Array.isArray(value))
         throw new Error('Access broker returned an invalid response.');
@@ -26,6 +45,19 @@ function credentialObservation(value) {
         (value.replacedById !== undefined && !/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,159}$/u.test(value.replacedById)) || (value.kind === 'replaced' && (!value.replacedById || value.replacedById === value.credentialId))) {
         throw new Error('Credential observation is invalid.');
     }
+    return value;
+}
+function credentialRegistration(value) {
+    for (const [label, item] of Object.entries({ credentialId: value.credentialId, providerRef: value.providerRef, accountRef: value.accountRef, environmentRef: value.environmentRef }))
+        safeIdentifier(item, label);
+    if (value.credentialId.length > 80)
+        throw new Error('Credential id is too long for its vault reference.');
+    if (typeof value.token !== 'string' || !value.token.trim() || Buffer.byteLength(value.token, 'utf8') > 2400)
+        throw new Error('Credential token is invalid.');
+    if (!['none', 'refresh', 'rotate', 'reauthenticate'].includes(value.renewalMode))
+        throw new Error('Credential renewal mode is invalid.');
+    if (value.expiresAt !== null && (!Number.isFinite(Date.parse(value.expiresAt)) || new Date(value.expiresAt).toISOString() !== value.expiresAt))
+        throw new Error('Credential expiry is invalid.');
     return value;
 }
 function memoryEntry(value) {
@@ -74,6 +106,73 @@ export class NodeAccessBrokerClient {
             throw new Error('Access broker health response is invalid.');
         }
         return { protocol: response.protocol, status: response.status };
+    }
+    async registerCredential(input) {
+        const value = credentialRegistration(input);
+        const registrationBase64 = Buffer.from(JSON.stringify(value), 'utf8').toString('base64');
+        if (registrationBase64.length > 12_000)
+            throw new Error('Credential registration exceeds the broker limit.');
+        const response = await this.call({ operation: 'credential.register', registrationBase64 });
+        if (typeof response.credentialJson !== 'string')
+            throw new Error('Access broker credential registration response is invalid.');
+        let raw;
+        try {
+            raw = JSON.parse(response.credentialJson);
+        }
+        catch {
+            throw new Error('Access broker credential registration response is invalid.');
+        }
+        const receipt = record(raw);
+        if (!safeIdentifier(String(receipt.credentialId || ''), 'Credential id') || !Number.isSafeInteger(receipt.version) || Number(receipt.version) < 1 ||
+            !safeIdentifier(String(receipt.providerRef || ''), 'Provider') || !safeIdentifier(String(receipt.accountRef || ''), 'Account') || !safeIdentifier(String(receipt.environmentRef || ''), 'Environment') ||
+            typeof receipt.secretRef !== 'string' || !/^credential-ref:[a-zA-Z0-9._:-]{1,140}$/u.test(receipt.secretRef) ||
+            (receipt.expiresAt !== null && (typeof receipt.expiresAt !== 'string' || !Number.isFinite(Date.parse(receipt.expiresAt)))) || receipt.status !== 'unverified') {
+            throw new Error('Access broker credential registration response is invalid.');
+        }
+        return { credentialId: String(receipt.credentialId), version: Number(receipt.version), providerRef: String(receipt.providerRef), accountRef: String(receipt.accountRef), environmentRef: String(receipt.environmentRef), secretRef: receipt.secretRef, expiresAt: receipt.expiresAt, status: receipt.status };
+    }
+    async verifyCredential(input) {
+        const registrationBase64 = Buffer.from(JSON.stringify(credentialRegistration(input)), 'utf8').toString('base64');
+        const response = await this.call({ operation: 'credential.verify', registrationBase64 }, 20_000);
+        return verificationResult(response.verification);
+    }
+    async registerVerifiedCredential(input, expectedVersion) {
+        if (expectedVersion !== null)
+            safeVersion(expectedVersion);
+        const registrationBase64 = Buffer.from(JSON.stringify(credentialRegistration(input)), 'utf8').toString('base64');
+        const response = await this.call({ operation: 'credential.register-verified', registrationBase64, expectedVersion }, 20_000);
+        if (response.disposition !== 'created' && response.disposition !== 'reused')
+            throw new Error('Access broker registration disposition is invalid.');
+        const verification = verificationResult(response.verification);
+        if (verification.outcome !== 'authenticated')
+            throw new Error('Access broker did not authenticate this credential.');
+        return { credential: registrationReceipt(response.credential), verification, disposition: response.disposition };
+    }
+    async verifyStoredCredential(credentialId) {
+        const response = await this.call({ operation: 'credential.verify-stored', credentialId: safeIdentifier(credentialId, 'Credential id') }, 20_000);
+        return { credential: registrationReceipt(response.credential), verification: verificationResult(response.verification) };
+    }
+    async findLatestCredential(credentialId) {
+        const response = await this.call({ operation: 'credential.latest', credentialId: safeIdentifier(credentialId, 'Credential id') });
+        if (response.found === false)
+            return null;
+        if (response.found !== true || typeof response.credentialJson !== 'string')
+            throw new Error('Access broker credential lookup response is invalid.');
+        let raw;
+        try {
+            raw = JSON.parse(response.credentialJson);
+        }
+        catch {
+            throw new Error('Access broker credential lookup response is invalid.');
+        }
+        const receipt = record(raw);
+        if (!safeIdentifier(String(receipt.credentialId || ''), 'Credential id') || !Number.isSafeInteger(receipt.version) || Number(receipt.version) < 1 ||
+            !safeIdentifier(String(receipt.providerRef || ''), 'Provider') || !safeIdentifier(String(receipt.accountRef || ''), 'Account') || !safeIdentifier(String(receipt.environmentRef || ''), 'Environment') ||
+            typeof receipt.secretRef !== 'string' || !/^credential-ref:[a-zA-Z0-9._:-]{1,140}$/u.test(receipt.secretRef) ||
+            (receipt.expiresAt !== null && (typeof receipt.expiresAt !== 'string' || !Number.isFinite(Date.parse(receipt.expiresAt)))) || typeof receipt.status !== 'string') {
+            throw new Error('Access broker credential lookup response is invalid.');
+        }
+        return { credentialId: String(receipt.credentialId), version: Number(receipt.version), providerRef: String(receipt.providerRef), accountRef: String(receipt.accountRef), environmentRef: String(receipt.environmentRef), secretRef: receipt.secretRef, expiresAt: receipt.expiresAt, status: receipt.status };
     }
     async readCredentialVersion(credentialId, version) {
         const response = await this.call({ operation: 'credential.read', credentialId: safeIdentifier(credentialId, 'Credential id'), version: safeVersion(version) });
@@ -158,10 +257,10 @@ export class NodeAccessBrokerClient {
             return mission;
         });
     }
-    async call(request) {
+    async call(request, timeoutMs = this.timeoutMs) {
         return new Promise((resolve, reject) => {
             let settled = false;
-            const deadline = Date.now() + this.timeoutMs;
+            const deadline = Date.now() + timeoutMs;
             let retryTimer;
             const finish = (error, response) => {
                 if (settled)
@@ -175,7 +274,7 @@ export class NodeAccessBrokerClient {
                 else
                     resolve(response);
             };
-            const timeout = setTimeout(() => finish(new Error('Access broker timed out.')), this.timeoutMs);
+            const timeout = setTimeout(() => finish(new Error('Access broker timed out.')), timeoutMs);
             const attempt = () => {
                 if (settled)
                     return;

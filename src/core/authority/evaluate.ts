@@ -26,7 +26,7 @@ function isControlledReversibleMutation(action: AuthorityAction, maximumRisk: Au
   if (
     maximumRisk !== 'medium' ||
     action.scope !== 'request-resource' ||
-    action.operation !== 'filesystem.modify' ||
+    !['filesystem.modify', 'database.schema.modify'].includes(action.operation) ||
     action.effectMode !== 'journaled' ||
     action.effectClass !== 'reversible-change' ||
     action.riskLevel !== 'medium'
@@ -47,12 +47,15 @@ function isVerificationReadForControlledMutation(
 ): boolean {
   return maximumRisk === 'medium' &&
     action.scope === 'request-resource' &&
-    action.operation === 'filesystem.read' &&
+    ['filesystem.read', 'database.schema.read'].includes(action.operation) &&
     action.effectMode === 'none' &&
     action.effectClass === 'read-only' &&
     action.riskLevel === 'low' &&
     actions.some((candidate) =>
-      candidate.resourceRef === action.resourceRef && isControlledReversibleMutation(candidate, maximumRisk)
+      candidate.resourceRef === action.resourceRef &&
+      isControlledReversibleMutation(candidate, maximumRisk) &&
+      ((action.operation === 'filesystem.read' && candidate.operation === 'filesystem.modify') ||
+       (action.operation === 'database.schema.read' && candidate.operation === 'database.schema.modify'))
     )
 }
 
