@@ -15,6 +15,15 @@ const trustedUrl = process.env.ELECTRON_RENDERER_URL || pathToFileURL(page).href
 const store = new Store(join(home, 'desktop'))
 const credentialIntake = new CredentialIntake(broker)
 const updates = new LocalUpdateService([join(import.meta.dirname, 'index.js'), join(import.meta.dirname, '../preload/index.cjs'), page], join(home, 'desktop', 'update-preferences.json'))
+async function releaseIdentity() {
+  try {
+    const { verificarIntegridadeRelease } = await import(pathToFileURL(join(root, 'runtime', 'integridade-release.mjs')).href)
+    const result = await verificarIntegridadeRelease(root)
+    return { version: result.releaseVersion, fingerprint: result.fingerprint, integrity: result.status === 'verified' ? 'verified' as const : 'drifted' as const }
+  } catch {
+    return { version: 'indisponível', fingerprint: null, integrity: 'unavailable' as const }
+  }
+}
 const controller = new Controller(store, snapshot => {
   if (window && !window.isDestroyed()) window.webContents.send('omni:change', snapshot)
 })
@@ -145,6 +154,7 @@ else {
     show()
     try {
       await controller.initialize()
+      updates.setReleaseIdentity(await releaseIdentity())
       controller.setUpdateStatus(await updates.initialize())
     } catch { dialog.showErrorBox('Omni', 'Não foi possível abrir o histórico. Os arquivos existentes foram preservados.'); app.quit(); return }
     setInterval(() => void controller.refresh(), 15000).unref()

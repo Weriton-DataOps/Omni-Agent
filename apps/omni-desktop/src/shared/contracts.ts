@@ -50,6 +50,10 @@ export interface LocalUpdateStatus {
   availableVersion?: string;
   /** Present only after a local update restarted into the detected build. */
   lastAppliedAt?: string;
+  /** Identity of the Omni payload this Desktop process verified at startup. */
+  releaseVersion?: string;
+  releaseFingerprint?: string;
+  releaseIntegrity?: 'verified' | 'drifted' | 'unavailable';
   autoApply: boolean;
   checkedAt: string;
   detail: string;

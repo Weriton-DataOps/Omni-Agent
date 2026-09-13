@@ -49,6 +49,7 @@ const modules = (context: string, calls: string[]) => ({
     if (path.includes('hook-contexto')) return { tratarHook: async () => { calls.push('context'); return { hookSpecificOutput: { additionalContext: context } } } }
     if (path.includes('sincronizacao-memoria')) return { sincronizarMemoriaDuravel: async () => { calls.push('memory-sync') } }
     if (path.includes('sincronizacao-missoes')) return { sincronizarMissoesDuraveis: async () => { calls.push('mission-sync') } }
+    if (path.includes('sincronizacao-aprendizado-operacional')) return { sincronizarAprendizadoOperacional: async () => { calls.push('learning-sync') } }
     return { lerMemoria: async () => ({ confirmed: [], candidates: [] }) }
   },
   getBroker: async () => ({ health: async () => ({ status: 'ready' }), listActiveMissions: async () => [] }),
@@ -121,6 +122,7 @@ test('texto e voz recebem contexto antes da inferência, com sincronização e r
     assert.equal(options[0].sessionId, options[1].resume)
     assert.equal(calls.filter(c => c === 'memory-sync').length, 2)
     assert.equal(calls.filter(c => c === 'mission-sync').length, 2)
+    assert.equal(calls.filter(c => c === 'learning-sync').length, 2)
     assert.equal(store.get(id).messages[2].channel, 'voice')
   } finally { await rm(dir, { recursive: true }) }
 })

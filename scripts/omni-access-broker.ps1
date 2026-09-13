@@ -287,6 +287,22 @@ COMMIT;
             return @{ ok = $true; result = $taskResult }
         } catch { return @{ ok = $false; code = 'trusted-operation-failed' } }
     }
+    if ($taskRequest.operation -eq 'learning.record-improvement') {
+        if ($taskRequest.PSObject.Properties.Name -notcontains 'findingBase64') { return @{ ok = $false; code = 'invalid-request' } }
+        $taskFindingBase64 = [string]$taskRequest.findingBase64
+        if ($taskFindingBase64 -notmatch '^[A-Za-z0-9+/=]{4,12000}$') { return @{ ok = $false; code = 'invalid-request' } }
+        try {
+            $taskFindingBytes = [Convert]::FromBase64String($taskFindingBase64)
+            if ($taskFindingBytes.Length -gt 9000) { throw 'Operational learning finding is too large.' }
+            $taskFindingText = [Text.Encoding]::UTF8.GetString($taskFindingBytes)
+            $null = $taskFindingText | ConvertFrom-Json -ErrorAction Stop
+            $taskQuery = "BEGIN; SET LOCAL ROLE omni_operations_runtime; SELECT learning.record_improvement_finding(convert_from(decode('$taskFindingBase64', 'base64'), 'UTF8')::jsonb)::text; COMMIT;"
+            $taskJson = Invoke-BrokerQuery $taskQuery
+            $taskResult = $taskJson | ConvertFrom-Json -ErrorAction Stop
+            if ($taskResult.outcome -notin @('recorded', 'duplicate')) { throw 'Unexpected operational learning result.' }
+            return @{ ok = $true; outcome = $taskResult.outcome }
+        } catch { return @{ ok = $false; code = 'trusted-operation-failed' } }
+    }
     if ($taskRequest.operation -eq 'mission.upsert') {
         if ($taskRequest.PSObject.Properties.Name -notcontains 'missionBase64') { return @{ ok = $false; code = 'invalid-request' } }
         $taskMissionBase64 = [string]$taskRequest.missionBase64

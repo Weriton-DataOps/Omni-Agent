@@ -246,6 +246,7 @@ export class Controller {
         try {
           await (await this.dependencies.loadModule('runtime/sincronizacao-memoria-duravel.mjs')).sincronizarMemoriaDuravel(home)
           await (await this.dependencies.loadModule('runtime/sincronizacao-missoes-duraveis.mjs')).sincronizarMissoesDuraveis(home)
+          await (await this.dependencies.loadModule('runtime/sincronizacao-aprendizado-operacional.mjs')).sincronizarAprendizadoOperacional(home)
           this.synchronizationPending = false
           this.state.synchronization = 'Sincronização recuperada · banco conectado'
         } catch { /* Keep the pending status visible for the next retry. */ }
@@ -444,6 +445,7 @@ export class Controller {
       try {
         await (await this.dependencies.loadModule('runtime/sincronizacao-memoria-duravel.mjs')).sincronizarMemoriaDuravel(home)
         await (await this.dependencies.loadModule('runtime/sincronizacao-missoes-duraveis.mjs')).sincronizarMissoesDuraveis(home)
+        await (await this.dependencies.loadModule('runtime/sincronizacao-aprendizado-operacional.mjs')).sincronizarAprendizadoOperacional(home)
         this.synchronizationPending = false
       } catch { this.synchronizationPending = true }
       await this.refresh()

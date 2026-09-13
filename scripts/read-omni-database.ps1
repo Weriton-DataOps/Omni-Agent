@@ -28,12 +28,12 @@ try {
 BEGIN TRANSACTION READ ONLY;
 SELECT json_build_object('database',current_database(),'port',inet_server_port(),'readOnly',current_setting('transaction_read_only'),'size',pg_size_pretty(pg_database_size(current_database())));
 SELECT json_agg(t) FROM (SELECT schemaname,tablename FROM pg_tables WHERE schemaname NOT IN ('pg_catalog','information_schema') ORDER BY 1,2) t;
-SELECT json_build_object('memory', (SELECT count(*) FROM memory.entries), 'imports',(SELECT count(*) FROM memory.import_receipts),'missions',(SELECT count(*) FROM operations.missions),'missionEvents',(SELECT count(*) FROM operations.mission_events),'credentialVersions',(SELECT count(*) FROM access.credential_versions),'credentialEvents',(SELECT count(*) FROM audit.credential_events));
+SELECT json_build_object('memory', (SELECT count(*) FROM memory.entries), 'imports',(SELECT count(*) FROM memory.import_receipts),'missions',(SELECT count(*) FROM operations.missions),'missionEvents',(SELECT count(*) FROM operations.mission_events),'operationalLearningFindings',(SELECT count(*) FROM learning.improvement_findings),'operationalLearningEvents',(SELECT count(*) FROM learning.improvement_events),'credentialVersions',(SELECT count(*) FROM access.credential_versions),'credentialEvents',(SELECT count(*) FROM audit.credential_events));
 SELECT json_agg(t) FROM (SELECT lane,memory_type,count(*) AS total FROM memory.entries GROUP BY lane,memory_type ORDER BY 1,2) t;
 SELECT json_agg(t) FROM (SELECT mission_id,objective,state,updated_at FROM operations.missions ORDER BY updated_at DESC LIMIT 15) t;
 SELECT json_agg(t) FROM (SELECT provider_ref,status,expiry_kind,expires_at,count(*) AS total FROM access.credential_versions GROUP BY 1,2,3,4) t;
 SELECT json_agg(t) FROM (SELECT id FROM omni_meta.schema_migrations ORDER BY id) t;
-SELECT json_agg(t) FROM (SELECT lane,memory_type,left(payload->>'text',240) AS sample FROM memory.entries WHERE memory_type IN ('preference','procedural','semantic') ORDER BY source_updated_at DESC LIMIT 12) t;
+SELECT json_agg(t) FROM (SELECT lane,memory_type,text_fingerprint AS sampleFingerprint FROM memory.entries WHERE memory_type IN ('preference','procedural','semantic') ORDER BY source_updated_at DESC LIMIT 12) t;
 ROLLBACK;
 '@)
  $taskProcess.StandardInput.Close()

@@ -23,6 +23,7 @@ import { casaDoOmni } from './memoria.mjs'
 import { processarExperiencia } from './pipeline-memoria.mjs'
 import { sincronizarMemoriaDuravel } from './sincronizacao-memoria-duravel.mjs'
 import { sincronizarMissoesDuraveis } from './sincronizacao-missoes-duraveis.mjs'
+import { sincronizarAprendizadoOperacional } from './sincronizacao-aprendizado-operacional.mjs'
 import { lerPersonalidadeAtiva } from './personalidade.mjs'
 import { resumirFeedbackPersonalidade } from './feedback-personalidade.mjs'
 import {
@@ -459,6 +460,7 @@ export async function tratarHook(input, env = process.env) {
   ])
   await tentarComponente('sincronizacao-memoria-duravel', () => sincronizarMemoriaDuravel(casa), falhas)
   await tentarComponente('sincronizacao-missoes-duraveis', () => sincronizarMissoesDuraveis(casa), falhas)
+  await tentarComponente('sincronizacao-aprendizado-operacional', () => sincronizarAprendizadoOperacional(casa), falhas)
   if (observacaoPrompt?.observationFailure?.result === 'failed') {
     falhas.push({
       nome: 'observador-prompt-operacional',

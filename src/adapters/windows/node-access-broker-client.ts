@@ -4,6 +4,7 @@ import { parseCredentialMetadata } from '../../contracts/credential-metadata.js'
 import type { CredentialMetadata, CredentialObservation } from '../../core/access/credential.js'
 import type { AccessBrokerClient } from '../../ports/access-broker-client.js'
 import type { DurableMemoryClient, DurableMemoryEntry } from '../../ports/durable-memory-client.js'
+import type { DurableOperationalLearningClient, DurableOperationalLearningFinding } from '../../ports/durable-operational-learning-client.js'
 import type { DurableMission, DurableMissionClient } from '../../ports/durable-mission-client.js'
 
 const PIPE_NAME = '\\\\.\\pipe\\omni-access-broker-v8'
@@ -94,6 +95,21 @@ function memoryEntry(value: DurableMemoryEntry): DurableMemoryEntry {
   return value
 }
 
+function operationalLearningFinding(value: DurableOperationalLearningFinding): DurableOperationalLearningFinding {
+  if (!/^learning-event-[a-f0-9]{24,64}$/u.test(value.eventId) || !/^improvement-[a-zA-Z0-9-]{1,160}$/u.test(value.findingId) ||
+      !/^[a-f0-9]{64}$/u.test(value.candidateFingerprint) || !/^[a-z][a-z0-9-]{1,79}$/u.test(value.category) ||
+      !['operational-rule', 'procedure', 'routing', 'hook', 'runtime-fix', 'personality', 'eval', 'capability'].includes(value.destination) ||
+      !['observing', 'ready', 'implementation-required', 'materialized-pending-release', 'installed-verified', 'loaded-verified', 'superseded'].includes(value.state) ||
+      !Number.isSafeInteger(value.occurrences) || value.occurrences < 1 || value.occurrences > 1_000_000 ||
+      !/^[a-f0-9]{64}$/u.test(value.statementFingerprint) || !/^[a-f0-9]{64}$/u.test(value.sourceFingerprint) ||
+      (value.artifactFingerprint !== null && !/^[a-f0-9]{64}$/u.test(value.artifactFingerprint)) ||
+      (value.releaseVersion !== null && !/^v?[0-9]+\.[0-9]+\.[0-9]+(?:-[a-z0-9.-]+)?$/u.test(value.releaseVersion)) ||
+      !Number.isFinite(Date.parse(value.observedAt))) {
+    throw new Error('Sanitized operational learning finding is invalid.')
+  }
+  return value
+}
+
 /** The trusted PowerShell host may serialize UTC as +00; contracts use canonical Z milliseconds. */
 function canonicalizeBrokerCredential(value: unknown): unknown {
   const source = record(value)
@@ -108,7 +124,7 @@ function canonicalizeBrokerCredential(value: unknown): unknown {
   return result
 }
 
-export class NodeAccessBrokerClient implements AccessBrokerClient, DurableMemoryClient, DurableMissionClient {
+export class NodeAccessBrokerClient implements AccessBrokerClient, DurableMemoryClient, DurableMissionClient, DurableOperationalLearningClient {
   constructor(private readonly pipeName = PIPE_NAME, private readonly timeoutMs = 1_500) {
     if (!/^\\\\\.\\pipe\\[a-zA-Z0-9._-]{1,120}$/u.test(pipeName)) throw new Error('Access broker pipe name is invalid.')
     if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 10_000) throw new Error('Access broker timeout is invalid.')
@@ -220,6 +236,16 @@ export class NodeAccessBrokerClient implements AccessBrokerClient, DurableMemory
     const response = await this.call({ operation: 'memory.import', importId: input.importId, sourceFingerprint: input.sourceFingerprint, entriesBase64: encoded })
     if (response.result !== 'applied' && response.result !== 'duplicate') throw new Error('Access broker memory import response is invalid.')
     return response.result
+  }
+
+  async recordOperationalLearningFinding(input: DurableOperationalLearningFinding): Promise<'recorded' | 'duplicate'> {
+    const encoded = Buffer.from(JSON.stringify(operationalLearningFinding(input)), 'utf8').toString('base64')
+    if (encoded.length > 12_000) throw new Error('Operational learning finding exceeds the broker limit.')
+    const response = await this.call({ operation: 'learning.record-improvement', findingBase64: encoded })
+    if (response.outcome !== 'recorded' && response.outcome !== 'duplicate') {
+      throw new Error('Access broker operational learning response is invalid.')
+    }
+    return response.outcome
   }
 
   async upsertMission(input: DurableMission): Promise<'applied' | 'duplicate'> {

@@ -73,6 +73,20 @@ function memoryEntry(value) {
         throw new Error('Durable memory payload is invalid.');
     return value;
 }
+function operationalLearningFinding(value) {
+    if (!/^learning-event-[a-f0-9]{24,64}$/u.test(value.eventId) || !/^improvement-[a-zA-Z0-9-]{1,160}$/u.test(value.findingId) ||
+        !/^[a-f0-9]{64}$/u.test(value.candidateFingerprint) || !/^[a-z][a-z0-9-]{1,79}$/u.test(value.category) ||
+        !['operational-rule', 'procedure', 'routing', 'hook', 'runtime-fix', 'personality', 'eval', 'capability'].includes(value.destination) ||
+        !['observing', 'ready', 'implementation-required', 'materialized-pending-release', 'installed-verified', 'loaded-verified', 'superseded'].includes(value.state) ||
+        !Number.isSafeInteger(value.occurrences) || value.occurrences < 1 || value.occurrences > 1_000_000 ||
+        !/^[a-f0-9]{64}$/u.test(value.statementFingerprint) || !/^[a-f0-9]{64}$/u.test(value.sourceFingerprint) ||
+        (value.artifactFingerprint !== null && !/^[a-f0-9]{64}$/u.test(value.artifactFingerprint)) ||
+        (value.releaseVersion !== null && !/^v?[0-9]+\.[0-9]+\.[0-9]+(?:-[a-z0-9.-]+)?$/u.test(value.releaseVersion)) ||
+        !Number.isFinite(Date.parse(value.observedAt))) {
+        throw new Error('Sanitized operational learning finding is invalid.');
+    }
+    return value;
+}
 /** The trusted PowerShell host may serialize UTC as +00; contracts use canonical Z milliseconds. */
 function canonicalizeBrokerCredential(value) {
     const source = record(value);
@@ -223,6 +237,16 @@ export class NodeAccessBrokerClient {
         if (response.result !== 'applied' && response.result !== 'duplicate')
             throw new Error('Access broker memory import response is invalid.');
         return response.result;
+    }
+    async recordOperationalLearningFinding(input) {
+        const encoded = Buffer.from(JSON.stringify(operationalLearningFinding(input)), 'utf8').toString('base64');
+        if (encoded.length > 12_000)
+            throw new Error('Operational learning finding exceeds the broker limit.');
+        const response = await this.call({ operation: 'learning.record-improvement', findingBase64: encoded });
+        if (response.outcome !== 'recorded' && response.outcome !== 'duplicate') {
+            throw new Error('Access broker operational learning response is invalid.');
+        }
+        return response.outcome;
     }
     async upsertMission(input) {
         if (!/^mission-[a-zA-Z0-9-]{1,160}$/u.test(input.id) || input.objective.length < 3 || input.objective.length > 800 || !['open', 'in-progress', 'blocked', 'completed', 'cancelled'].includes(input.state) || !Number.isSafeInteger(input.priority) || input.priority < 0 || input.priority > 100 || input.payload === null || Array.isArray(input.payload) || typeof input.payload !== 'object' || !Number.isFinite(Date.parse(input.createdAt)) || !Number.isFinite(Date.parse(input.updatedAt)) || (input.closedAt !== null && !Number.isFinite(Date.parse(input.closedAt))) || ((input.state === 'completed' || input.state === 'cancelled') !== (input.closedAt !== null))) {

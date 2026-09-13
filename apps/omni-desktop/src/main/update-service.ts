@@ -5,6 +5,7 @@ import type { LocalUpdateStatus } from '../shared/contracts'
 
 type Preferences = { autoApply?: boolean; lastApplied?: Sample }
 type Sample = { version: string; at: string }
+type ReleaseIdentity = { version: string; fingerprint: string | null; integrity: 'verified' | 'drifted' | 'unavailable' }
 type FileStat = { size: number; mtimeMs: number }
 type Dependencies = {
   stat?: (path: string) => Promise<FileStat>;
@@ -29,7 +30,12 @@ export class LocalUpdateService {
   private applying = false
   private blockedDetail = ''
   private lastError = ''
+  private release?: ReleaseIdentity
   constructor(private assets: string[], private preferencesPath: string, private dependencies: Dependencies = {}) {}
+  private withRelease(status: LocalUpdateStatus): LocalUpdateStatus {
+    if (!this.release) return status
+    return { ...status, releaseVersion: this.release.version, ...(this.release.fingerprint ? { releaseFingerprint: this.release.fingerprint.slice(0, 12) } : {}), releaseIntegrity: this.release.integrity }
+  }
   private get now() { return this.dependencies.now || (() => new Date()) }
   private async fingerprint(): Promise<Sample> {
     const statFile = this.dependencies.stat || stat
@@ -62,27 +68,28 @@ export class LocalUpdateService {
     } catch { /* First use starts manual. */ }
     try { this.current = await this.fingerprint(); this.lastError = '' } catch { this.lastError = unavailable }
     this.checkedAt = this.now().toISOString()
-    return this.status()
+    return this.withRelease(this.status())
   }
   async check() {
     this.checkedAt = this.now().toISOString()
     try {
       const sample = await this.fingerprint(); this.lastError = ''
-      if (!this.current) { this.current = sample; this.candidate = undefined; this.stableCandidate = undefined; this.blockedDetail = ''; return this.status() }
-      if (sample.version === this.current.version) { this.candidate = undefined; this.stableCandidate = undefined; this.blockedDetail = ''; return this.status() }
-      if (this.stableCandidate !== sample.version) { this.stableCandidate = sample.version; this.candidate = undefined; return this.status() }
+      if (!this.current) { this.current = sample; this.candidate = undefined; this.stableCandidate = undefined; this.blockedDetail = ''; return this.withRelease(this.status()) }
+      if (sample.version === this.current.version) { this.candidate = undefined; this.stableCandidate = undefined; this.blockedDetail = ''; return this.withRelease(this.status()) }
+      if (this.stableCandidate !== sample.version) { this.stableCandidate = sample.version; this.candidate = undefined; return this.withRelease(this.status()) }
       this.candidate = sample
     } catch { this.lastError = unavailable }
-    return this.status()
+    return this.withRelease(this.status())
   }
-  async setAutoApply(enabled: boolean) { this.autoApply = enabled; await this.savePreferences(); return this.status() }
+  async setAutoApply(enabled: boolean) { this.autoApply = enabled; await this.savePreferences(); return this.withRelease(this.status()) }
+  setReleaseIdentity(identity: ReleaseIdentity) { this.release = identity; return this.withRelease(this.status()) }
   async recordApplying() {
     if (!this.candidate) throw new Error('Não há uma atualização local pronta para registrar.')
     this.lastApplied = { version: this.candidate.version, at: this.now().toISOString() }
     await this.savePreferences()
   }
   canApply() { return Boolean(this.candidate) && !this.applying }
-  markBlocked(detail: string) { this.blockedDetail = detail; return this.status() }
-  clearBlocked() { this.blockedDetail = ''; return this.status() }
-  markApplying() { if (!this.canApply()) throw new Error('Não há uma atualização local pronta para aplicar.'); this.applying = true; return this.status() }
+  markBlocked(detail: string) { this.blockedDetail = detail; return this.withRelease(this.status()) }
+  clearBlocked() { this.blockedDetail = ''; return this.withRelease(this.status()) }
+  markApplying() { if (!this.canApply()) throw new Error('Não há uma atualização local pronta para aplicar.'); this.applying = true; return this.withRelease(this.status()) }
 }

@@ -2,6 +2,15 @@
   "schemaVersion": 1,
   "releases": [
     {
+      "version": "0.23.1",
+      "changes": [
+        "Passou a persistir no PostgreSQL interno os achados operacionais sanitizados: categoria, estado, contagem e fingerprints; conversa, comandos, anexos e credenciais continuam fora do ledger.",
+        "Adicionou a migration checksummed 004 e a operação autenticada learning.record-improvement no broker, com RLS por proprietário e idempotência por evento.",
+        "Ligou o ciclo de autoaprendizado ao ledger durável em hooks e no Desktop, preservando o cache local como camada de trabalho.",
+        "O painel do Desktop agora mostra a versão, a assinatura e o estado de integridade do núcleo carregado, separado da confirmação da build local aplicada."
+      ]
+    },
+    {
       "version": "0.23.0",
       "changes": [
         "Adicionou a especialidade de financas pessoais e produto financeiro, com analise verificavel e handoff seguro para agentes de codigo.",

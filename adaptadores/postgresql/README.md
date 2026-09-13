@@ -1,5 +1,18 @@
 # PostgreSQL — fundação de acesso do Omni
 
+## Estado atual — 0.23.1
+
+A instância dedicada em `127.0.0.1:5433` já recebeu as migrations `001` a
+`004`. A `004-operational-learning-ledger` mantém `learning.improvement_findings`
+e `learning.improvement_events`, ambos com RLS por proprietário e escrita apenas
+pela operação autenticada `learning.record-improvement` do broker.
+
+O ledger aceita somente campos sanitizados: IDs controlados, categoria, destino,
+estado, contagem, versão e fingerprints SHA-256. Conversa, comando, caminho local,
+anexo, saída de ferramenta e qualquer credencial não fazem parte do contrato SQL,
+da mensagem do pipe ou do recibo. O JSON local continua sendo cache de trabalho;
+o PostgreSQL é a trilha durável de auditoria operacional.
+
 Estado: migration aditiva e regras TypeScript preparadas; **não instalada no PostgreSQL de uso**.
 O teste de integração cria outro cluster, sem alterar o serviço existente, usando apenas dados e
 credenciais sintéticos. Não é alternativa de produção nem contorna o bootstrap no cofre do Windows.
