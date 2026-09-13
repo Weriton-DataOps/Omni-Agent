@@ -66,13 +66,21 @@ const kindLabel: Record<Conversation['kind'], string> = { central: 'chat central
 export function bodyContext(contract: BodyContract, conversation: Conversation, state: RuntimeState): string {
   const relevant = state.activities.filter(activity => activity.conversationId === conversation.id || activity.parentConversationId === conversation.id)
   const visible = relevant.slice(0, contract.projection.maximumActivities).map(activity => ({ source: activity.source, status: activity.status, title: activity.title, detail: activity.detail, outcome: activity.outcome || null }))
-  const requests = (conversation.editorRequests || []).map(request => ({ target: request.targetName || 'sessao vinculada', status: request.status, hasReport: Boolean(request.report), hasSummary: Boolean(request.summary) }))
+  const requests = (conversation.editorRequests || []).slice(-8).map(request => ({ id: request.id, target: request.targetName || 'sessao vinculada', originConversationId: request.originConversationId || conversation.id, deliveryConversationId: request.deliveryConversationId || conversation.id, status: request.status, delivery: request.deliveryState || null, hasReport: Boolean(request.report) }))
   const payload = {
     body: contract.identity, currentSurface: kindLabel[conversation.kind], conversation: { id: conversation.id, kind: conversation.kind, linkedVsCodeSession: conversation.sessionId !== null, workspace: conversation.workspace, editorOnline: conversation.editorOnline ?? null },
     capabilities: contract.surfaces.map(surface => ({ id: surface.id, purpose: surface.purpose, actions: surface.actions })),
-    state: { voiceAvailable: state.voice, activities: visible, requests }, routing: contract.routing, guardrails: contract.guardrails
+    state: { voiceAvailable: state.voice, activities: visible, requests, activityCount: relevant.length, requestCount: conversation.editorRequests?.length || 0 }, routing: contract.routing, guardrails: contract.guardrails
   }
-  const text = `CORPO DO OMNI DESKTOP (contrato ${contract.contract}; estado tipado desta rodada):\n${JSON.stringify(payload)}`
+  const project = () => `CORPO DO OMNI DESKTOP (contrato ${contract.contract}; estado tipado desta rodada):\n${JSON.stringify(payload)}`
+  let text = project()
+  // Many simultaneous tasks must not prevent the next user message from being understood.
+  // Keep capability/guardrail truth intact and bound only repeated runtime projections.
+  while (text.length > contract.projection.maximumCharacters && (visible.length || requests.length)) {
+    if (requests.length > 1 || !visible.length) requests.shift()
+    else visible.pop()
+    text = project()
+  }
   if (text.length > contract.projection.maximumCharacters) throw new Error('Projecao do corpo excedeu o limite do contrato.')
   return text
 }

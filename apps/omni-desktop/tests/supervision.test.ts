@@ -20,7 +20,7 @@ const modules = {
   executable: async () => 'test.exe', sessions: async () => []
 }
 
-test('falha local é avaliada e corrigida no mesmo subagente, com aviso e resultado automáticos no pai', async () => {
+test('falha local é corrigida automaticamente; resultado final só entra após liberação', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'omni-supervision-'))
   try {
     const store = new Store(dir); await store.load()
@@ -34,6 +34,7 @@ test('falha local é avaliada e corrigida no mesmo subagente, com aviso e result
         reviews++
         yield reviews === 1 ? result('retry', 'Faltou o teste real. Vou mandar executar e conferir.', 'Execute o teste real e confira o resultado.') : result('complete', 'Teste executado; resultado conferido pelo executor.')
       } else {
+        if (prompt !== 'Teste autorizado' && !prompt.startsWith('Continue o mesmo pedido')) { yield { type: 'result', subtype: 'success', is_error: false, result: 'Teste executado; resultado conferido pelo executor.' }; return }
         executions++; sessions.push(options.sessionId || options.resume || '')
         if (executions === 1) yield { type: 'result', subtype: 'error_max_turns', is_error: true }
         else { assert.match(prompt, /Objetivo original e limites: Teste autorizado/); await gate; yield { type: 'result', subtype: 'success', is_error: false, result: 'Teste real passou.' } }
@@ -48,6 +49,10 @@ test('falha local é avaliada e corrigida no mesmo subagente, com aviso e result
     assert.equal(store.conversations.filter(c => c.kind === 'task').length, 1)
     assert.equal(sessions[0], sessions[1])
     release()
+    await until(() => store.get(id).deliveryState === 'ready')
+    assert.equal(store.get(id).acknowledgedAt, undefined)
+    assert.equal(parent.messages.some(m => m.id === `report:${id}`), false)
+    await controller.releaseResult(id)
     await until(() => !!store.get(id).acknowledgedAt)
     assert.match(parent.messages.at(-1)!.text, /Teste executado/)
     assert.equal(other.messages.length, 0)
@@ -78,19 +83,22 @@ test('retorno externo incompleto volta à mesma sessão uma vez, com origem pres
     await until(() => !!target.editorRequests![0].summary)
     assert.equal(sent.length, 1); assert.equal(sent[0].sessionId, session.sessionId)
     assert.match(sent[0].text, /Teste autorizado/)
-    assert.match(origin.messages.at(-1)!.text, /Encaminhei a correção/)
-    assert.equal(target.messages.length, 0)
+    assert.match(target.messages.at(-1)!.text, /Correção encaminhada/)
+    assert.equal(target.messages.filter(message => message.id === 'editor-forwarded:original').length, 1)
+    assert.equal(origin.messages.length, 0)
     await coordinator.observe(target, [event], true)
     assert.equal(sent.length, 1)
     const next = target.editorRequests![1]
     assert.equal(next.followupOf, request.id)
+    assert.equal(next.originConversationId, origin.id); assert.equal(next.deliveryConversationId, target.id)
     await coordinator.observe(target, [{ requestId: next.id, kind: 'completed', text: 'Teste passou com evidência.', at: new Date().toISOString(), evidenceId: 'report-2' }], true)
     await until(() => next.status === 'completed')
     await store.save()
     const restored = new Store(dir); await restored.load()
     new Coordinator(restored, () => {}, ports, fake).resume()
     assert.equal(sent.length, 1)
-    assert.match(origin.messages.at(-1)!.text, /Teste concluído/)
+    assert.equal(next.deliveryState, 'ready')
+    assert.equal(origin.messages.some(m => m.id === `editor-report:${next.id}`), false)
   } finally { await rm(dir, { recursive: true }) }
 })
 
@@ -112,10 +120,11 @@ test('reinício durante devolução preserva o envio já registrado e publica a 
     c.resume()
     await until(() => restored.get(target.id).editorRequests![0].supervision?.state === 'settled')
     assert.equal(restored.get(target.id).editorRequests!.length, 2)
-    assert.equal(restored.get(origin.id).messages.length, 1)
-    assert.match(restored.get(origin.id).messages[0].text, /Encaminhei a correção/)
+    assert.equal(restored.get(origin.id).messages.length, 0)
+    const notices = () => restored.get(target.id).messages.filter(message => message.id === 'editor-report:original')
+    assert.equal(notices().length, 1); assert.match(notices()[0].text, /Correção encaminhada/)
     c.resume()
-    assert.equal(restored.get(origin.id).messages.length, 1)
+    assert.equal(notices().length, 1)
     await restored.save()
   } finally { await rm(dir, { recursive: true }) }
 })

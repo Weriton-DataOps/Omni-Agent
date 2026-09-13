@@ -5,6 +5,7 @@ import { Controller } from './controller'
 import { Store } from './store'
 import { home, root, broker, mintVoiceToken, transcribeAudio } from './runtime'
 import { CredentialIntake } from './credential-intake'
+import { LocalUpdateService } from './update-service'
 let window: BrowserWindow | null = null
 let tray: Tray | null = null
 let quitting = false
@@ -13,6 +14,7 @@ const page = join(import.meta.dirname, '../renderer/index.html')
 const trustedUrl = process.env.ELECTRON_RENDERER_URL || pathToFileURL(page).href
 const store = new Store(join(home, 'desktop'))
 const credentialIntake = new CredentialIntake(broker)
+const updates = new LocalUpdateService([join(import.meta.dirname, 'index.js'), join(import.meta.dirname, '../preload/index.cjs'), page], join(home, 'desktop', 'update-preferences.json'))
 const controller = new Controller(store, snapshot => {
   if (window && !window.isDestroyed()) window.webContents.send('omni:change', snapshot)
 })
@@ -31,6 +33,7 @@ function register(name: string, handler: (...args: any[]) => unknown) {
   })
 }
 function show() { window?.show(); window?.focus() }
+const wait = (milliseconds: number) => new Promise(resolve => setTimeout(resolve, milliseconds))
 app.setPath('userData', join(home, 'desktop/electron'))
 if (!app.requestSingleInstanceLock()) app.quit()
 else {
@@ -68,6 +71,39 @@ else {
     tray.setContextMenu(Menu.buildFromTemplate([{ label: 'Abrir Omni', click: show }, { label: 'Encerrar Omni', click: () => app.quit() }]))
     tray.on('click', show)
     register('snapshot', () => controller.snapshot())
+    const checkForUpdate = async () => {
+      await updates.check()
+      await wait(350)
+      const status = await updates.check()
+      controller.setUpdateStatus(status)
+      return status
+    }
+    const applyUpdate = async () => {
+      await checkForUpdate()
+      if (!updates.canApply()) throw new Error('Não há uma atualização local pronta para aplicar.')
+      if (controller.active.size) {
+        controller.setUpdateStatus(updates.markBlocked('Há uma resposta ou encaminhamento em andamento. Quando ele terminar, atualize sem interromper o trabalho.'))
+        throw new Error('O Omni está trabalhando. Aguarde a resposta terminar para atualizar.')
+      }
+      await updates.recordApplying()
+      controller.setUpdateStatus(updates.markApplying())
+      credentialIntake.discard()
+      await store.save()
+      quitting = true
+      app.relaunch()
+      app.exit(0)
+    }
+    register('update-check', checkForUpdate)
+    register('update-auto', async enabled => {
+      if (typeof enabled !== 'boolean') throw new Error('Preferência de atualização inválida.')
+      controller.setUpdateStatus(await updates.setAutoApply(enabled))
+      if (enabled) {
+        await checkForUpdate()
+        if (updates.canApply() && !controller.active.size) await applyUpdate()
+      }
+      return controller.snapshot().state.update
+    })
+    register('update-apply', applyUpdate)
     register('create', async () => { const result = await store.create(root); controller.emit(); return result })
     register('vscode-workspace', async (workspace, title, sessionId) => {
       if (typeof workspace !== 'string' || typeof title !== 'string' || workspace.length > 1000 || title.length > 200) throw new Error('Projeto do VS Code inválido.')
@@ -76,6 +112,7 @@ else {
     })
     register('delegate', (value, text) => { if (typeof text !== 'string') throw new Error('Mensagem inválida.'); return controller.delegate(id(value), text) })
     register('consume-task', value => controller.consumeTask(id(value)))
+    register('release-result', value => controller.releaseResult(id(value)))
     register('acknowledge-returns', value => controller.acknowledgeReturns(id(value)))
     register('workspace', async value => {
       const c = store.get(id(value)); await controller.assertIdle(c)
@@ -106,7 +143,17 @@ else {
     if (process.env.ELECTRON_RENDERER_URL) await window.loadURL(trustedUrl)
     else await window.loadFile(page)
     show()
-    try { await controller.initialize() } catch { dialog.showErrorBox('Omni', 'Não foi possível abrir o histórico. Os arquivos existentes foram preservados.'); app.quit(); return }
+    try {
+      await controller.initialize()
+      controller.setUpdateStatus(await updates.initialize())
+    } catch { dialog.showErrorBox('Omni', 'Não foi possível abrir o histórico. Os arquivos existentes foram preservados.'); app.quit(); return }
     setInterval(() => void controller.refresh(), 15000).unref()
+    setInterval(() => void (async () => {
+      const status = await updates.check()
+      if (status.autoApply && updates.canApply()) {
+        if (controller.active.size) controller.setUpdateStatus(updates.markBlocked('Atualização local pronta. Ela será aplicada assim que o Omni não estiver respondendo ou encaminhando trabalho.'))
+        else await applyUpdate()
+      } else controller.setUpdateStatus(status)
+    })().catch(() => controller.setUpdateStatus(updates.markBlocked('Não foi possível aplicar a atualização automaticamente. Você pode tentar pelo botão Atualizar.'))), 5000).unref()
   }).catch(error => { dialog.showErrorBox('Omni', `Falha ao iniciar: ${error.name}`); app.quit() })
 }

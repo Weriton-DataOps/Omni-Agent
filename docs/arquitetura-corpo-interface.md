@@ -18,13 +18,40 @@ ele sabe que tem um corpo e o que pode fazer nele, mas nao inventa botao, card o
 - O chat central coordena e avalia retornos automaticamente. Pendencias operacionais dentro do
   pedido autorizado voltam ao mesmo executor com uma correcao concreta; o proprietario recebe
   uma atualizacao no chat, sem precisar consumir o card para liberar o proximo passo.
-- Resultados finais entram na conversa originadora automaticamente. Cards indicam execucao e
-  revisao; a central fica livre. Cada correcao preserva objetivo, origem, executor e tentativa.
+- Resultados finais longos aguardam **Receber retorno**, exclusivamente no card do agente ou
+  da sessao. Nao ha pre-autorizacao nem painel separado no composer. Cada clique enfileira a
+  apresentacao no chat de destino, sem intercalar duas entregas nesse chat. Correcoes operacionais
+  continuam automaticas, com avisos curtos. Cards permanecem navegaveis.
+- `ResultDeliveryQueue` separa autorizacao de leitura da autorizacao de execucao e preserva a
+  ordem dos cliques. O reinicio deixa uma entrega interrompida disponivel para novo clique.
+  Preferencias legadas de entrega automatica sao removidas e nunca disparam uma entrega.
+  O mesmo ciclo atende subagentes e VS Code; um futuro adaptador Overcore precisa se vincular
+  ao contrato de origem/resultado, nao simular despacho por um placeholder.
+- O plano estruturado permanece interno ate ser validado. Confirmacoes operacionais curtas
+  nascem do recibo real de despacho, com executor e estado tipados; registrar nao significa
+  receber, executar ou concluir. Uma frase do plano nao pode anunciar outra rota.
+- Respostas de conversa e relatorios aparecem nos deltas reais de geracao, sem temporizador
+  de digitacao. A conversa recebe geracao propria apos a decisao de nao executar; nunca se
+  anima um rascunho pronto. Instrucoes internas ficam ocultas e historico nao e reanimado.
+  O circulo giratorio acompanha a preparacao e geracao da resposta, inclusive a sintese final
+  liberada pelo card. Nao permanece girando apenas porque um executor delegado esta ativo.
+  Markdown parcial e apresentado ja formatado durante a chegada do texto, sem cursor artificial.
+- O briefing completo e persistido em `Supervision.executionBrief`, junto ao pedido original.
+  A revisao considera compromissos pertinentes e nao encerra pendencias operacionais necessarias.
+  Relatorios distinguem estado local, commit, push, merge e deploy quando exigidos pelo pedido.
 - Cancelamentos impedem retomada. Repeticao sem progresso ou tres correcoes sem conclusao
   interrompem reenvios automaticos e produzem um relato do bloqueio real.
 - Um chat de sessao VS Code e controle remoto da sessao vinculada. A execucao permanece nela.
-- O retorno de um editor e correlacionado pelo `editor-request-id` e aparece na conversa originadora,
-  mesmo que a caixa tecnica de entrada seja a sessao Omni no VS Code.
+- Na central, inventario autorizado de metadados locais do cofre/Cracha/contas e tarefa
+  pessoal do Omni, mesmo com seu repositorio aberto no VS Code. Alterar codigo e trabalho
+  do projeto. Cadastro e teste de segredos continuam no intake/broker, fora da inferencia.
+- Pedido encaminhado, acompanhamento e retorno de um editor aparecem no chat do card da sessao
+  executora, identificado por `deliveryConversationId`. A central conserva a confirmacao curta do
+  encaminhamento. `originConversationId` preserva a origem da autorizacao e a correlacao continua
+  pelo `editor-request-id`; a caixa tecnica de entrada nao determina o destino visual.
+- Subagentes locais continuam entregando na conversa mae. Pedidos VS Code pendentes legados
+  recebem o destino e o contexto de encaminhamento sem repetir mensagens ou mover historicos
+  ja entregues. Duas sessoes do mesmo workspace mantem conversas e retornos separados.
 - Overcore e Oracle permanecem apenas superficies futuras ate seus contratos de integracao existirem.
 - A interface informa capacidade e estado; ela nunca concede nova autoridade nem chama relato externo
   de verificacao independente.

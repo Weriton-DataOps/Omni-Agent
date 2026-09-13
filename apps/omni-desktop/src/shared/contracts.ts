@@ -9,17 +9,19 @@ export interface CredentialDraft { id: string; service: string; kind: string; ex
 export interface CredentialSaved { version: number; status: string; disposition: 'created' | 'reused'; checkedAt: string }
 /** Raw attachment content crosses only the desktop IPC boundary and is never stored in chat history. */
 export interface AttachmentInput { kind: 'image' | 'text'; name?: string; mime?: string; data?: string; text?: string }
-export interface Message { id: string; role: 'user' | 'assistant'; text: string; at: string; channel: 'text' | 'voice'; author?: string; origin?: 'owner' | 'omni' | 'editor'; requestId?: string; attachments?: Attachment[] }
-export interface EditorRequest {
+export interface Message { id: string; role: 'user' | 'assistant'; text: string; at: string; channel: 'text' | 'voice'; author?: string; origin?: 'owner' | 'omni' | 'editor'; requestId?: string; attachments?: Attachment[]; streaming?: boolean; interrupted?: boolean }
+export interface ResultDelivery { deliveryState?: 'ready' | 'delivering' | 'delivered'; deliveryError?: boolean }
+export interface EditorRequest extends ResultDelivery {
   supervision?: Supervision; followupOf?: string;
   id: string; text: string; at: string; status: 'sending' | 'sent' | 'received' | 'reported' | 'blocked' | 'uncertain' | 'summarizing' | 'completed';
-  originConversationId?: string; targetSessionId?: string; targetName?: string; lastObservedAt?: string;
+  /** Original owner conversation (authorization provenance), independent of where the return is displayed. */
+  originConversationId?: string; deliveryConversationId?: string; targetSessionId?: string; targetName?: string; lastObservedAt?: string;
   report?: string; evidenceId?: string; summary?: string; reportOutcome?: 'completed' | 'blocked';
   summaryAttempted?: boolean; summaryError?: string; disconnected?: boolean; acknowledgedAt?: string;
 }
 export interface CoordinationTurn { id: string; text: string; at: string; state: 'queued' | 'planning' | 'planned' | 'done' | 'failed'; attachments?: Attachment[]; plan?: { reply: string; action: 'reply' | 'local' | 'project'; sessionId: string | null; instruction: string | null }; error?: string }
 export interface RunEvent { at: string; kind: string; text: string }
-export interface Conversation {
+export interface Conversation extends ResultDelivery {
   supervision?: Supervision;
   id: string; title: string; workspace: string; sessionId: string | null;
   messages: Message[]; events: RunEvent[]; phase: Phase; updatedAt: string
@@ -39,14 +41,29 @@ export interface RuntimeState {
   memory: { confirmed: number; candidates: number }; missions: { id: string; objective: string; state: string }[];
   synchronization: string; error?: string
   activities: Activity[]
+  update: LocalUpdateStatus
 }
-export interface Snapshot { conversations: Conversation[]; state: RuntimeState; permissions: Permission[] }
+/** Local build update only: no package download and no project code is executed by the renderer. */
+export interface LocalUpdateStatus {
+  state: 'current' | 'available' | 'applying' | 'blocked';
+  currentVersion: string;
+  availableVersion?: string;
+  /** Present only after a local update restarted into the detected build. */
+  lastAppliedAt?: string;
+  autoApply: boolean;
+  checkedAt: string;
+  detail: string;
+}
+/** Provider-neutral delivery contract; unavailable adapters do not create tickets. */
+export interface ResultTicket { id: string; title: string; source: ActivitySource; originConversationId: string; deliveryConversationId: string; conversationId: string; state: 'working' | 'reviewing' | 'ready' | 'delivering' }
+export interface Snapshot { conversations: Conversation[]; state: RuntimeState; permissions: Permission[]; results?: ResultTicket[] }
 export interface DesktopApi {
   snapshot(): Promise<Snapshot>;
   create(): Promise<string>;
   openVsCodeWorkspace(workspace: string, title: string, sessionId?: string): Promise<string>;
   delegate(id: string, text: string): Promise<string>;
   consumeTask(id: string): Promise<string>;
+  releaseResult(id: string): Promise<string>;
   acknowledgeReturns(id: string): Promise<void>;
   chooseWorkspace(id: string): Promise<void>;
   send(id: string, text: string, channel?: 'text' | 'voice', attachments?: AttachmentInput[]): Promise<void>;
@@ -63,6 +80,9 @@ export interface DesktopApi {
   discardCredentials(): Promise<void>;
   openUrl(url: string): Promise<void>;
   hide(): Promise<void>;
+  checkForUpdate(): Promise<LocalUpdateStatus>;
+  setAutoUpdate(enabled: boolean): Promise<LocalUpdateStatus>;
+  applyUpdate(): Promise<void>;
   onChange(callback: (snapshot: Snapshot) => void): () => void;
 }
 declare global { interface Window { omni: DesktopApi } }

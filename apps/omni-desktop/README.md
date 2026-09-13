@@ -27,15 +27,26 @@ inventado. O coordenador interpreta pedidos em uma fila persistida sem bloquear 
 texto. Conversa simples recebe resposta; trabalho local vai a um subagente; trabalho de projeto
 é encaminhado exclusivamente à sessão validada. O coordenador não tem ferramentas de execução.
 
-Pedidos externos mantêm ID, conversa de origem, sessão destinatária, estado e evidência do
+O plano de encaminhamento é interno. A confirmação curta identifica o executor realmente
+registrado e distingue criação/envio de recebimento ou execução. Uma troca de formulação do
+modelo não pode anunciar um subagente e disparar outra sessão. Conversas sem execução recebem
+uma geração própria em streaming após o planejamento; relatórios também chegam em streaming,
+sem animação artificial. Inventário autorizado de metadados locais do cofre e de contas é tarefa
+pessoal da máquina, não alteração no repositório Omni; segredos continuam no intake/broker.
+
+Pedidos externos mantêm ID, conversa de origem autorizadora, chat de destino, sessão destinatária, estado e evidência do
 retorno. O mensageiro envia uma vez; o monitor observa confirmações e relatos correlacionados
-no histórico real. Após o relato, o Omni gera uma síntese na origem. Envio não significa execução,
+no histórico real. O pedido encaminhado, o acompanhamento e a síntese liberada no card aparecem
+no chat da sessão VS Code chamada. A central conserva a confirmação curta do encaminhamento.
+Subagentes locais continuam retornando à conversa mãe. Envio não significa execução,
 e relato não é verificação independente. Sessão desconectada e entrega incerta são explícitas.
 O Omni avalia cada retorno automaticamente. Se faltar execução ou uma informação que o
 executor pode obter dentro do pedido autorizado, envia uma correção ao mesmo subagente ou
-sessão e publica uma atualização na conversa de origem. O card volta a indicar execução;
-a central permanece livre. Resultados finais são entregues sem clique, com os relatos
-originais disponíveis nos detalhes. Cancelamentos impedem retomada automática. As tentativas
+sessão e publica uma atualização no chat de destino. O card volta a indicar execução;
+a central permanece livre. Resultados finais aguardam **Receber retorno** no card do agente ou
+da sessão. A ordem dos cliques define a sequência dos textos em cada destino; não há entrega automática
+nem painel separado no composer. Relatos originais ficam disponíveis nos detalhes. Cancelamentos
+impedem retomada automática. As tentativas
 são persistidas, limitadas a três correções e interrompidas se o mesmo relato voltar sem
 avanço. O limite não impede reconhecer sucesso na última tentativa. Apenas decisões novas
 indispensáveis voltam ao proprietário; uma pausa operacional é informada sem pedir novamente
@@ -120,6 +131,18 @@ seleções de microfone/voz passam a valer na próxima abertura do Realtime.
 Referência conferida com OpenAI Docs: https://developers.openai.com/api/docs/guides/speech-to-text
 
 ## Desenvolvimento e validação
+
+## Atualização local pela interface
+
+Em **Configurações > Atualizar**, o Desktop observa somente os arquivos já gerados pela
+build local (`out/main`, `out/preload` e `out/renderer`). Ele não baixa pacote, não consulta
+um servidor e não envia código ou conversas para fora.
+
+Depois de `npm run build`, uma alteração precisa aparecer em duas leituras estáveis antes de
+ficar disponível: isso evita reiniciar no meio de uma build que ainda está escrevendo arquivos.
+Você pode usar **Atualizar agora**, ou habilitar a aplicação automática. Nos dois casos, o
+Omni só reinicia quando não há resposta, encaminhamento ou entrega em andamento. A preferência
+fica em `desktop/update-preferences.json`, fora do repositório.
 
 `npm ci`, `npm run build`, `npm test`, `npm run smoke` e `npm start` nesta pasta.
 O núcleo precisa manter `dist` construído. As dependências da interface são independentes

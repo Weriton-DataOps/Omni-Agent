@@ -5,17 +5,18 @@ import { query, listSessions, getSessionMessages, type Options, type HookCallbac
 import { Store } from './store'
 import { editorSessions, editorHistory, readEditor, relayToEditor, sameWorkspace, type EditorSession } from './vscode-sessions'
 import { Coordinator } from './coordinator'
+import { ResultDeliveryQueue } from './result-delivery'
 import { pendingCoordinationTurns } from '../shared/coordination-state'
 import { continuationBrief } from '../shared/supervision'
 import { bodyContext, loadBodyContract } from './body-contract'
 import { home, root, moduleAt, broker, claudeExecutable, voiceAvailable, startRuntime } from './runtime'
-import type { Attachment, AttachmentInput, CredentialReceipt, CredentialRegistrationInput, Snapshot, RuntimeState, Permission, Conversation, Activity } from '../shared/contracts'
+import type { Attachment, AttachmentInput, CredentialReceipt, CredentialRegistrationInput, LocalUpdateStatus, Snapshot, RuntimeState, Permission, Conversation, Activity } from '../shared/contracts'
 const now = () => new Date().toISOString()
 const growthWorkspace = 'C:\\Users\\wp.santos\\Documents\\GR-Workspace\\Growth'
 const workspaceForTask = (text: string, fallback: string) => /\bgrowth\b/i.test(text) ? growthWorkspace : fallback
 type Dependencies = { loadModule: typeof moduleAt; getBroker: typeof broker; executable: typeof claudeExecutable; sessions?: typeof editorSessions; readEditor?: typeof readEditor; relay?: typeof relayToEditor }
 export class Controller {
-  state: RuntimeState = { broker: 'starting', voice: false, memory: { confirmed: 0, candidates: 0 }, missions: [], synchronization: 'Iniciando', activities: [] }
+  state: RuntimeState = { broker: 'starting', voice: false, memory: { confirmed: 0, candidates: 0 }, missions: [], synchronization: 'Iniciando', activities: [], update: { state: 'current', currentVersion: 'carregando', autoApply: false, checkedAt: new Date(0).toISOString(), detail: 'Conferindo a build local.' } }
   readonly active = new Map<string, AbortController>()
   private approvals = new Map<string, { item: Permission; resolve: (r: PermissionResult) => void; input: Record<string, unknown> }>()
   private refreshing = false
@@ -24,11 +25,14 @@ export class Controller {
   private vscodeMonitor?: NodeJS.Timeout
   private liveEditors: EditorSession[] = []
   private editorSubagents = new Map<string, { id: string; lastActivityAt: string }[]>()
+  private editorOpening: Promise<void> = Promise.resolve()
+  private relayMailboxes = new Map<string, Pick<EditorSession, 'sessionId' | 'cwd'>>()
   private editorRefreshing = false
   private shuttingDown = false
   private taskContinuations = new Set<string>()
   private bodyContract = loadBodyContract()
   readonly coordinator: Coordinator
+  readonly deliveries: ResultDeliveryQueue
   constructor(readonly store: Store, private readonly changed: (s: Snapshot) => void, private readonly agentQuery: typeof query = query,
     private readonly dependencies: Dependencies = { loadModule: moduleAt, getBroker: broker, executable: claudeExecutable }) {
     this.coordinator = new Coordinator(store, () => this.emit(), {
@@ -38,6 +42,7 @@ export class Controller {
       local: (parent, text, turnId) => this.delegate(parent, text, 'text', turnId),
       context: (c, text) => this.coordinatorContext(c, text), executable: () => this.dependencies.executable()
     }, agentQuery, this.active)
+    this.deliveries = new ResultDeliveryQueue(store, (...args) => this.coordinator.summarize(...args), () => this.emit(), this.active)
   }
   private async coordinatorContext(c: Conversation, text: string) {
     c.coordinationSessionId ||= randomUUID()
@@ -69,8 +74,10 @@ export class Controller {
     if (!/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,79}$/u.test(credentialId)) throw new Error('Identificador do CrachÃ¡ invÃ¡lido.')
     return await (await this.dependencies.getBroker() as any).findLatestCredential(credentialId) as CredentialReceipt | null
   }
-  snapshot(): Snapshot { return { conversations: this.store.conversations, state: this.state, permissions: [...this.approvals.values()].map(p => p.item) } }
+  snapshot(): Snapshot { return { conversations: this.store.conversations, state: this.state, permissions: [...this.approvals.values()].map(p => p.item), results: this.deliveries.tickets() } }
+  setUpdateStatus(update: LocalUpdateStatus) { this.state.update = update; this.emit() }
   emit() { this.rebuildActivities(); this.changed(this.snapshot()) }
+  releaseResult(id: string) { return this.deliveries.release(id) }
   private rebuildActivities() {
     const activities: Activity[] = []
     for (const c of this.store.conversations.filter(c => c.kind !== 'task')) {
@@ -116,7 +123,7 @@ export class Controller {
       const recentlyObserved = Number.isFinite(observedAt) && Date.now() - observedAt < 180_000
       const running = !!pending && recentlyObserved && ['sending', 'sent', 'received', 'summarizing'].includes(pending.status)
       const stalePending = !!pending && !running && ['sending', 'sent', 'received', 'summarizing'].includes(pending.status)
-      activities.push({ id: `vscode:session:${session.sessionId}`, source: 'vscode', status: pending ? (running ? 'running' : 'waiting') : 'ready', workspace: session.cwd, sessionId: session.sessionId, conversationId: linked?.id, title: `VS Code · ${basename(session.cwd)} · ${session.name}`, detail: stalePending ? 'Sem atividade recente · retorno não confirmado' : pending ? ({ sending: 'Encaminhando comando para a sessão', sent: 'Comando enviado · sessão assumindo', received: 'Sessão executando · aguardando relato', reported: 'Relato recebido · Omni preparando retorno', summarizing: 'Omni preparando o retorno', uncertain: 'Entrega não confirmada' } as Record<string, string>)[pending.status] || 'Aguardando retorno' : returned ? 'Retorno pronto · clique para visualizar' : finished?.status === 'completed' ? 'Último trabalho concluído' : finished?.status === 'blocked' ? 'Último trabalho bloqueado' : 'Sessão Claude ativa', ...(returned ? { attention: 'return' as const } : {}), ...(unseenFinished ? { outcome: finished!.status === 'completed' ? 'completed' as const : 'failed' as const } : {}) })
+      activities.push({ id: `vscode:session:${session.sessionId}`, source: 'vscode', status: pending ? (running ? 'running' : 'waiting') : 'ready', workspace: session.cwd, sessionId: session.sessionId, conversationId: linked?.id, title: `VS Code · ${basename(session.cwd)} · ${session.name}`, detail: stalePending ? 'Sem atividade recente · retorno não confirmado' : pending ? ({ sending: 'Encaminhando comando para a sessão', sent: 'Comando enviado · aguardando confirmação', received: 'Pedido recebido · aguardando relato', reported: 'Relato recebido · Omni preparando retorno', summarizing: 'Omni preparando o retorno', uncertain: 'Entrega não confirmada' } as Record<string, string>)[pending.status] || 'Aguardando retorno' : returned ? 'Retorno pronto · clique para visualizar' : finished?.status === 'completed' ? 'Último trabalho concluído' : finished?.status === 'blocked' ? 'Último trabalho bloqueado' : 'Sessão Claude ativa', ...(returned ? { attention: 'return' as const } : {}), ...(unseenFinished ? { outcome: finished!.status === 'completed' ? 'completed' as const : 'failed' as const } : {}) })
       const latestSubagent = this.editorSubagents.get(session.sessionId)?.[0]
       const subagentAge = latestSubagent ? Date.now() - Date.parse(latestSubagent.lastActivityAt) : Number.POSITIVE_INFINITY
       if (latestSubagent && subagentAge < 15 * 60_000) activities.at(-1)!.child = { id: latestSubagent.id, title: 'Subagente da sessão', status: subagentAge < 3 * 60_000 ? 'running' : 'completed' }
@@ -130,7 +137,7 @@ export class Controller {
     const conversation = this.store.get(id)
     let changed = false
     for (const request of conversation.editorRequests || []) {
-      if (['completed', 'blocked', 'reported'].includes(request.status) && !request.acknowledgedAt) {
+      if (['completed', 'blocked', 'reported'].includes(request.status) && !request.acknowledgedAt && !['ready', 'delivering'].includes(request.deliveryState || '')) {
         request.acknowledgedAt = now()
         changed = true
       }
@@ -162,19 +169,36 @@ export class Controller {
     } catch { /* Bridge may not have reported an editor yet. */ }
     this.vscodeWorkspaces = found
     let changed = false
+    const observedMailboxes = new Set<string>()
+    // Technical inboxes are observed without requiring their card to be opened.
+    // Retain known inboxes in this process even if their editor closes.
+    for (const session of this.liveEditors) if (sameWorkspace(session.cwd, root) && /^omni(?:-|$)/i.test(session.name)) this.relayMailboxes.set(session.sessionId, session)
     for (const c of this.store.conversations.filter(c => c.kind === 'external' && c.sessionId)) {
       const before = JSON.stringify([c.editorHistory, c.editorRequests, c.editorOnline])
       const reading = await (this.dependencies.readEditor || readEditor)({ sessionId: c.sessionId!, cwd: c.workspace }).catch(() => null)
       if (reading) { c.editorHistory = reading.messages; this.editorSubagents.set(c.sessionId!, reading.subagents || []) }
       await this.coordinator.observe(c, reading?.observations || [], this.liveEditors.some(s => s.sessionId === c.sessionId), reading?.activityAt)
-      if (reading?.relayInbox?.length && sameWorkspace(c.workspace, root)) await this.coordinator.observeRelayInbox(reading.relayInbox)
+      if (sameWorkspace(c.workspace, root)) {
+        observedMailboxes.add(c.sessionId!)
+        if (reading?.relayInbox?.length) await this.coordinator.observeRelayInbox(reading.relayInbox)
+      }
       if (before !== JSON.stringify([c.editorHistory, c.editorRequests, c.editorOnline])) changed = true
+    }
+    for (const mailbox of this.relayMailboxes.values()) {
+      if (observedMailboxes.has(mailbox.sessionId)) continue
+      const reading = await (this.dependencies.readEditor || readEditor)(mailbox).catch(() => null)
+      if (!reading?.relayInbox?.length) continue
+      const before = JSON.stringify(this.store.conversations.flatMap(conversation => conversation.editorRequests || []))
+      await this.coordinator.observeRelayInbox(reading.relayInbox)
+      if (before !== JSON.stringify(this.store.conversations.flatMap(conversation => conversation.editorRequests || []))) changed = true
     }
     if (changed) await this.store.save()
     } finally { this.editorRefreshing = false }
   }
   private returnRoute(target: EditorSession): EditorSession | undefined {
-    return this.liveEditors.find(session => session.sessionId !== target.sessionId && sameWorkspace(session.cwd, root) && /^omni(?:-|$)/i.test(session.name))
+    const route = this.liveEditors.find(session => session.sessionId !== target.sessionId && sameWorkspace(session.cwd, root) && /^omni(?:-|$)/i.test(session.name))
+    if (route) this.relayMailboxes.set(route.sessionId, route)
+    return route
   }
   async initialize() {
     await this.store.load()
@@ -241,12 +265,21 @@ export class Controller {
     return (await listSessions({ dir: c.workspace, limit: 50 })).map(s => ({ id: s.sessionId, title: s.customTitle || s.summary || s.sessionId }))
   }
   async openVsCodeConversation(workspace: string, title: string, sessionId?: string) {
+    const previous = this.editorOpening
+    let release!: () => void
+    this.editorOpening = new Promise<void>(resolve => { release = resolve })
+    await previous
+    try { return await this.bindVsCodeConversation(workspace, title, sessionId) }
+    finally { release() }
+  }
+  private async bindVsCodeConversation(workspace: string, title: string, sessionId?: string) {
     if (!(await stat(workspace)).isDirectory()) throw new Error('O projeto mapeado pelo VS Code não está mais disponível.')
     const candidates = (await (this.dependencies.sessions || editorSessions)()).filter(session => sameWorkspace(session.cwd, workspace))
     const session = sessionId ? candidates.find(session => session.sessionId === sessionId) : candidates.length === 1 ? candidates[0] : undefined
     if (!session) throw new Error(candidates.length > 1 ? 'Este projeto tem várias sessões. Selecione o card da sessão desejada.' : 'O projeto está aberto, mas não há sessão Claude ativa vinculada no VS Code.')
-    const existing = this.store.conversations.find(conversation => conversation.kind === 'external' && conversation.host === 'vscode' && conversation.sessionId === session.sessionId)
-      || this.store.conversations.find(conversation => conversation.kind === 'external' && !conversation.sessionId && !conversation.messages.length && sameWorkspace(conversation.workspace, session.cwd))
+    const bound = this.store.conversations.find(conversation => conversation.kind === 'external' && (!conversation.host || conversation.host === 'vscode') && conversation.sessionId === session.sessionId)
+    if (bound && !sameWorkspace(bound.workspace, session.cwd)) throw new Error('A sessao ja esta vinculada a outro projeto; vinculo preservado.')
+    const existing = bound || this.store.conversations.find(conversation => conversation.kind === 'external' && (!conversation.host || conversation.host === 'vscode') && !conversation.sessionId && !conversation.messages.length && !conversation.editorRequests?.length && sameWorkspace(conversation.workspace, session.cwd))
     const id = existing?.id || await this.store.create(workspace, 'external')
     const conversation = this.store.get(id)
     conversation.host = 'vscode'
@@ -425,6 +458,7 @@ export class Controller {
   }
   prepareShutdown() {
     this.shuttingDown = true
+    this.deliveries.stop()
     this.coordinator.stop()
     for (const abort of this.active.values()) abort.abort()
   }
@@ -447,6 +481,7 @@ export class Controller {
       task.reportSummary = review.message
       task.summaryState = 'ready'
       if (review.action === 'retry' && !supervision.cancelled) {
+        supervision.evidenceReports = [...(supervision.evidenceReports || []), report.slice(0, 22000)].slice(-3)
         supervision.retries++; supervision.previousReport = report; supervision.state = 'retry-ready'
         task.acknowledgedAt = undefined
         task.phase = 'running'
@@ -461,12 +496,16 @@ export class Controller {
     }
     finally { this.active.delete(`summary:${task.id}`) }
     if (this.shuttingDown) { await this.store.save(); return }
-    parent.events.push({ at: now(), kind: 'subagent-ready', text: supervision.state === 'retry-ready' ? 'Retorno avaliado; correção preparada para o mesmo subagente.' : 'Retorno avaliado e entregue automaticamente.' })
+    if (supervision.state !== 'retry-ready') {
+      task.deliveryState = 'ready'
+      const noticeId = `task-ready:${task.id}`
+      if (!parent.messages.some(m => m.id === noticeId)) parent.messages.push({ id: noticeId, role: 'assistant', text: supervision.review?.action === 'complete' ? `${task.title}: retorno avaliado e pronto no card. Você escolhe quando receber o relato completo.` : `${task.title}: ${task.reportSummary?.slice(0, 320) || 'O retorno precisa de atenção.'}`, at: now(), channel: 'text', origin: 'omni' })
+    }
+    parent.events.push({ at: now(), kind: 'subagent-ready', text: supervision.state === 'retry-ready' ? 'Retorno avaliado; correção preparada para o mesmo subagente.' : 'Retorno avaliado; aguardando liberação da entrega final.' })
     parent.events = parent.events.slice(-200)
     parent.updatedAt = now()
     await this.store.save(); this.emit()
     if (supervision.state === 'retry-ready') void this.continueTask(task)
-    else await this.consumeTask(task.id)
   }
   private async continueTask(task: Conversation) {
     if (this.shuttingDown || this.taskContinuations.has(task.id) || task.supervision?.state !== 'retry-ready') return
@@ -478,13 +517,13 @@ export class Controller {
       const instruction = continuationBrief(supervision, review.instruction!)
       const parent = this.store.get(task.parentConversationId!)
       supervision.state = 'executing'; supervision.review = undefined
-      task.summaryState = undefined; task.resultText = undefined; task.reportSummary = undefined
+      task.summaryState = undefined; task.resultText = undefined; task.reportSummary = undefined; task.deliveryState = undefined; task.deliveryError = false
       task.acknowledgedAt = undefined; task.phase = 'running'
       // Persist the attempt before starting so a restart reviews uncertain work instead of blindly repeating it.
       await this.store.save()
       const running = this.send(task.id, instruction)
       const noticeId = `task-correction:${task.id}:${supervision.retries}`
-      if (!parent.messages.some(m => m.id === noticeId)) parent.messages.push({ id: noticeId, role: 'assistant', text: `${review.message}\n\nDevolvi a correção ao subagente e continuo acompanhando.`, at: now(), channel: 'text', origin: 'omni' })
+      if (!parent.messages.some(m => m.id === noticeId)) parent.messages.push({ id: noticeId, role: 'assistant', text: `${review.message.slice(0, 320)}\n\nDevolvi a correção ao subagente e continuo acompanhando.`, at: now(), channel: 'text', origin: 'omni' })
       await this.store.save(); this.emit()
       // Let the next completed attempt schedule its own review/correction.
       this.taskContinuations.delete(task.id)
@@ -494,12 +533,13 @@ export class Controller {
       task.reportSummary = 'Preparei a correção, mas a retomada do executor falhou. O trabalho e a sessão estão preservados.'
       if (task.supervision) task.supervision.state = 'settled'
       await this.store.save(); this.emit()
-      if (!this.shuttingDown) await this.consumeTask(task.id)
+      task.deliveryState = 'ready'; await this.store.save(); this.emit()
     } finally { this.taskContinuations.delete(task.id) }
   }
   async consumeTask(id: string) {
     const task = this.store.get(id)
     if (task.kind !== 'task' || !task.parentConversationId) throw new Error('Esta execução não pertence à fila de subagentes.')
+    if (task.supervision) return task.acknowledgedAt ? task.parentConversationId : this.releaseResult(id)
     if (this.active.has(id) || task.phase === 'running' || task.phase === 'needs-input' || task.summaryState === 'running') throw new Error('O subagente ainda está executando ou preparando a síntese.')
     const parent = this.store.get(task.parentConversationId)
     if (parent.kind !== 'central') throw new Error('Resultado preservado: a tarefa não possui um chat central de origem válido.')
@@ -530,7 +570,7 @@ export class Controller {
     const id = await this.store.create(workspace, 'task', parent.id)
     const child = this.store.get(id)
     child.originTurnId = originTurnId
-    child.supervision = { objective: parent.coordinationTurns?.find(t => t.id === originTurnId)?.text || text, retries: 0, state: 'executing' }
+    child.supervision = { objective: parent.coordinationTurns?.find(t => t.id === originTurnId)?.text || text, executionBrief: text, retries: 0, state: 'executing' }
     child.title = `Subagente · ${child.supervision.objective.trim().replace(/omni-request-binding:\S+\s*/gi, '').slice(0, 62)}`
     child.phase = 'running'
     child.events.push({ at: now(), kind: 'delegated', text: `Criada a partir de ${parent.title}.` })
@@ -541,7 +581,25 @@ export class Controller {
     parent.events.push({ at: now(), kind: 'delegated', text: `Nova tarefa paralela: ${child.title}` })
     parent.events = parent.events.slice(-200)
     await this.store.save(); this.emit()
-    void this.send(id, text).catch(() => undefined)
+    void this.send(id, text).catch(async error => {
+      const detail = String((error as Error).message || 'Error').replace(/(?:sk-|ek_|Bearer\s+)[\w.-]+/gi, '[credencial ocultada]').slice(0, 500)
+      child.events.push({ at: now(), kind: 'error', text: detail })
+      // A failed preflight has not entered send's execution try/finally. Give it
+      // the same bounded review path; an allocated card is not proof of a start.
+      const beforeExecution = !child.messages.some(message => message.role === 'user')
+      if (beforeExecution) {
+        child.phase = 'failed'
+        child.resultText = `O subagente não iniciou a execução. O pedido está preservado. Falha na preparação: ${detail}`
+        child.messages.push({ id: randomUUID(), role: 'user', text, at: now(), channel })
+        child.messages.push({ id: randomUUID(), role: 'assistant', text: child.resultText, at: now(), channel: 'text', origin: 'omni' })
+        child.summaryState = 'running'
+      }
+      // If execution already produced a result, preserve it: a later persistence
+      // or follow-up failure does not prove that the executor never ran.
+      child.updatedAt = now()
+      await this.store.save(); this.emit()
+      if (beforeExecution && !this.shuttingDown) await this.markTaskReady(child)
+    })
     return id
   }
   async handoff(id: string) {

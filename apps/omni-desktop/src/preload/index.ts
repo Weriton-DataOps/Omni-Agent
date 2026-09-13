@@ -6,6 +6,7 @@ const api: DesktopApi = {
   openVsCodeWorkspace: (workspace, title, sessionId) => ipcRenderer.invoke('omni:vscode-workspace', workspace, title, sessionId),
   delegate: (id, text) => ipcRenderer.invoke('omni:delegate', id, text),
   consumeTask: id => ipcRenderer.invoke('omni:consume-task', id),
+  releaseResult: id => ipcRenderer.invoke('omni:release-result', id),
   acknowledgeReturns: id => ipcRenderer.invoke('omni:acknowledge-returns', id),
   chooseWorkspace: id => ipcRenderer.invoke('omni:workspace', id),
   send: (id, text, channel, attachments) => ipcRenderer.invoke(attachments?.length ? 'omni:send-attachments' : 'omni:send', id, text, channel, attachments),
@@ -22,6 +23,9 @@ const api: DesktopApi = {
   discardCredentials: () => ipcRenderer.invoke('omni:credential-discard'),
   openUrl: url => ipcRenderer.invoke('omni:open-url', url),
   hide: () => ipcRenderer.invoke('omni:hide'),
+  checkForUpdate: () => ipcRenderer.invoke('omni:update-check'),
+  setAutoUpdate: enabled => ipcRenderer.invoke('omni:update-auto', enabled),
+  applyUpdate: () => ipcRenderer.invoke('omni:update-apply'),
   onChange: callback => {
     const handler = (_event: unknown, value: Snapshot) => callback(value)
     ipcRenderer.on('omni:change', handler)

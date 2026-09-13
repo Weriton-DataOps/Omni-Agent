@@ -9,9 +9,10 @@ import { pathToFileURL } from 'node:url'
 import assert from 'node:assert/strict'
 const app = resolve(import.meta.dirname, '..')
 const out = join(app, 'out/live-coordination')
-await build({ entryPoints: ['src/main/coordinator.ts', 'src/main/store.ts', 'src/main/vscode-sessions.ts', 'src/main/runtime.ts'].map(p => join(app, p)), outdir: out, bundle: true, packages: 'external', platform: 'node', format: 'esm', outExtension: { '.js': '.mjs' } })
+await build({ entryPoints: ['src/main/coordinator.ts', 'src/main/store.ts', 'src/main/result-delivery.ts', 'src/main/vscode-sessions.ts', 'src/main/runtime.ts'].map(p => join(app, p)), outdir: out, bundle: true, packages: 'external', platform: 'node', format: 'esm', outExtension: { '.js': '.mjs' } })
 const { Coordinator } = await import(pathToFileURL(join(out, 'coordinator.mjs')))
 const { Store } = await import(pathToFileURL(join(out, 'store.mjs')))
+const { ResultDeliveryQueue } = await import(pathToFileURL(join(out, 'result-delivery.mjs')))
 const { readEditor, relayToEditor } = await import(pathToFileURL(join(out, 'vscode-sessions.mjs')))
 const { claudeExecutable } = await import(pathToFileURL(join(out, 'runtime.mjs')))
 const home = await mkdtemp(join(app, 'out/live-coordination-home-'))
@@ -42,6 +43,8 @@ try {
   const target = store.get(await store.create(app, 'external')); target.sessionId = receiverId; target.editorProjectionVersion = 2
   const foreign = store.get(await store.create(app, 'external'))
   const coordinator = new Coordinator(store, () => {}, { sessions: async () => [session], relay: relayToEditor, open: async () => target.id, local: async () => { throw new Error('Execução local proibida no teste') }, context: async () => 'Omni: coordenador pessoal. Preserve origem, evidência e limites. Contexto sintético de teste, sem memória privada.', executable: claudeExecutable })
+  const activeDeliveries = new Map()
+  const deliveries = new ResultDeliveryQueue(store, (destination, objective, report, outcome, abort, onText) => coordinator.summarize(destination, objective, report, outcome, abort, onText), () => {}, activeDeliveries)
   await coordinator.enqueue(central, `Encaminhe para a sessão ${session.name} uma tarefa de teste: responder quanto é 7 vezes 8, sem ferramentas nem alterações. Não calcule você mesmo: preciso validar o retorno da sessão vinculada.`, 'text')
   const deadline = Date.now() + 100000
   let previous = ''
@@ -51,16 +54,23 @@ try {
     const request = target.editorRequests?.[0]
     const status = request?.status || central.coordinationTurns?.[0]?.state
     if (status !== previous) { console.log(JSON.stringify({ status })); previous = status }
-    if (request?.summary) {
+    if (request?.deliveryState === 'ready') {
       assert.match(request.report, /56/)
-      assert.match(central.messages.at(-1).text, /56/)
+      assert.equal(request.originConversationId, central.id)
+      assert.equal(request.deliveryConversationId, target.id)
+      assert.equal(central.messages.some(message => message.id === `editor-report:${request.id}`), false)
+      assert.equal(target.messages.some(message => message.id === `editor-report:${request.id}`), false)
+      assert.equal(await deliveries.release(request.id), target.id)
+      while (!request.acknowledgedAt && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 100))
+      assert.ok(request.acknowledgedAt, 'A apresentação final não terminou dentro do prazo.')
+      assert.match(target.messages.find(message => message.id === `editor-report:${request.id}`).text, /56/)
       assert.equal(foreign.messages.length, 0)
-      assert.equal(target.messages.length, 0)
-      console.log(JSON.stringify({ ok: true, realDispatchAndReturn: true, summarizedInOrigin: true, foreignUntouched: true, sessionId: receiverId, requestId: request.id }))
+      assert.equal(central.messages.some(message => message.id === `editor-report:${request.id}`), false)
+      console.log(JSON.stringify({ ok: true, realDispatchAndReturn: true, summarizedInTarget: true, authorizationOriginPreserved: true, foreignUntouched: true, sessionId: receiverId, requestId: request.id }))
       break
     }
     if (central.coordinationTurns?.[0]?.state === 'failed') throw new Error(central.coordinationTurns[0].error)
     await new Promise(resolve => setTimeout(resolve, 600))
   }
-  assert.ok(target.editorRequests?.[0]?.summary, 'Não houve ciclo completo dentro do prazo. Não declarar sucesso.')
+  assert.ok(target.editorRequests?.[0]?.acknowledgedAt, 'Não houve ciclo completo dentro do prazo. Não declarar sucesso.')
 } finally { finishInput(); abort.abort(); receiver.close(); await receiverLoop }

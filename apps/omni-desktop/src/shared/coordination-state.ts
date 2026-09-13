@@ -8,5 +8,5 @@ export function pendingCoordinationTurns(conversation: Conversation | undefined,
   ]))
   return (conversation?.coordinationTurns || []).filter(t =>
     ['queued', 'planning', 'planned'].includes(t.state) && !(delegated.has(t.id) &&
-      conversation?.messages.some(m => m.role === 'assistant' && m.id === `coord:${t.id}`)))
+      conversation?.messages.some(m => m.role === 'assistant' && m.id === `coord:${t.id}` && !m.streaming)))
 }

@@ -2,6 +2,15 @@
   "schemaVersion": 1,
   "releases": [
     {
+      "version": "0.23.0",
+      "changes": [
+        "Adicionou a especialidade de financas pessoais e produto financeiro, com analise verificavel e handoff seguro para agentes de codigo.",
+        "Corrigiu a coordenacao do Desktop: retorno no chat do executor, recibos reais, fila por card e streaming publico ordenado.",
+        "Adicionou indicadores de atividade, texto formatado e a atualizacao local do Desktop com confirmacao apos o reinicio.",
+        "Manteve credenciais, conversas privadas e dados financeiros fora de logs, prompts de delegacao e do payload publicado."
+      ]
+    },
+    {
       "version": "0.13.0",
       "changes": [
         "Adicionou a suíte histórica de evals do núcleo do Omni.",
