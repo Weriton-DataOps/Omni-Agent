@@ -280,6 +280,16 @@
         "Separa a execução privada do broker de memória, registra recibos reais e informa ao coordenador as capacidades disponíveis.",
         "Preparação local validada com credenciais fictícias; não comprova conexão com servidor de produção, nem autoriza SQL livre ou escrita."
       ]
+    },
+    {
+      "version": "0.24.2",
+      "changes": [
+        "Recebe o relatório completo do Overcore e verifica seu SHA-256 antes de aceitar a entrega.",
+        "Apresenta o relatório no Desktop, além do resumo e da identificação da tarefa.",
+        "Explica campos rejeitados em HTTP 400 de validação sem expor credenciais ou HTML remoto.",
+        "Documenta pasta exata e premissas estruturadas; aceita confirmação sem exigir alteração artificial do draft.",
+        "A contraparte Overcore precisa da correção de entrega e avaliação por critério; esta release não inclui alterações concorrentes de outras sessões."
+      ]
     }
   ]
 }
