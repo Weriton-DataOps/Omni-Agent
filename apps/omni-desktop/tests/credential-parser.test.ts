@@ -131,7 +131,9 @@ test('certificado PEM mantém as linhas, com senha opcional', () => {
 
 test('dados ausentes geram perguntas fixas sem incluir o texto enviado', () => {
   const result = parse('PostgreSQL host: db.example.invalid')
-  assert.deepEqual(result.missing, ['Qual é o nome do banco?', 'Qual é o usuário desse acesso?', 'Qual é a senha desse acesso?'])
+  // Nome do banco é opcional: cai no padrão do motor. Só usuário e senha, que são segredo, seguem obrigatórios.
+  assert.deepEqual(result.missing, ['Qual é o usuário desse acesso?', 'Qual é a senha desse acesso?'])
+  assert.equal(JSON.parse(result.registration.token).database, 'postgres')
   assert.equal(JSON.parse(result.registration.token).password, '')
 })
 

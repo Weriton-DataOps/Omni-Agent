@@ -159,7 +159,9 @@ export function parseCredential(text: string, now: Date = new Date(), options: {
   if (kind === 'database') {
     if (host.includes(':') && !host.startsWith('[') && host.split(':').length === 2) { const split = host.split(':'); host = split[0]; port ||= split[1] }
     if (!host) missing.push('Qual é o servidor do banco?')
-    if (!database) missing.push('Qual é o nome do banco?')
+    // Nome do banco é derivável: sem ele, usa o banco padrão do motor (postgres/master).
+    // Segredo — usuário e senha — não se inventa; só esses ficam obrigatórios.
+    if (!database) database = ({ postgresql: 'postgres', sqlserver: 'master', mysql: '' } as Record<string, string>)[known?.id ?? ''] ?? 'postgres'
     if (port && (!/^\d+$/.test(port) || Number(port) < 1 || Number(port) > 65535)) throw new Error('Informe uma porta de banco válida.')
   }
   if (kind === 'ssh') {
