@@ -12,6 +12,7 @@ import { documentConversationId } from '../shared/document-reference'
 import { QuickReveal } from './QuickReveal'
 import { AttachmentImage } from './AttachmentImage'
 import { AgentMapPanel } from './AgentMapPanel'
+import { AgoraPanel } from './AgoraPanel'
 import { cardMessageId, cardReturnBatch, currentCardReturn, pendingEditorRequests } from '../shared/card-return'
 import { normalizeComposer, pastedTextAttachments } from '../shared/composer-content'
 import { UpdatePanel } from './UpdatePanel'
@@ -44,6 +45,7 @@ function App() {
   const [updateSettings, setUpdateSettings] = useState(false)
   const [conversationMenu, setConversationMenu] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
+  const [agora, setAgora] = useState(false)
   const [followingLatest, setFollowingLatest] = useState(true)
   const [runningSeconds, setRunningSeconds] = useState(0)
   const [submitting, setSubmitting] = useState<Record<string, number>>({})
@@ -339,6 +341,7 @@ function App() {
       <div className="conversation-controls"><button className="new" onClick={() => void act(async () => change(await window.omni.create()))}>＋ Nova sessão</button><button className="conversation-toggle" aria-label="Todas as conversas" aria-expanded={conversationMenu} title="Todas as conversas" onClick={() => setConversationMenu(value => !value)}>⌄</button></div>
       <button className={'conversation current-conversation ' + (current.id === primaryConversation?.id ? 'selected' : '')} aria-current={current.id === primaryConversation?.id ? 'page' : undefined} onClick={() => change(primaryConversation?.id || current.id)}><span>Chat central</span><small><i className={primaryConversation?.phase === 'running' ? 'dot live' : 'dot'} />{current.id === primaryConversation?.id ? 'Você está aqui' : 'Voltar ao Omni'}</small></button>
       {conversationMenu && <nav className="conversation-menu" aria-label="Todas as conversas">{snapshot.conversations.filter(c => c.kind !== 'task').map(c => <button key={c.id} className={'conversation ' + (c.id === current.id ? 'selected' : '')} onClick={() => change(c.id)}><span>{c.title}</span><small><i className={c.phase === 'running' && c.editorOnline !== false ? 'dot live' : 'dot'} />{c.kind === 'external' && c.editorOnline === false ? 'Sessão desconectada' : labels[c.phase]}</small></button>)}</nav>}
+      <button className="agora-trigger" onClick={() => setAgora(true)} aria-label="Abrir o Agora">◐ Agora</button>
       {snapshot.agentMaps?.find(map => map.conversationId === primaryConversation?.id) && <button className="agent-map-trigger" onClick={() => setAgentMapId(primaryConversation!.id)} aria-label="Mapa de agentes do Omni">⑂ Mapa de agentes do Omni</button>}
       <div className="execution-panel"><div className="section-label">EXECUÇÕES</div>
         <ActivityGroup label="OMNI" source="omni" activities={activities} selectedKey={selectedKey} onSelect={openActivity} maps={snapshot.agentMaps || []} onMap={setAgentMapId} />
@@ -383,6 +386,7 @@ function App() {
       </div>
       {help && <div className="shortcut-help"><button onClick={() => setHelp(false)} aria-label="Fechar atalhos">×</button><h2>Do seu jeito.</h2><p><kbd>Ctrl + Enter</kbd> Mostrar / recolher Omni</p><p><kbd>Ctrl + 0</kbd> Toque: abrir / fechar Realtime</p><p><kbd>Ctrl + 0</kbd> Segurar: ditar · soltar: transcrever no rascunho</p><p><kbd>Ctrl + 9</kbd> Calibrar ruído do ditado</p><p><kbd>Enter</kbd> Enviar · <kbd>Shift + Enter</kbd> Nova linha</p><p><kbd>Esc</kbd> Fechar painel / cancelar ditado / recolher Omni</p><small>Voz e ditado usam a OpenAI. O chat continua na sua sessão Claude.</small></div>}
       {selectedMap && <AgentMapPanel key={selectedMap.conversationId} map={selectedMap} onClose={() => setAgentMapId('')} />}
+      {agora && <AgoraPanel onClose={() => setAgora(false)} />}
       {audioSettings && <AudioSettings onClose={() => setAudioSettings(false)} />}
       {updateSettings && <UpdatePanel status={updateStatus} onClose={() => setUpdateSettings(false)} onCheck={checkForUpdate} onAuto={setAutoUpdate} onApply={applyUpdate} />}
       {realtime && <RealtimePanel status={voiceStatus} amplitude={amplitude} muted={muted} onMute={() => { voice.current?.mute(!muted); setMuted(!muted) }} onClose={closeVoice} />}

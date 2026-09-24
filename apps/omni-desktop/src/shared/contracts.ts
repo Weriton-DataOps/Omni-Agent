@@ -104,6 +104,7 @@ export interface DesktopApi {
   openDocument(conversationId: string, reference: string): Promise<void>;
   attachmentPreview(conversationId: string, attachmentId: string): Promise<string>;
   snapshot(): Promise<Snapshot>;
+  agoraView(): Promise<import('./agora').AgoraView>;
   create(): Promise<string>;
   openVsCodeWorkspace(workspace: string, title: string, sessionId?: string): Promise<string>;
   delegate(id: string, text: string): Promise<string>;

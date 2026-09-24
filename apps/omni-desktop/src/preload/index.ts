@@ -4,6 +4,7 @@ const api: DesktopApi = {
   openDocument: (conversationId, reference) => ipcRenderer.invoke('omni:document-open', conversationId, reference),
   attachmentPreview: (conversationId, attachmentId) => ipcRenderer.invoke('omni:attachment-preview', conversationId, attachmentId),
   snapshot: () => ipcRenderer.invoke('omni:snapshot'),
+  agoraView: () => ipcRenderer.invoke('omni:agora-view'),
   create: () => ipcRenderer.invoke('omni:create'),
   openVsCodeWorkspace: (workspace, title, sessionId) => ipcRenderer.invoke('omni:vscode-workspace', workspace, title, sessionId),
   delegate: (id, text) => ipcRenderer.invoke('omni:delegate', id, text),

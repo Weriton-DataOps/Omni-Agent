@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain, dialog, Menu, Tray, nativeImage, shell, gl
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { Controller } from './controller'
+import { agoraView } from './agora-source'
 import { Store } from './store'
 import { home, root, broker, mintVoiceToken, transcribeAudio } from './runtime'
 import { LocalUpdateService } from './update-service'
@@ -83,6 +84,7 @@ else {
     tray.setContextMenu(Menu.buildFromTemplate([{ label: 'Abrir Omni', click: show }, { label: 'Encerrar Omni', click: () => app.quit() }]))
     tray.on('click', show)
     register('snapshot', () => controller.snapshot())
+    register('agora-view', () => agoraView())
     const checkForUpdate = async () => {
       await updates.check()
       await wait(350)

@@ -38,6 +38,41 @@ export interface AgoraOptions {
   dueSoonHours?: number
 }
 
+export interface SessionRow {
+  id: string
+  objective?: string | null
+  state?: string | null
+  dueAt?: string | null
+  scheduledAt?: string | null
+  nextAction?: string | null
+  currentStep?: string | null
+  lastMovementAt?: string | null
+  updatedAt?: string | null
+  startedAt?: string | null
+}
+
+const SESSION_STATE: Record<string, MissionRow['state']> = {
+  active: 'in-progress', 'in-progress': 'in-progress', 'waiting-user': 'blocked',
+  blocked: 'blocked', closed: 'completed', completed: 'completed', cancelled: 'cancelled'
+}
+
+/** Converte sessoes do ciclo operacional em missoes; so as que ja tem objetivo. */
+export function missionsFromSessions(sessions: SessionRow[]): MissionRow[] {
+  return (sessions ?? [])
+    .filter((s) => s && typeof s.objective === 'string' && s.objective.trim())
+    .map((s) => ({
+      missionId: `mission-${String(s.id).replace(/^session-/, '')}`,
+      objective: s.objective as string,
+      state: SESSION_STATE[String(s.state)] ?? 'open',
+      priority: 50,
+      dueAt: s.dueAt ?? null,
+      scheduledAt: s.scheduledAt ?? null,
+      lastMovementAt: s.lastMovementAt ?? s.updatedAt ?? null,
+      updatedAt: s.updatedAt ?? s.startedAt ?? new Date().toISOString(),
+      payload: { nextAction: s.nextAction ?? s.currentStep ?? null }
+    }))
+}
+
 const CLOSED = new Set(['completed', 'cancelled'])
 const ORDER: AgoraCategory[] = ['overdue', 'blocked', 'due-soon', 'scheduled', 'active', 'stale']
 const ms = (value: string | number | Date): number =>
