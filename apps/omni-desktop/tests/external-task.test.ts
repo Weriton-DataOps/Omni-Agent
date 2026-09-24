@@ -52,6 +52,8 @@ test('recibo distingue admissão e conclusão; identidade de retorno permite ded
   assert.equal(externalTaskNoticeId({ status: 'running' }), null)
   assert.equal(externalTaskNoticeId({ status: 'succeeded', flowId: 'flow-one', result: { resultId: 'result-one' } }), 'external-return:flow-one:result-one')
   assert.throws(() => validatePlan({ reply: '', action: 'overcore', sessionId: 'foreign-session', taskId: null, instruction: '{}' }))
+  const report = '# Mapa\n\n|Contrato|Função|\n|---|---|\n|task-request|Pedido|\n\nAnálise entregue pela porta.'
+  assert.ok(externalTaskReceipt({status:'succeeded', taskId:'task-one', result:{summary:'Inspeção concluída.',report:{content:report}}}).includes(report))
 })
 
 test('retorno em segundo plano entra somente na conversa de origem e não repete depois do reinício', async () => {

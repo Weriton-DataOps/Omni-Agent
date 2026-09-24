@@ -1,5 +1,6 @@
 import { readFile, readdir } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
+import { createHash } from 'node:crypto'
 import { canonicalJson, type JsonObject, type JsonValue } from '../../core/shared/json.js'
 import { NodeDocumentFingerprinter } from '../node/node-document-fingerprinter.js'
 import { NodeLocalJsonStore } from '../local-json/node-local-json-store.js'
@@ -63,9 +64,21 @@ export class OvercoreHttpClient implements TaskFlowTransport {
         ...(body ? { body: JSON.stringify(body) } : {})
       })
     } catch { throw new Error('Overcore indisponível ou tempo esgotado. Retome o mesmo fluxo; não crie outro pedido.') }
-    if (!response.ok) throw new Error(`Overcore respondeu HTTP ${response.status}. O vínculo foi preservado; consulte o mesmo fluxo para confirmar o estado remoto.`)
     const raw = await response.text()
     if (raw.length > 2_000_000) throw new Error('Resposta externa excedeu o limite.')
+    if (!response.ok) {
+      let detail = ''
+      try {
+        const error = object(JSON.parse(raw), 'Erro remoto')
+        // Validation messages contain schema paths/reasons, not arbitrary remote output.
+        if (error.error === 'ContractValidationError' && typeof error.message === 'string') {
+          const message = error.message.split(this.token).join('[redacted]').slice(0, 2000)
+          safeDocument({ message })
+          detail = ` ${message.replace(/[\r\n\u0000-\u001f]/gu, ' ')}`
+        }
+      } catch { /* HTML and secret-bearing errors never reach the conversation. */ }
+      throw new Error(`Overcore respondeu HTTP ${response.status}.${detail} O vínculo foi preservado; consulte o mesmo fluxo para confirmar o estado remoto.`)
+    }
     try { return safeDocument(JSON.parse(raw)) }
     catch { throw new Error('Overcore devolveu documento inválido; o vínculo foi preservado.') }
   }
@@ -164,7 +177,6 @@ export class OvercoreTaskFlow {
     const reportId = text(reply.reportId, 'Relatório respondido')
     const selected = objects(reply.answers, 'Respostas')
     const patch = changes(reply.changes)
-    if (!Object.keys(patch).length) throw new Error('Materialize a decisão nos campos do pedido; IDs sozinhos não resolvem a lacuna.')
     const digest = fingerprints.fingerprint(reply).value
     return this.lock.run(`${this.path(flowId)}.operation.lock`, async () => {
       const flow = await this.read(sessionId, flowId)
@@ -235,6 +247,14 @@ export class OvercoreTaskFlow {
             canonicalJson(result.requestFingerprint) !== canonicalJson(fingerprints.fingerprint(request))) throw new Error('Resultado não corresponde à tarefa/estado consultados.')
         text(result.resultId, 'Resultado ID'); text(result.summary, 'Resumo do resultado')
         objects(result.criteria, 'Critérios'); objects(result.evidence, 'Evidências')
+        if (result.report !== undefined) {
+          const report = object(result.report, 'Relatório entregue')
+          if (typeof report.content !== 'string' || !report.content.trim() || report.content.length > 200_000 ||
+              !['text/markdown', 'application/json'].includes(String(report.mediaType)) ||
+              report.digest !== `sha256:${createHash('sha256').update(report.content, 'utf8').digest('hex')}`) {
+            throw new Error('Relatório entregue sem integridade verificável; não declare a entrega concluída.')
+          }
+        }
       }
       flow.observation = { status: text(task.status, 'Estado'), stateRevision: task.stateRevision ?? null, checkedAt: new Date().toISOString(), result: task.result ?? null }
       await this.save(flow)

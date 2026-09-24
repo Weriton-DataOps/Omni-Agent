@@ -30,7 +30,8 @@ export async function contextoFluxosOvercore(home, sessionId, env = process.env,
     'Para responder: {operation:"answer",flowId,input:{reportId,answers:[{decisionId,optionId}],changes:{context:contextoCompletoRevisado,knownAcceptanceCriteria:criteriosRevisados,executionHints:{expectedOutputKind:"no-artifact"}}}}. Use IDs reais do pacote e materialize escolhas explícitas nos campos; não selecione recomendações automaticamente nem transforme "ok" ambíguo em decisões específicas.',
     'Para consultar ou cancelar: {operation:"follow"|"cancel",flowId}. Não chame work-once; o Overcore executa sua própria fila.',
     'Plugin: ação overcore --sessao <sessão atual> --idempotencia <id estável do pedido> --entrada <JSON absoluto>. Desktop: action=overcore, sessionId=null, taskId=null, instruction=JSON do comando. Apresente todas as decisões juntas; estado/cache não comprova execução. Leia o resultado da porta antes de confirmar.',
-    'O índice é resumido; list recupera todos os vínculos desta conversa e follow o pacote integral atualizado.'
+    'O índice é resumido; list recupera todos os vínculos desta conversa e follow o pacote integral atualizado.',
+    'Entrega: result.report.content contém o relatório completo com hash conferido pelo cliente. Use-o na resposta; resumo e digest isolados não são entrega. Referência workspace indica pasta exata, sem acrescentar contratos. Premissas são objetos {id,statement,impactIfFalse}; confirmação válida não precisa inventar changes.'
   ].join('\n')
 }
 

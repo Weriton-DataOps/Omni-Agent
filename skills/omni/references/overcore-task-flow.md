@@ -26,6 +26,21 @@ ou `%LOCALAPPDATA%/Overcore/client-private.json` criado pelo launcher local;
 ```
 
 Preencha referências e grants apenas para alvos/efeitos do pedido. Referência: `{refId,uri,kind,sensitivity}`.
+Para inspecionar uma pasta exata, use `kind: "workspace"` e seu URI `file:///C:/.../contratos`:
+o alvo é literal, sem acrescentar subpastas e sem ampliar a autorização. `kind: "repository"`
+aponta a raiz de um repositório e inspeciona sua subpasta `contratos`; se já terminar em
+`contratos`, essa pasta é usada diretamente. A inspeção é não recursiva.
+
+Cada premissa em `context.assumptions` é um objeto, nunca uma string:
+`{"id":"assumption-scope","statement":"A análise deve cobrir somente esta pasta.","impactIfFalse":"O conjunto de arquivos inspecionados mudaria."}`.
+Uma confirmação vale enquanto o conteúdo da premissa permanecer igual, inclusive em novas revisões.
+Use `[]` quando o pedido já trouxer o escopo definido, sem inventar premissas.
+
+O resultado de inspeção entrega `result.report = {mediaType,content,digest}`. Apresente esse conteúdo
+ao proprietário; o cliente confere o SHA-256 antes de aceitar a entrega. Um digest isolado ou um
+resumo do runtime não substitui o relatório. Critérios analíticos precisam de avaliação própria;
+JSON legível não prova mapa nem análise de inconsistências. HTTP 400 de validação inclui o campo
+rejeitado e o motivo, sem expor credenciais.
 Exemplo de descoberta: `{resourceRef:"ref-project",operations:[{name:"filesystem.read",effect:"read"}]}`.
 Execução: `{resourceRef:"ref-project",operations:["filesystem.read"]}`. Identificadores têm no mínimo
 8 caracteres. Escrever exige autorização e capacidade concretas; nenhum grant coringa.

@@ -23,9 +23,11 @@ export function externalTaskReceipt(value: Record<string, unknown>): string {
     'not-feasible': 'O Preflight encontrou uma condição que precisa ser resolvida antes da execução.'
   }
   const result = value.result && typeof value.result === 'object' ? value.result as Record<string, unknown> : null
+  const report = result?.report && typeof result.report === 'object' ? result.report as Record<string, unknown> : null
   return [states[String(value.status)] || 'O vínculo foi preservado para acompanhamento.',
     value.taskId ? `Tarefa: ${String(value.taskId)}.` : '',
     typeof result?.summary === 'string' ? result.summary : '',
+    typeof report?.content === 'string' ? report.content : '',
     result && Array.isArray(result.evidence) ? `Evidências registradas: ${result.evidence.length}.` : '',
     value.status === 'not-feasible' ? JSON.stringify(value.checks).slice(0, 4000) : ''
   ].filter(Boolean).join('\n\n')

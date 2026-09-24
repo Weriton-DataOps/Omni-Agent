@@ -3,6 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
+import { createHash } from 'node:crypto'
 import { OvercoreTaskFlow, OvercoreHttpClient, listTaskFlows, type TaskFlowTransport } from '../src/adapters/overcore/task-flow.js'
 import { NodeDocumentFingerprinter } from '../src/adapters/node/node-document-fingerprinter.js'
 import type { JsonObject } from '../src/core/shared/json.js'
@@ -25,6 +26,7 @@ class Peer implements TaskFlowTransport {
   status = 'running'
   wrongBinding = false
   missingResult = false
+  deliveredReport: JsonObject | undefined
   async request(path: string, method: string, body?: JsonObject): Promise<JsonObject> {
     this.requests.push(`${method} ${path}`)
     if (path === '/v1/preflight') {
@@ -47,7 +49,7 @@ class Peer implements TaskFlowTransport {
       return { reportId: 'report-test-2', taskId: 'task-test-linked', status: 'running' }
     }
     if (path.endsWith('/cancel')) this.status = 'cancelled'
-    return { taskId: this.wrongBinding ? 'task-wrong' : 'task-test-linked', status: this.status, stateRevision: 8, request: this.taskRequest, result: !this.missingResult && ['succeeded', 'failed', 'blocked', 'cancelled'].includes(this.status) ? { resultId: 'result-test-linked', taskId: 'task-test-linked', requestId: this.taskRequest.requestId!, requestFingerprint: { ...fp.fingerprint(this.taskRequest) }, status: this.status, summary: 'Conferência concluída.', criteria: [], evidence: [] } : null }
+    return { taskId: this.wrongBinding ? 'task-wrong' : 'task-test-linked', status: this.status, stateRevision: 8, request: this.taskRequest, result: !this.missingResult && ['succeeded', 'failed', 'blocked', 'cancelled'].includes(this.status) ? { resultId: 'result-test-linked', taskId: 'task-test-linked', requestId: this.taskRequest.requestId!, requestFingerprint: { ...fp.fingerprint(this.taskRequest) }, status: this.status, summary: 'Conferência concluída.', criteria: [], evidence: [], ...(this.deliveredReport ? { report: this.deliveredReport } : {}) } : null }
   }
 }
 const answer = () => ({ reportId: 'report-test-1', answers: [{ decisionId: 'decision-output', optionId: 'option-memory' }, { decisionId: 'decision-criteria', optionId: 'option-json' }], changes: { knownAcceptanceCriteria: [{ id: 'criterion-json', description: 'Todos os arquivos são JSON legível.', verificationHint: 'test' }], executionHints: { expectedOutputKind: 'no-artifact' } } })
@@ -97,8 +99,7 @@ test('respostas incompletas, relatório errado e troca de identidade não chegam
     { ...answer(), reportId: 'report-other' },
     { ...answer(), answers: answer().answers.slice(0, 1) },
     { ...answer(), answers: [answer().answers[0], answer().answers[0]] },
-    { ...answer(), changes: { revision: 99 } },
-    { ...answer(), changes: {} }
+    { ...answer(), changes: { revision: 99 } }
   ]) await assert.rejects(flow.answer('session-one', flowId, bad))
   assert.equal(peer.requests.length, 1)
   await assert.rejects(flow.start('session-one', 'owner-turn-one', { ...input(), objective: 'Outro trabalho' }), /outro conteúdo/)
@@ -124,3 +125,32 @@ test('cliente recusa endpoint externo, redirecionamento e erro HTML sem expor to
   }
   await assert.rejects(new OvercoreHttpClient('http://127.0.0.1:2222', token, transport).request('/v1/preflight', 'POST', {}), error => error instanceof Error && /inválido/.test(error.message) && !error.message.includes(token))
 })
+
+test('HTTP 400 de validação mostra campo e motivo; HTML, token e segredos ficam fora', async () => {
+  const token = 'private-token-for-test'
+  for (const message of ['Documento inválido para task-draft: /context/assumptions/0 must be object', `token ${token}`, 'postgres://user:secret@localhost/db']) {
+    const transport: typeof fetch = async () => new Response(JSON.stringify({error:'ContractValidationError',message}), {status:400})
+    await assert.rejects(new OvercoreHttpClient('http://127.0.0.1:2222',token,transport).request('/v1/preflight','POST',{}), error => {
+      assert.ok(error instanceof Error); assert.match(error.message,/HTTP 400/)
+      assert.ok(!error.message.includes(token)); assert.ok(!error.message.includes('user:secret'))
+      if(message.includes('assumptions')) assert.match(error.message,/\/context\/assumptions\/0 must be object/)
+      return true
+    })
+  }
+})
+
+test('relatório completo sobrevive ao readback e reinício; alteração de conteúdo é recusada', () => fixture(async(home,peer,flow) => {
+  const first = await flow.start('session-report','turn-report',input())
+  await flow.answer('session-report',String(first.flowId),answer())
+  const content = '# Mapa\nContratos → funções\nAnálise completa.'
+  peer.status = 'succeeded'; peer.deliveredReport = {mediaType:'text/markdown',content,digest:`sha256:${createHash('sha256').update(content).digest('hex')}`}
+  const result = await new OvercoreTaskFlow(home,peer).follow('session-report',String(first.flowId))
+  assert.equal(((result.result as JsonObject).report as JsonObject).content,content)
+  peer.deliveredReport.content = 'relatório trocado'
+  await assert.rejects(flow.follow('session-report',String(first.flowId)),/integridade/)
+}))
+
+test('resposta confirmatória pode preservar campos sem inventar uma alteração no draft', () => fixture(async(_home,_peer,flow) => {
+  const initial = await flow.start('session-confirm','turn-confirm',input())
+  assert.equal((await flow.answer('session-confirm',String(initial.flowId),{...answer(),changes:{}})).status,'running')
+}))
