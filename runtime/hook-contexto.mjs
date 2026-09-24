@@ -338,12 +338,14 @@ export async function tratarHook(input, env = process.env, { contextOnly = false
       tentarComponente('feedback-personalidade', () => resumirFeedbackPersonalidade(casa), falhas)
     ])
     let automacao = null
-    if (input.hook_event_name === 'PostToolUseFailure' && observacao?.failure?.result === 'candidate') {
+    if (!input.agent_id && !input.subagent_id && !input.agent_type &&
+        (input.hook_event_name === 'PostToolUse' || observacao?.failure?.result === 'candidate')) {
       const arbitration = await tentarComponente(
         'arbitro-automacoes',
         () => contextoProximaAutomacaoClaude(casa, {
           sessionId: input.session_id,
-          hookEventName: input.hook_event_name
+          hookEventName: input.hook_event_name,
+          onlyIfIdle: input.hook_event_name === 'PostToolUse'
         }),
         falhas
       )

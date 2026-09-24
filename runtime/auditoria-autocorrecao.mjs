@@ -4,6 +4,7 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { basename, extname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { verificarIntegridadeRelease } from './integridade-release.mjs'
+import { analisarComandoGit } from './git-command.mjs'
 
 import {
   fingerprintObjetivo,
@@ -1110,7 +1111,7 @@ function commandTokens(command) {
 
 function commandTargetValues(command) {
   const tokens = commandTokens(command)
-  const values = []
+  const values = [...(analisarComandoGit(command)?.targets ?? [])]
   const add = (value) => {
     const cleaned = String(value ?? '').trim().replace(/^['"]|['"]$/g, '')
     if (cleaned && !cleaned.startsWith('-')) values.push(cleaned)
@@ -1205,7 +1206,10 @@ function requestTargetFingerprints(prompt, cwd) {
 }
 
 function commandIsScopeVerification(command) {
+  const git = analisarComandoGit(command)
+  if (git) return git.effect === 'verification'
   const value = normalized(command)
+  if (/\bgit(?:\.exe)?\b/.test(value)) return false
   return /\b(git status|git diff|npm(?:\.cmd)? test|npm(?:\.cmd)? run check|node --test|node --check|pytest|python(?:\.exe)? -m (?:pytest|unittest)|get-childitem|select-string|rg|grep|findstr)\b/.test(value)
 }
 
@@ -1227,6 +1231,8 @@ function classifyEffect(input) {
   }
   if (['write', 'edit', 'notebookedit', 'applypatch'].includes(tool)) return 'mutation'
   if (['agent', 'task', 'sendmessage'].includes(tool)) return 'delegation'
+  const git = analisarComandoGit(commandFrom(input))
+  if (git) return git.effect
   const command = normalized(commandFrom(input))
   if (command) {
     const explicitInterpreterVerification =
@@ -1257,6 +1263,8 @@ function classifyEffect(input) {
       return 'mutation'
     }
     if (/\bnode(?:\.exe)?\s+(?:--eval|-e)\s/.test(command)) return 'execution'
+    // Shell chains, dynamic wrappers and malformed Git commands cannot prove a read.
+    if (/\bgit(?:\.exe)?\b/.test(command)) return 'execution'
     if (/\b(git status|git diff|git log|git show|git rev-parse|npm(?:\.cmd)? test|npm(?:\.cmd)? run check|node --(?:test|check|version)|node -v|python(?:\.exe|\d+(?:\.\d+)?)? (?:--version|-v|-m (?:pytest|unittest))|pytest|test-path|get-content|get-childitem|select-string|rg|grep|findstr|curl)\b/.test(command)) {
       return 'verification'
     }
@@ -1269,6 +1277,7 @@ function actionFamily(input, effect) {
   if (['read', 'grep', 'glob', 'write', 'edit', 'notebookedit', 'applypatch'].includes(tool)) return 'file'
   if (['agent', 'task', 'sendmessage'].includes(tool)) return 'delegation'
   if (['websearch', 'webfetch'].includes(tool)) return 'external-system'
+  if (analisarComandoGit(commandFrom(input))) return 'repository'
   const command = normalized(commandFrom(input))
   if (/\b(?:npm(?:\.cmd)?|pnpm|yarn)\s+(?:run\s+)?(?:build|compile|bundle)\b/.test(command)) return 'build'
   if (/\b(?:npm(?:\.cmd)?\s+(?:run\s+)?(?:test|check|lint)|pnpm\s+(?:test|check|lint)|yarn\s+(?:test|check|lint)|node(?:\.exe)?\s+--(?:test|check)|pytest|python(?:\.exe)?\s+-m\s+(?:pytest|unittest))\b/.test(command)) return 'test'

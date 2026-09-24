@@ -904,6 +904,8 @@ export async function avaliarPadraoFalha(casa, id, { at, generation } = {}) {
     ]
     pattern.evaluation = {
       protocol: 'failure-pattern-eval-v1',
+      scope: 'audited-functional-executions',
+      performance: { status: 'not-evaluated', reason: 'Execution success does not establish a latency SLO or network stability.' },
       passed: gates.every((gate) => gate.passed),
       gates,
       evaluatedAt

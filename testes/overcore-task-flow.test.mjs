@@ -8,6 +8,36 @@ import { NodeDocumentFingerprinter } from '../dist/adapters/node/node-document-f
 import { buildHookTurnContext } from '../dist/application/build-turn-context/build-hook-context.js'
 import { executarFluxoOvercore, contextoFluxosOvercore, observarFluxosOvercore, notificacaoFluxoOvercore } from '../runtime/overcore-task-flow.mjs'
 
+test('evidence query preserves historical limits in compact context without admitting paid task', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'omni-evidence-'))
+  const calls = [], token = 'evidence-read-only-private-token'
+  const server = createServer((req, res) => {
+    calls.push(`${req.method} ${req.url}`)
+    assert.equal(req.headers.authorization, `Bearer ${token}`)
+    res.setHeader('content-type', 'application/json')
+    res.end(JSON.stringify(req.url === '/v1/capabilities' ? {
+      service: 'overcore-task-manager', protocolVersion: 1, scope: 'runtime-capabilities-not-task-success', startedAt: new Date().toISOString(), capabilities: []
+    } : { protocolVersion: 1, status: 'observed', scope: 'historical-integration-evidence', evidence: [{
+      taskId: 'task-existing-proof', reportDigest: `sha256:${'a'.repeat(64)}`, receiptDigest: `sha256:${'b'.repeat(64)}`,
+      finishedAt: '2026-09-24T17:25:37.495Z', provenance: 'local-integration-receipt', scope: 'direct-folder-contract-inspection',
+      currentRuntimeValidated: false, behavioralValidation: false, privateExtra: token
+    }] }))
+  })
+  try {
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+    const env = { OVERCORE_URL: `http://127.0.0.1:${server.address().port}`, OVERCORE_LOCAL_TOKEN: token }
+    const result = await executarFluxoOvercore(directory, 'evidence-session', { operation: 'evidence' }, null, env)
+    assert.equal(result.evidence[0].currentRuntimeValidated, false)
+    assert.doesNotMatch(JSON.stringify(result), new RegExp(token))
+    const context = await contextoFluxosOvercore(directory, 'evidence-session', env, 'Overcore: precisa testar de novo?')
+    const assembled = buildHookTurnContext({ persona: null, projection: '', externalTasks: context + '\n' + 'Excesso.'.repeat(4000) })
+    assert.match(assembled.text, /task-existing-proof/)
+    assert.match(assembled.text, /lacuna/)
+    assert.ok(calls.every(call => call.startsWith('GET /v1/')))
+    assert.ok(calls.every(call => !/tasks|preflight|work-once/.test(call)))
+  } finally { await new Promise(resolve => server.close(resolve)); await rm(directory, { recursive: true, force: true }) }
+})
+
 test('configuração privada, contexto por turno e observação retomam a mesma tarefa sem executar a fila', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'omni-flow-runtime-'))
   const fp = new NodeDocumentFingerprinter(), calls = []

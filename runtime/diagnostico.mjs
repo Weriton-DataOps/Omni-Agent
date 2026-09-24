@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { diagnosticarAutomacaoFalhas } from './automacao-falhas.mjs'
 import { lerIdentidadeRelease } from './integridade-release.mjs'
-import { consultarCapacidadesOvercore } from './overcore-task-flow.mjs'
+import { consultarCapacidadesOvercore, consultarEvidenciasOvercore } from './overcore-task-flow.mjs'
 
 /** No migration, synchronization, cache refresh, dispatch or paid model call. */
 export async function diagnosticarRuntime(casa, pluginRoot, sessionId, env = process.env) {
@@ -17,5 +17,6 @@ export async function diagnosticarRuntime(casa, pluginRoot, sessionId, env = pro
     operator: await lerIdentidadeRelease(pluginRoot),
     loadedSession: loaded, loadedSessionIsHistoricalObservation: true,
     failures: await diagnosticarAutomacaoFalhas(casa),
-    overcore: await consultarCapacidadesOvercore(env) }
+    overcore: await consultarCapacidadesOvercore(env),
+    overcoreValidation: await consultarEvidenciasOvercore(env) }
 }
