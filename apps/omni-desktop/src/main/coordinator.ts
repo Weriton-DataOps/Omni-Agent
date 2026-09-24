@@ -449,14 +449,26 @@ const reply = await this.model(c, `Responda diretamente à mensagem atual como O
           privateStatus('considered')
           turn.state = 'done'
         } catch (error) {
-          if (!['unavailable', 'stored', 'needs-input'].includes(turn.privateAttachment?.status ?? '')) privateStatus('failed')
+          const needsInput = error instanceof PrivateAccessInputError
+          const text = String((error as Error).message).slice(0, 500)
           const response = c.messages.find(message => message.id === responseId)
           if (response) response.streaming = false
-          turn.state = 'failed'; turn.error = String((error as Error).message).slice(0, 500)
-          c.events.push({ at: now(), turnId: turn.id, kind: 'error', text: turn.error })
+          if (needsInput) {
+            // Não é falha: o Omni segurou o envio e pediu o dado que falta. Uma superfície só,
+            // sem balão vermelho de "erro" nem mensagem separada — o pedido fica calmo no card.
+            if (!['unavailable', 'stored'].includes(turn.privateAttachment?.status ?? '')) privateStatus('needs-input')
+            turn.state = 'done'
+            if (response) response.text = text
+            else c.messages.push({ id: responseId, role: 'assistant', text, at: now(), channel: 'text', origin: 'omni' })
+            c.events.push({ at: now(), turnId: turn.id, kind: 'private-access', text })
+          } else {
+            if (!['unavailable', 'stored', 'needs-input'].includes(turn.privateAttachment?.status ?? '')) privateStatus('failed')
+            turn.state = 'failed'; turn.error = text
+            c.events.push({ at: now(), turnId: turn.id, kind: 'error', text })
+            const id = `coord-error:${turn.id}`
+            if (!c.messages.some(m => m.id === id)) c.messages.push({ id, role: 'assistant', text: `Não consegui concluir este encaminhamento: ${text} O pedido ficou preservado, sem reenvio automático.`, at: now(), channel: 'text', origin: 'omni' })
+          }
           c.events = c.events.slice(-200)
-          const id = `coord-error:${turn.id}`
-          if (!c.messages.some(m => m.id === id)) c.messages.push({ id, role: 'assistant', text: `Não consegui concluir este encaminhamento: ${turn.error} O pedido ficou preservado, sem reenvio automático.`, at: now(), channel: 'text', origin: 'omni' })
         }
         await this.store.save(); this.emit()
       }
