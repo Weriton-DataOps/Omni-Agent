@@ -40,7 +40,8 @@ import {
   bloquearAutomacaoFalha,
   concluirAutomacaoFalha,
   reivindicarAutomacaoFalha,
-  sincronizarAutomacaoFalhas
+  lerAutomacaoFalhas,
+  diagnosticarAutomacaoFalhas
 } from './automacao-falhas.mjs'
 import {
   compararRodadasEval,
@@ -277,6 +278,11 @@ function resumirFalha(item) {
 }
 
 async function main() {
+  if (action === 'diagnostico') {
+    const { options } = lerOpcoes(parts)
+    const { diagnosticarRuntime } = await import('./diagnostico.mjs')
+    return diagnosticarRuntime(home, root, options.sessao)
+  }
   if (action === 'overcore') {
     const { options } = lerOpcoes(parts)
     if (!options.sessao || !options.entrada) throw new Error('Use: overcore --sessao <id> --idempotencia <id-do-pedido> --entrada <JSON absoluto>.')
@@ -308,7 +314,7 @@ async function main() {
       lerAtalhos(home),
       lerAutoaperfeicoamento(home),
       lerFalhas(home),
-      sincronizarAutomacaoFalhas(home),
+      lerAutomacaoFalhas(home),
       lerHistoricoEval(home),
       lerHistoricoComportamental(home),
       lerHistoricoPersonalidade(home),
@@ -370,7 +376,7 @@ async function main() {
           queued: failureAutomation.jobs.filter((item) => item.state === 'queued').length,
           running: failureAutomation.jobs.filter((item) => item.state === 'running').length,
           blocked: 0,
-          needsOwner: failureAutomation.jobs.filter((item) => item.state === 'needs-owner').length,
+          ...(await diagnosticarAutomacaoFalhas(home, failureAutomation)),
           completed: failureAutomation.jobs.filter((item) => item.state === 'completed').length,
           executorCapability: 'failure-validation',
           transport: 'adapter-owned',
@@ -775,7 +781,7 @@ async function main() {
   if (action === 'falhas') {
     const [store, automation] = await Promise.all([
       lerFalhas(home),
-      sincronizarAutomacaoFalhas(home)
+      lerAutomacaoFalhas(home)
     ])
     return {
       ok: true,
@@ -784,7 +790,7 @@ async function main() {
         queued: automation.jobs.filter((item) => item.state === 'queued').length,
         running: automation.jobs.filter((item) => item.state === 'running').length,
         blocked: 0,
-        needsOwner: automation.jobs.filter((item) => item.state === 'needs-owner').length,
+        ...(await diagnosticarAutomacaoFalhas(home, automation)),
         completed: automation.jobs.filter((item) => item.state === 'completed').length
       },
       automaticGlobalRule: false
@@ -936,15 +942,16 @@ async function main() {
     if (kind === 'retryable' && (!options.evidencia || !options.estrategia)) {
       throw new Error('Falha retryable exige --evidencia <id> e --estrategia <descricao>.')
     }
-    if (kind === 'owner-authority' && (!options.efeito || !options.alvo)) {
-      throw new Error('Expansao de autoridade exige --efeito <codigo> e --alvo <alvo-concreto>.')
+    if (kind === 'owner-authority' && (!options.efeito || !options.alvo || !options.limite || !options.evidencia)) {
+      throw new Error('Expansao de autoridade exige --efeito, --alvo, --limite e --evidencia auditada da tentativa.')
     }
     const blocked = await bloquearAutomacaoFalha(home, positionals[0], options.motivo, {
       kind,
       evidenceId: options.evidencia,
       strategy: options.estrategia,
       effect: options.efeito,
-      target: options.alvo
+      target: options.alvo,
+      boundary: options.limite
     })
     return {
       ok: ['retry-scheduled', 'needs-owner'].includes(blocked.result),

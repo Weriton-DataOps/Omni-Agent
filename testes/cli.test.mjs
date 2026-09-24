@@ -726,11 +726,16 @@ test('operador reage a falha tecnica sem muro e reserva needs-owner para expansa
       delegationId: secondDispatch.delegation.id,
       agentId: 'cli-proactive-agent-2'
     })
+    const proof = await registrarAcaoAuditoria(home, { session_id: sessionId,
+      hook_event_name: 'PostToolUse', tool_use_id: 'cli-authority-readback', tool_name: 'Read',
+      tool_input: { file_path: 'authority-envelope.json' } })
     const owner = executar([
       'falha-automacao-bloquear', secondStart.job.id,
       '--tipo', 'owner-authority',
       '--motivo', 'a proxima etapa escreve fora do escopo local',
       '--efeito', 'remote-write',
+      '--limite', 'O envelope atual permite apenas leitura local e nao escrita remota.',
+      '--evidencia', proof.evidence.id,
       '--alvo', 'servico remoto fora do envelope atual'
     ], env)
     assert.equal(owner.automation.result, 'needs-owner')

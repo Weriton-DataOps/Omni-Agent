@@ -7,6 +7,8 @@ import test from 'node:test'
 import { abrirTurnoAuditoria, registrarAcaoAuditoria } from '../runtime/auditoria-autocorrecao.mjs'
 import {
   bloquearAutomacaoFalha,
+  lerAutomacaoFalhas,
+  diagnosticarAutomacaoFalhas,
   caminhoDaAutomacaoFalhas,
   confirmarInicioAutomacaoFalha,
   concluirAutomacaoFalha,
@@ -29,6 +31,64 @@ import {
 } from '../runtime/falhas.mjs'
 
 let startSequence = 0
+
+test('v4 migra com backup sem perder tentativas e consulta nao migra em disco', async () => {
+  const casa = await home()
+  try {
+    await candidate(casa, 'v4-preserved')
+    const store = await sincronizarAutomacaoFalhas(casa)
+    store.schemaVersion = 4
+    store.jobs[0].attempts = 6
+    const path = caminhoDaAutomacaoFalhas(casa)
+    const raw = JSON.stringify(store)
+    await writeFile(path, raw)
+    assert.equal((await lerAutomacaoFalhas(casa)).schemaVersion, 5)
+    assert.equal(await readFile(path, 'utf8'), raw)
+    const migrated = await sincronizarAutomacaoFalhas(casa)
+    assert.equal(migrated.schemaVersion, 5)
+    assert.equal(migrated.jobs[0].attempts, 6)
+    assert.equal(migrated.jobs[0].id, store.jobs[0].id)
+    assert.equal(await readFile(`${path}.v4.backup`, 'utf8'), raw)
+  } finally { await rm(casa, { recursive: true, force: true }) }
+})
+
+test('bloqueio legado opaco vira diagnostico de leitura uma vez sem apagar tentativas', async () => {
+  const casa = await home()
+  try {
+    await candidate(casa, 'opaque-authority')
+    const store = await sincronizarAutomacaoFalhas(casa)
+    Object.assign(store.jobs[0], { state: 'needs-owner', authorityFingerprint: 'a'.repeat(64),
+      reasonClass: 'owner-authority', requiredEffectFingerprint: 'b'.repeat(64),
+      targetFingerprint: 'c'.repeat(64), attempts: 6 })
+    const path = caminhoDaAutomacaoFalhas(casa)
+    await writeFile(path, JSON.stringify(store))
+    const before = await readFile(path, 'utf8')
+    const diagnosis = await diagnosticarAutomacaoFalhas(casa)
+    assert.equal(diagnosis.needsOwner, 0)
+    assert.equal(diagnosis.unsubstantiatedOwnerClaims, 1)
+    assert.equal(await readFile(path, 'utf8'), before)
+    await lerAutomacaoFalhas(casa)
+    assert.equal(await readFile(path, 'utf8'), before)
+    const reopened = await sincronizarAutomacaoFalhas(casa)
+    assert.equal(reopened.jobs[0].state, 'queued')
+    assert.equal(reopened.jobs[0].attempts, 6)
+    assert.equal(reopened.jobs[0].diagnosisOnly, true)
+    assert.equal(reopened.jobs[0].authorityFingerprint, null)
+    assert.equal(reopened.jobs[0].legacyAuthorityClaim.requiredEffectFingerprint, 'b'.repeat(64))
+    const twice = await sincronizarAutomacaoFalhas(casa)
+    assert.equal(twice.jobs.length, 1)
+    assert.equal(twice.jobs[0].nextAttemptAt, reopened.jobs[0].nextAttemptAt)
+    const started = await iniciarTrabalhoReal(casa, null)
+    assert.match(started.prompt, /diagnóstico local somente leitura/)
+    assert.equal(started.job.attempts, 7)
+    const retry = await bloquearAutomacaoFalha(casa, started.job.id, 'evidencia ainda incompleta', {
+      kind: 'retryable', evidenceId: 'read-evidence-local', strategy: 'buscar log vinculado ao job' })
+    assert.equal(retry.job.state, 'queued')
+    assert.ok(Date.parse(retry.job.nextAttemptAt) > Date.parse(retry.job.updatedAt))
+    assert.equal(retry.job.reasonClass, 'retryable')
+    assert.equal((await diagnosticarAutomacaoFalhas(casa)).needsOwner, 0)
+  } finally { await rm(casa, { recursive: true, force: true }) }
+})
 
 async function iniciarTrabalhoReal(casa, id, { at } = {}) {
   startSequence += 1
@@ -209,7 +269,7 @@ test('store de automacao v1 migra com backup sem perder trabalhos', async () => 
     await writeFile(path, raw, 'utf8')
 
     const migrated = await sincronizarAutomacaoFalhas(casa)
-    assert.equal(migrated.schemaVersion, 4)
+    assert.equal(migrated.schemaVersion, 5)
     assert.equal(migrated.jobs.length, 1)
     assert.equal(migrated.jobs[0].legacyAttempts, 0)
     assert.equal(await readFile(`${path}.v1.backup`, 'utf8'), raw)

@@ -19,7 +19,7 @@ async function candidate(casa, suffix) {
   for (let index = 1; index <= 3; index += 1) await registrarFalha(casa, { ...failure, evidenceId: `${suffix}-run-${index}` })
 }
 
-test('teto de tentativas escala para needs-owner em vez de girar sem fim', async () => {
+test('tentativas repetidas recebem intervalo tecnico sem fingir falta de autoridade', async () => {
   const casa = await home()
   const sessionId = 'sessao-teto'
   try {
@@ -27,8 +27,8 @@ test('teto de tentativas escala para needs-owner em vez de girar sem fim', async
     await abrirTurnoAuditoria(casa, { session_id: sessionId, prompt: 'corrija falhas locais recorrentes' })
 
     const resultados = []
-    let escalou = false
-    for (let ciclo = 1; ciclo <= 8 && !escalou; ciclo += 1) {
+    let deferred = null
+    for (let ciclo = 1; ciclo <= 8; ciclo += 1) {
       const prep = await prepararDespachoAutomaticoFalha(casa, { sessionId })
       if (prep.result !== 'dispatch-required') { resultados.push(`prep:${prep.result}`); break }
       await confirmarInicioAutomacaoFalha(casa, { sessionId, delegationId: prep.delegation.id, executorId: `exec-${ciclo}` })
@@ -36,19 +36,16 @@ test('teto de tentativas escala para needs-owner em vez de girar sem fim', async
         kind: 'retryable', evidenceId: `evid-${ciclo}`, strategy: `estrategia-diferente-${ciclo}`
       })
       resultados.push(bloqueio.result)
-      if (bloqueio.result === 'needs-owner') {
-        escalou = true
-        assert.equal(bloqueio.job.state, 'needs-owner')
-        assert.equal(bloqueio.job.reasonClass, 'owner-authority')
-        assert.equal(bloqueio.job.nextAttemptAt, null)
-        assert.equal(bloqueio.reason, 'retryable-exhausted')
-      }
+      assert.equal(bloqueio.result, 'retry-scheduled')
+      assert.equal(bloqueio.job.state, 'queued')
+      assert.equal(bloqueio.job.reasonClass, 'retryable')
+      if (Date.parse(bloqueio.job.nextAttemptAt) > Date.now()) deferred = bloqueio.job
     }
 
-    assert.equal(escalou, true, `esperava escalada; sequencia: ${resultados.join(', ')}`)
+    assert.ok(deferred, `esperava intervalo; sequencia: ${resultados.join(', ')}`)
     const retries = resultados.filter((r) => r === 'retry-scheduled').length
-    assert.ok(retries >= 1 && retries <= 5, `retries fora do teto: ${retries} (${resultados.join(', ')})`)
-    // Depois de needs-owner nao ha novo despacho automatico.
+    assert.equal(retries, 3)
+    // Durante o intervalo nao ha novo despacho; apos o prazo pode retomar.
     const depois = await prepararDespachoAutomaticoFalha(casa, { sessionId })
     assert.notEqual(depois.result, 'dispatch-required')
   } finally {
