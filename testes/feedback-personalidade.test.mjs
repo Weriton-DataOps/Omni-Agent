@@ -177,7 +177,7 @@ test('correcao explicitamente permanente orienta os proximos turnos sem promover
     assert.ok(observed.persistentAdjustment.directives.includes('increase-contextual-humor'))
     assert.ok(observed.persistentAdjustment.directives.includes('increase-useful-analogies'))
     assert.equal(observed.counts.reviewableCandidates, 0)
-    const raw = await readFile(join(casa, 'feedback', 'personality-continuity.json'), 'utf8')
+    const raw = await readFile(join(casa, 'feedback', 'personality-owner-directions.json'), 'utf8')
     assert.equal(raw.includes(feedback), false)
   } finally {
     await rm(casa, { recursive: true, force: true })

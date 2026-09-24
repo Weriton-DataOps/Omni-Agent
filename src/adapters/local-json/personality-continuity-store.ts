@@ -4,33 +4,59 @@ import { hasContinuityComplaint, hasExplicitPersistentPersonalityDirective, norm
 import { NodeLocalJsonStore } from './node-local-json-store.js'
 
 const store = new NodeLocalJsonStore()
-type Observation = { fingerprint: string; recordedAt: string; directives: string[] }
-type State = { schemaVersion: 2; observations: Observation[] }
+type ContinuityObservation = { fingerprint: string; recordedAt: string }
+type DirectionObservation = ContinuityObservation & { directives: string[] }
+type ContinuityState = { schemaVersion: 1; observations: ContinuityObservation[] }
+type DirectionState = { schemaVersion: 1; observations: DirectionObservation[] }
+
+function validFingerprint(value: unknown): value is string {
+  return typeof value === 'string' && /^[a-f0-9]{64}$/u.test(value)
+}
+
+function validRecordedAt(value: unknown): value is string {
+  return typeof value === 'string' && Number.isFinite(Date.parse(value))
+}
 
 function validDirective(value: unknown): value is string {
   return typeof value === 'string' && /^[a-z][a-z0-9-]{2,80}$/u.test(value)
 }
 
-function parse(value: unknown): State {
-  if (value === null) return { schemaVersion: 2, observations: [] }
+function parseContinuity(value: unknown): ContinuityState {
+  if (value === null) return { schemaVersion: 1, observations: [] }
   if (typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid continuity store.')
   const item = value as Record<string, unknown>
-  if (![1, 2].includes(item.schemaVersion as number) || Object.keys(item).length !== 2 || !Array.isArray(item.observations) || item.observations.length > 100) {
-    throw new Error('Unsupported continuity store.')
-  }
-  const observations = item.observations.map((raw: unknown): Observation => {
+  if (item.schemaVersion !== 1 || Object.keys(item).length !== 2 || !Array.isArray(item.observations) || item.observations.length > 100) throw new Error('Unsupported continuity store.')
+  const observations = item.observations.map((raw): ContinuityObservation => {
     if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Invalid continuity observation.')
     const row = raw as Record<string, unknown>
-    const legacy = item.schemaVersion === 1 && Object.keys(row).length === 2
-    if ((!legacy && Object.keys(row).length !== 3) || typeof row.fingerprint !== 'string' || !/^[a-f0-9]{64}$/u.test(row.fingerprint) || typeof row.recordedAt !== 'string' || !Number.isFinite(Date.parse(row.recordedAt)) || (!legacy && (!Array.isArray(row.directives) || row.directives.length !== new Set(row.directives).size || !row.directives.every(validDirective)))) throw new Error('Invalid continuity observation.')
-    return { fingerprint: row.fingerprint, recordedAt: row.recordedAt, directives: legacy ? ['maintain-personality-continuity'] : row.directives as string[] }
+    if (Object.keys(row).length !== 2 || !validFingerprint(row.fingerprint) || !validRecordedAt(row.recordedAt)) throw new Error('Invalid continuity observation.')
+    return { fingerprint: row.fingerprint, recordedAt: row.recordedAt }
   })
-  return { schemaVersion: 2, observations }
+  return { schemaVersion: 1, observations }
+}
+
+function parseDirections(value: unknown): DirectionState {
+  if (value === null) return { schemaVersion: 1, observations: [] }
+  if (typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid personality direction store.')
+  const item = value as Record<string, unknown>
+  if (item.schemaVersion !== 1 || Object.keys(item).length !== 2 || !Array.isArray(item.observations) || item.observations.length > 100) throw new Error('Unsupported personality direction store.')
+  const observations = item.observations.map((raw): DirectionObservation => {
+    if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Invalid personality direction observation.')
+    const row = raw as Record<string, unknown>
+    if (Object.keys(row).length !== 3 || !validFingerprint(row.fingerprint) || !validRecordedAt(row.recordedAt) || !Array.isArray(row.directives) || row.directives.length === 0 || row.directives.length !== new Set(row.directives).size || !row.directives.every(validDirective)) throw new Error('Invalid personality direction observation.')
+    return { fingerprint: row.fingerprint, recordedAt: row.recordedAt, directives: row.directives }
+  })
+  return { schemaVersion: 1, observations }
 }
 
 function location(home: string): string {
   if (!isAbsolute(home)) throw new Error('Continuity home must be absolute.')
   return join(home, 'feedback', 'personality-continuity.json')
+}
+
+function directionsLocation(home: string): string {
+  if (!isAbsolute(home)) throw new Error('Continuity home must be absolute.')
+  return join(home, 'feedback', 'personality-owner-directions.json')
 }
 
 export async function observePersonalityContinuity(home: string, feedback: string, at?: string, directives: readonly string[] = []): Promise<void> {
@@ -39,19 +65,35 @@ export async function observePersonalityContinuity(home: string, feedback: strin
   if (!continuityComplaint && !explicitPersistentDirective) return
   const recordedAt = new Date(at ?? Date.now()).toISOString()
   const fingerprint = createHash('sha256').update(normalizeOwnerText(feedback)).digest('hex')
-  await store.update(location(home), current => {
-    const state = parse(current)
+  if (continuityComplaint) {
+    await store.update(location(home), current => {
+      const state = parseContinuity(current)
+      if (!state.observations.some(row => row.fingerprint === fingerprint)) state.observations.push({ fingerprint, recordedAt })
+      return { schemaVersion: 1, observations: state.observations.slice(-100) }
+    })
+  }
+  if (explicitPersistentDirective) {
     const normalizedDirectives = [...new Set(directives.filter(validDirective))]
-    const effectiveDirectives = normalizedDirectives.length > 0 ? normalizedDirectives : ['maintain-personality-continuity']
-    const existing = state.observations.find(row => row.fingerprint === fingerprint)
-    if (existing) {
-      existing.recordedAt = recordedAt
-      existing.directives = [...new Set([...existing.directives, ...effectiveDirectives])]
-    } else state.observations.push({ fingerprint, recordedAt, directives: effectiveDirectives })
-    return { schemaVersion: 2, observations: state.observations.slice(-100) }
-  })
+    if (normalizedDirectives.length === 0) return
+    await store.update(directionsLocation(home), current => {
+      const state = parseDirections(current)
+      const existing = state.observations.find(row => row.fingerprint === fingerprint)
+      if (existing) {
+        existing.recordedAt = recordedAt
+        existing.directives = [...new Set([...existing.directives, ...normalizedDirectives])]
+      } else state.observations.push({ fingerprint, recordedAt, directives: normalizedDirectives })
+      return { schemaVersion: 1, observations: state.observations.slice(-100) }
+    })
+  }
 }
 
 export async function readPersonalityContinuity(home: string): Promise<string[]> {
-  return [...new Set(parse(await store.read(location(home))).observations.flatMap(row => row.directives))]
+  const [continuity, directions] = await Promise.all([
+    store.read(location(home)).then(parseContinuity),
+    store.read(directionsLocation(home)).then(parseDirections)
+  ])
+  return [...new Set([
+    ...(continuity.observations.length > 0 ? ['maintain-personality-continuity'] : []),
+    ...directions.observations.flatMap(row => row.directives)
+  ])]
 }
