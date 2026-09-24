@@ -25,11 +25,8 @@
     },
     {
       "id": "agora",
-      "purpose": "mostrar o que merece atencao do proprietario agora: missoes abertas com objetivo, proxima acao, prazo e o que esta parado ha tempo",
-      "actions": ["listar-missoes-ativas", "mostrar-proxima-acao", "sinalizar-prazo-e-aging", "abrir-conversa-da-missao"],
-      "readsFrom": "operations.missions",
-      "writes": false,
-      "notOrchestration": "reflete estado observado e registrado; nao agenda nem despacha execucao"
+      "purpose": "atencao agora: missoes abertas, proxima acao, prazo e paradas",
+      "actions": ["listar-missoes", "sinalizar-prazo-e-aging"]
     },
     {
       "id": "omni-machine",
@@ -78,7 +75,7 @@
   ],
   "projection": {
     "maximumActivities": 24,
-    "maximumCharacters": 6000,
+    "maximumCharacters": 6400,
     "exclude": ["segredos", "credenciais", "conteudo-bruto-de-conversas", "detalhes-de-layout"]
   }
 }
