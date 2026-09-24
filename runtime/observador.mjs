@@ -11,6 +11,7 @@ import {
 import { registrarFalha } from './falhas.mjs'
 import { pareceConterSegredo } from './memoria.mjs'
 import { materializarMelhoriaComBaselineConfigurada } from './automacao-melhorias.mjs'
+import { extrairPrazo, extrairProximaAcao } from './tempo-linguagem.mjs'
 import {
   observarVotoPersonalidade,
   registrarUltimaRespostaPersonalidade
@@ -347,7 +348,9 @@ export async function observarPrompt(casa, input) {
       cwd: input.cwd,
       summary: `Pedido recebido (${prompt.length} caracteres)`,
       objective: objetivoDeclarado(prompt),
-      objectiveFallback: ownerOrigin ? resumoDoPedido(prompt) : null
+      objectiveFallback: ownerOrigin ? resumoDoPedido(prompt) : null,
+      dueAt: ownerOrigin ? extrairPrazo(prompt) : null,
+      nextAction: ownerOrigin ? extrairProximaAcao(prompt) : null
     })
     for (const signal of personalityFeedback?.candidateSignals ?? []) {
       const route = PERSONALITY_SIGNAL_ROUTES[signal.reasonCode]

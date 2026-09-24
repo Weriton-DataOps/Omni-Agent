@@ -951,11 +951,15 @@ export async function observarEvento(casa, input, { at } = {}) {
       objective: null,
       currentStep: null,
       openTasks: [],
+      dueAt: null,
+      nextAction: null,
+      lastMovementAt: recordedAt,
       state: 'active',
       startedAt: recordedAt,
       updatedAt: recordedAt
     }
     session.updatedAt = recordedAt
+    session.lastMovementAt = recordedAt
     if (eventType === 'user-prompt' && summary) {
       session.currentStep = summary
       // Objetivo explicito ("meu objetivo e...") sempre manda. Sem ele, o
@@ -967,6 +971,13 @@ export async function observarEvento(casa, input, { at } = {}) {
         const fallback = textoSeguro(input?.objectiveFallback, 240)
         if (fallback) session.objective = fallback
       }
+      // Prazo e proxima acao alimentam o eixo de tempo das missoes.
+      const dueAt = typeof input?.dueAt === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(input.dueAt) && !Number.isNaN(Date.parse(input.dueAt))
+        ? new Date(input.dueAt).toISOString()
+        : null
+      if (dueAt) session.dueAt = dueAt
+      const nextAction = textoSeguro(input?.nextAction, 240)
+      if (nextAction) session.nextAction = nextAction
     }
     if (eventType === 'stop') session.state = 'waiting-user'
     if (eventType === 'session-end') session.state = 'closed'
