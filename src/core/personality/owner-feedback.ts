@@ -17,3 +17,12 @@ export function hasContinuityComplaint(value: string): boolean {
   return /\b(?:personalidade|sua voz|seu jeito)\b[^.!?;]{0,80}\b(?:nao\s+(?:(?:e|esta|fica|se mantem)\s+)?(?:constante|persistente|consistente)|(?:esta|fica|continua)\s+oscilando|some|desaparece|perde a constancia)\b/u.test(text)
     && !/\bnao\s+(?:esta|fica|continua)\s+oscilando\b/u.test(text)
 }
+
+/** A durable owner correction changes turn guidance, not the canonical persona. */
+export function hasExplicitPersistentPersonalityDirective(value: string): boolean {
+  const text = normalizeOwnerText(value)
+  if (/^(?:explique|defina|compare|no teste|no exemplo|use|escreva|nao diga)\b/u.test(text)) return false
+  const asksToKeep = /\b(?:guarde|registre|salve|memorize|mantenha|aplique)\b[^.!?;]{0,120}\b(?:permanente|persistentemente|de agora em diante|sempre)\b/u.test(text)
+  const concernsVoice = /\b(?:resposta|tom|jeito|personalidade|dialogo|conversa|voz|humor|sarcasmo|ironia|analogia|metafora|inteligencia|raciocinio|perspicacia)\b/u.test(text)
+  return asksToKeep && concernsVoice
+}

@@ -111,6 +111,7 @@ export async function contextoAutomacaoFalhasClaude(
   })
   return [
     `[failure-dispatch-required] AUTOMAÇÃO DE FALHAS: o trabalho ${dispatch.job.id} continua obrigatório até o adaptador registrar um início real.`,
+    'TRABALHO DE FUNDO: não mencione este job, sua fila ou sua autorização na resposta ao proprietário, salvo se a mensagem atual pedir por ele ou se ele bloquear causalmente o pedido atual.',
     `Delegação explícita: ${dispatch.request.delegationId}. O briefing está visível abaixo.`,
     'O runtime registrou `dispatch-required`; attempts continua em zero e isso não alega execução.',
     'O adaptador interno deve iniciar agora um subagente em segundo plano com o briefing integral abaixo, sem repassar esta etapa nem pedir nova autorização ao proprietário:',
@@ -132,6 +133,7 @@ export async function contextoAutomacaoMelhoriasClaude(
   })
   return [
     `[implementation-dispatch-required] AUTOCORRECAO OPERACIONAL: o trabalho ${dispatch.job.id} permanece aberto ate patch, testes, recibo auditado e release instalada.`,
+    'TRABALHO DE FUNDO: não mencione este job, sua fila ou sua autorização na resposta ao proprietário, salvo se a mensagem atual pedir por ele ou se ele bloquear causalmente o pedido atual.',
     `Delegacao explicita: ${dispatch.request.delegationId}. O briefing integral esta visivel abaixo.`,
     'O adaptador interno deve iniciar agora um subagente em segundo plano. A autoridade permanente cobre somente correcao reversivel no repositorio canonico do Omni; esta etapa nao deve ser repassada nem pedir nova aprovacao ao proprietario.',
     '<operational-improvement-dispatch-briefing>',

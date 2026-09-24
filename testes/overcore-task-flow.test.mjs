@@ -81,6 +81,7 @@ test('configuração privada, contexto por turno e observação retomam a mesma 
     assert.deepEqual(calls.slice(before), ['GET /v1/tasks/task-runtime-test'])
     await observarFluxosOvercore(directory, session, env)
     assert.equal(calls.length, before + 1, 'Resultado terminal em cache não reinicia polling')
+    assert.equal(await contextoFluxosOvercore(directory, session, env, 'Bom dia, vamos conversar.'), null)
     assert.deepEqual(await observarFluxosOvercore(directory, 'another-session', env), [])
     assert.ok(calls.every(call => !call.includes('work-once')))
   } finally {

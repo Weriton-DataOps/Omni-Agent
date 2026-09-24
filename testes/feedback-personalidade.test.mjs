@@ -95,6 +95,15 @@ test('classificador exige avaliacao explicita e separa positivo, negativo e mist
   assert.equal(negatedPraise.reasonCodes.includes('overall-approved'), false)
   assert.ok(negatedPraise.reasonCodes.includes('overall-rejected'))
 
+  const durableComplaint = classificarFeedbackPersonalidade(
+    'Sua resposta ficou burocratica e seca. Quero que voce seja mais direto, inteligente, com humor e uma analogia util quando ela realmente ajudar. Guarde isso como melhoria permanente.'
+  )
+  assert.equal(durableComplaint.polarity, 'negative')
+  assert.equal(durableComplaint.reasonCodes.includes('overall-approved'), false)
+  assert.ok(durableComplaint.reasonCodes.includes('overall-rejected'))
+  assert.ok(durableComplaint.reasonCodes.includes('tone-too-dry'))
+  assert.ok(durableComplaint.reasonCodes.includes('humor-missing'))
+
   const mixed = classificarFeedbackPersonalidade(
     'A resposta ficou excelente e o humor funcionou, mas faltou analogia.'
   )
@@ -152,6 +161,24 @@ test('proximo prompt do proprietario vira voto ligado a ultima resposta e ajuste
     const raw = await readFile(caminhoDoFeedbackPersonalidade(casa), 'utf8')
     assert.equal(raw.includes(feedback), false)
     assert.equal(raw.includes('conteudo confidencial da resposta'), false)
+  } finally {
+    await rm(casa, { recursive: true, force: true })
+  }
+})
+
+test('correcao explicitamente permanente orienta os proximos turnos sem promover a persona canonica sozinha', async () => {
+  const casa = await home()
+  const feedback = 'Sua resposta ficou burocratica e seca. Quero que voce seja mais direto, inteligente, com humor e uma analogia util quando ela realmente ajudar. Guarde isso como melhoria permanente.'
+  try {
+    await response(casa, 's-durable')
+    const observed = await observarVotoPersonalidade(casa, { sessionId: 's-durable', origin: 'owner-live', feedback })
+    assert.equal(observed.result, 'recorded')
+    assert.ok(observed.persistentAdjustment.directives.includes('increase-tone-presence'))
+    assert.ok(observed.persistentAdjustment.directives.includes('increase-contextual-humor'))
+    assert.ok(observed.persistentAdjustment.directives.includes('increase-useful-analogies'))
+    assert.equal(observed.counts.reviewableCandidates, 0)
+    const raw = await readFile(join(casa, 'feedback', 'personality-continuity.json'), 'utf8')
+    assert.equal(raw.includes(feedback), false)
   } finally {
     await rm(casa, { recursive: true, force: true })
   }

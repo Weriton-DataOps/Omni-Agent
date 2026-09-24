@@ -63,7 +63,9 @@ export async function contextoFluxosOvercore(home, sessionId, env = process.env,
   const flows = await listTaskFlows(home, sessionId)
   // Availability alone is not relevance. Do not spend ordinary conversation or
   // self-repair context on this protocol before a request/flow actually uses it.
-  if (!flows.length && typeof ownerPrompt === 'string' && !/\bovercore\b/iu.test(ownerPrompt)) return null
+  const ownerAskedOvercore = typeof ownerPrompt === 'string' && /\bovercore\b/iu.test(ownerPrompt)
+  const hasActiveFlow = flows.some((flow) => flow?.taskId && !['succeeded', 'failed', 'cancelled'].includes(flow.status))
+  if (!ownerAskedOvercore && !hasActiveFlow) return null
   if (!flows.length && !await taskFlowConfigured(env)) return null
   const live = await consultarCapacidadesOvercore(env)
   const validation = await consultarEvidenciasOvercore(env)

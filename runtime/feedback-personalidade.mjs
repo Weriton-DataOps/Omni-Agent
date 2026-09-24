@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 
 import { acquireLocalFileLock } from '../dist/adapters/local-json/node-local-file-lock.js'
 import { observePersonalityContinuity, readPersonalityContinuity } from '../dist/adapters/local-json/personality-continuity-store.js'
-import { hasContinuityComplaint, normalizeOwnerText } from '../dist/core/personality/owner-feedback.js'
+import { hasContinuityComplaint, hasExplicitPersistentPersonalityDirective, normalizeOwnerText } from '../dist/core/personality/owner-feedback.js'
 
 export const PERSONALITY_FEEDBACK_SCHEMA_VERSION = 1
 
@@ -369,33 +369,40 @@ export function classificarFeedbackPersonalidade(value) {
   const positive = []
   const negative = []
 
-  if (
+  // A correction such as "ficou seca; quero que voce seja mais inteligente"
+  // must not mistake the requested future trait for praise of the last answer.
+  const negatedStatus = /\b(?:essa|esta|ultima|sua|a)?\s*resposta\b.{0,120}\bnao\s+(?:esta|ta|ficou|continua|segue|soa|parece)\b/.test(text)
+  const explicitNegativeComplaint =
+    (!negatedStatus && /\b(?:essa|esta|ultima|sua|a)\s+resposta\b.{0,160}\b(?:ficou|veio|soou|parece|continua|segue)\b.{0,80}\b(?:ruim|fraco|fraca|seco|seca|frio|fria|generico|generica|robotico|robotica|sem vida)\b/.test(text)) ||
+    /\b(?:quero|preciso)\s+que\s+voce\s+seja\b.{0,120}\b(?:mais|menos)\b/.test(text)
+
+  if (!explicitNegativeComplaint && (
     hasNearby(positiveEvidence, subject, good) ||
     new RegExp(`\\b(?:gostei|curti|aprovei)\\b.{0,80}\\b${subject}\\b`).test(positiveEvidence) ||
     new RegExp(`\\bagora sim\\b.{0,80}\\b${subject}\\b`).test(positiveEvidence)
-  ) positive.push('overall-approved')
+  )) positive.push('overall-approved')
   if (
     hasNearby(negativeEvidence, subject, bad) ||
     new RegExp(`\\bnao (?:gostei|curti|aprovei)\\b.{0,80}\\b${subject}\\b`).test(text) ||
     new RegExp(`\\b${subject}\\b.{0,80}\\b(?:nao (?:esta|ta|ficou|continua|segue|soa|parece) (?:otim[oa]|excelente|perfeit[oa]|bo[ma]|natural|vivo|viva|marcante|inteligente)|poderia ser melhor|precisa melhorar|nao convenceu|nao funcionou)\\b`).test(text)
   ) negative.push('overall-rejected')
 
-  if (negatedBadSequences.some((sequence) => /\b(?:seco|seca)\b/.test(sequence))) {
+  if (!explicitNegativeComplaint && negatedBadSequences.some((sequence) => /\b(?:seco|seca)\b/.test(sequence))) {
     positive.push('tone-approved')
   } else if (hasNearby(negativeEvidence, '(?:tom|resposta|jeito|dialogo|conversa|voce|vc|omni)', '(?:seco|seca)')) {
     negative.push('tone-too-dry')
   }
-  if (negatedBadSequences.some((sequence) => /\b(?:frio|fria|sem vida)\b/.test(sequence))) {
+  if (!explicitNegativeComplaint && negatedBadSequences.some((sequence) => /\b(?:frio|fria|sem vida)\b/.test(sequence))) {
     positive.push('presence-effective')
   } else if (hasNearby(negativeEvidence, '(?:resposta|jeito|dialogo|conversa|voce|vc|omni)', '(?:frio|fria|sem vida)')) {
     negative.push('presence-too-cold')
   }
-  if (negatedBadSequences.some((sequence) => /\b(?:generico|generica|robotico|robotica)\b/.test(sequence))) {
+  if (!explicitNegativeComplaint && negatedBadSequences.some((sequence) => /\b(?:generico|generica|robotico|robotica)\b/.test(sequence))) {
     positive.push('voice-distinct')
   } else if (hasNearby(negativeEvidence, '(?:resposta|tom|jeito|dialogo|conversa|voz|voce|vc|omni)', '(?:generico|generica|robotico|robotica)')) {
     negative.push('voice-generic')
   }
-  if (/\bpersonalidade\b.{0,60}\b(?:apareceu|entrou|funcionou|esta presente|ficou clara)\b|\b(?:apareceu|entrou|funcionou)\b.{0,60}\bpersonalidade\b/.test(positiveEvidence)) {
+  if (!explicitNegativeComplaint && /\bpersonalidade\b.{0,60}\b(?:apareceu|entrou|funcionou|esta presente|ficou clara)\b|\b(?:apareceu|entrou|funcionou)\b.{0,60}\bpersonalidade\b/.test(positiveEvidence)) {
     positive.push('personality-present')
   }
   if (/\bpersonalidade\b.{0,60}\b(?:nao apareceu|nao entrou|nao pegou|nao funciona|nao funcionou|sumiu|esta ausente)\b|\b(?:faltou|falta|nada da|cade a|sem sinal de)\b.{0,60}\bpersonalidade\b/.test(text)) {
@@ -412,14 +419,23 @@ export function classificarFeedbackPersonalidade(value) {
     ['intelligence', '(?:inteligencia|raciocinio|perspicacia)', 'intelligence-perceived', 'intelligence-flat']
   ]
   for (const [, dimension, positiveCode, negativeCode] of dimensionSignals) {
-    if (
+    if (!explicitNegativeComplaint && (
       new RegExp(`\\b${dimension}\\b.{0,70}\\b(?:funcionou|encaixou|ficou (?:otim[oa]|bo[ma])|foi (?:otim[oa]|bo[ma])|apareceu)\\b`).test(positiveEvidence) ||
       new RegExp(`\\b(?:gostei|curti|otim[oa]|excelente|perfeit[oa])\\b.{0,70}\\b${dimension}\\b`).test(positiveEvidence)
-    ) positive.push(positiveCode)
+    )) positive.push(positiveCode)
     if (
       new RegExp(`\\b(?:faltou|falta|sumiu|cade|quero mais|precisa de mais|preciso de mais|pouco|pouca|sem)\\b.{0,100}\\b${dimension}\\b`).test(negativeEvidence) ||
       new RegExp(`\\b${dimension}\\b.{0,70}\\b(?:faltou|falta|sumiu|nao apareceu|(?:nao|nem) (?:sequer )?funcionou|fraco|fraca)\\b`).test(negativeEvidence)
     ) negative.push(negativeCode)
+  }
+
+  // In a retrospective complaint, requested traits describe what was absent
+  // from the answer just evaluated ("seja mais ... com humor ... analogia").
+  if (explicitNegativeComplaint) {
+    if (/\b(?:com|mais)\s+humor\b/.test(text)) negative.push('humor-missing')
+    if (/\b(?:com|mais)\s+(?:sarcasmo|ironia)\b/.test(text)) negative.push('sarcasm-missing')
+    if (/\b(?:uma|mais)\s+(?:analogia|analogias|metafora|metaforas)\b/.test(text)) negative.push('analogy-missing')
+    if (/\b(?:mais\s+)?(?:inteligente|inteligencia|raciocinio|perspicacia)\b/.test(text)) negative.push('intelligence-flat')
   }
 
   const positiveReasons = [...new Set(positive)].filter((code) => REASON_CODES.has(code))
@@ -663,7 +679,12 @@ export async function observarVotoPersonalidade(casa, input, options = {}) {
     return { result: 'neutral', vote: null, adjustment: null, candidateSignals: [], ...summary }
   }
 
-  await observePersonalityContinuity(casa, feedback, options.at)
+  await observePersonalityContinuity(
+    casa,
+    feedback,
+    options.at,
+    hasExplicitPersistentPersonalityDirective(feedback) ? directivesFor(classification.reasonCodes) : []
+  )
   const release = await acquireLock(casa)
   try {
     const store = await load(casa)
