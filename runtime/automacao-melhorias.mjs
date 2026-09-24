@@ -442,6 +442,7 @@ function promptExecucao(candidate, marker) {
   return [
     `Implemente a autocorrecao operacional ${candidate.id} no repositorio canonico configurado do Omni.`,
     `Objetivo aprendido: ${candidate.statement}`,
+    'Inclusive em propostas antigas: sucesso funcional nao certifica latencia. Preserve as medicoes; valide SLO separadamente antes de prometer prazo ou estabilidade de rede.',
     `Alvo inicial: ${candidate.artifact}. Localize o menor arquivo correto dentro desse limite.`,
     'Antes de alterar, registre checkpoint recuperavel. Nao expanda objetivo, privilegio, segredo, custo ou alvo.',
     'Implemente a menor mudanca reversivel, rode teste focal, suite completa e leia novamente o artefato alterado.',

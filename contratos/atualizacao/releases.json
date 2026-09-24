@@ -310,6 +310,16 @@
       ]
     },
     {
+      "version": "0.24.5",
+      "changes": [
+        "Auditoria reconhece opcoes globais Git e o subcomando real, sem promover cadeias opacas a prova de leitura.",
+        "Ferramenta concluida na sessao principal aciona o proximo job elegivel; executor ativo e despacho pendente impedem duplicacao.",
+        "Eval de falhas distingue sucesso funcional de latencia nao avaliada, inclusive nos briefings de propostas antigas.",
+        "Consulta comprovantes historicos do teste integrado Overcore antes de propor repeticao paga, sem chamar modelos.",
+        "Release isolada: preserva o trabalho paralelo da 0.25.0, que nao e publicado por esta rodada."
+      ]
+    },
+    {
       "version": "0.25.0",
       "changes": [
         "Fundacao da agenda: o primeiro pedido real de cada sessao vira objetivo da missao, e prazo e proxima acao sao capturados da conversa em pt-BR para o eixo de tempo.",

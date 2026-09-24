@@ -462,6 +462,8 @@ test('tres falhas, causa e dois testes consistentes passam no eval', async () =>
     assert.equal(evaluation.result, 'passed')
     assert.equal(evaluation.pattern.status, 'evaluated')
     assert.ok(evaluation.pattern.evaluation.gates.every((gate) => gate.passed))
+    assert.equal(evaluation.pattern.evaluation.scope, 'audited-functional-executions')
+    assert.equal(evaluation.pattern.evaluation.performance.status, 'not-evaluated')
 
     const raw = await readFile(caminhoDasFalhas(casa), 'utf8')
     assert.equal(raw.includes(failure.signature), false)

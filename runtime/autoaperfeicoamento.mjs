@@ -354,6 +354,7 @@ function criarRascunhoFalha(pattern, destination) {
     `Classe de falha reconhecida: ${pattern.failureClass}.`,
     `Causa raiz validada: ${pattern.analysis.rootCause}.`,
     `Correção validada: ${pattern.analysis.hypothesis}.`,
+    'A validação comprova execuções funcionais; latência e estabilidade de rede exigem avaliação separada. Preserve medições, sem prometer duração a partir de dois sucessos.',
     'Execute a correção e repita a verificação que comprovou o resultado.',
     'Se a falha reaparecer, pare: não trate este procedimento como regra válida.',
     'Não exponha evidência local, memória ou implementação interna do Omni.'
@@ -385,7 +386,7 @@ function criarRascunhoFalha(pattern, destination) {
         destination === 'personality' ? 'contratos/personalidade' :
           destination === 'eval' ? 'contratos/eval' : 'runtime',
       rootCause: pattern.analysis.rootCause,
-      proposedChange: pattern.analysis.hypothesis,
+      proposedChange: `${pattern.analysis.hypothesis}\nQualification: audited functional executions only. Latency and network stability remain unverified; preserve measurements and validate a separate performance criterion before promising a duration.`,
       requiredGates: ['patch', 'regression-test', 'full-suite', 'release-fingerprint', 'installed-readback', 'real-observation']
     }
   }

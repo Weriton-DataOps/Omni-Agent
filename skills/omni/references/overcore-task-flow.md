@@ -8,6 +8,13 @@ ou `%LOCALAPPDATA%/Overcore/client-private.json` criado pelo launcher local;
 
 ## Preparar
 
+Antes de propor repetir uma inspeção paga, consulte `{ "operation": "evidence" }`.
+A resposta reúne comprovantes locais do teste integrado, com hash conferido e critérios aprovados.
+Compare escopo, resultado e data com a dúvida atual; explique a lacuna concreta se ainda houver
+necessidade de novo teste. Um comprovante histórico não certifica o código atualmente carregado,
+não conclui outra tarefa e não substitui validação comportamental humana. A consulta é somente
+leitura, sem chamada de modelo. `unverified` significa consulta indisponível, não ausência de testes.
+
 ```json
 {
   "operation": "prepare",

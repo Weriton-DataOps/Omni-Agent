@@ -19,7 +19,7 @@
   ],
   "identity": {
     "version": "0.25.0",
-    "releaseFingerprint": "77e2cb3c6b6d27ca31f3d69be59f2130eec4589b7eee9e93fbddacba0382d3c9",
+    "releaseFingerprint": "f96fd7fca3499efcbe9cefdb86eaa2437ea798cc00799ccd2b6db0c4cc8f2163",
     "releaseAuditScopeStartedAt": "2026-09-09T00:00:00.000Z",
     "required": [
       "version",

@@ -574,9 +574,9 @@ test('arbitro expoe uma unica fila por hook e deixa a melhoria para o ciclo segu
     assert.equal(started.result, 'running')
 
     const second = await contextoProximaAutomacaoClaude(casa, { sessionId })
-    assert.equal(second.kind, 'improvement')
-    assert.match(second.context, /implementation-dispatch-required/i)
-    assert.equal((await lerCicloOperacional(casa)).delegations.length, 2)
+    assert.equal(second.kind, 'executor-running')
+    assert.equal(second.context, null)
+    assert.equal((await lerCicloOperacional(casa)).delegations.length, 1)
   } finally {
     await rm(casa, { recursive: true, force: true })
     await rm(repo, { recursive: true, force: true })
@@ -660,9 +660,9 @@ test('falha nova nao atropela melhoria ja exposta no PostToolUseFailure', async 
       cwd: repo
     })
     const next = await contextoProximaAutomacaoClaude(casa, { sessionId })
-    assert.equal(next.kind, 'failure')
-    assert.match(next.context, /failure-dispatch-required/i)
-    assert.equal((await lerCicloOperacional(casa)).delegations.length, 2)
+    assert.equal(next.kind, 'executor-running')
+    assert.equal(next.context, null)
+    assert.equal((await lerCicloOperacional(casa)).delegations.length, 1)
   } finally {
     await rm(casa, { recursive: true, force: true })
     await rm(repo, { recursive: true, force: true })

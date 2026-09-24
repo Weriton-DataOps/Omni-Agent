@@ -3,12 +3,14 @@ import { createHash } from 'node:crypto'
 import { registrarAcaoAuditoria, registrarDelegacaoAuditoria } from './auditoria-autocorrecao.mjs'
 import {
   confirmarInicioAutomacaoFalha,
+  lerAutomacaoFalhas,
   localizarDespachoAtivoAutomacaoFalha,
   prepararDespachoAutomaticoFalha
 } from './automacao-falhas.mjs'
 import {
   adiarDespachoAutomaticoMelhoria,
   confirmarInicioAutomacaoMelhoria,
+  lerAutomacaoMelhorias,
   localizarDespachoAtivoAutomacaoMelhoria,
   prepararDespachoAutomaticoMelhoria,
   registrarRelatoAutomacaoMelhoria
@@ -140,12 +142,17 @@ export async function contextoAutomacaoMelhoriasClaude(
 
 export async function contextoProximaAutomacaoClaude(
   casa,
-  { sessionId = 'session-unknown', hookEventName = 'UserPromptSubmit', at } = {}
+  { sessionId = 'session-unknown', hookEventName = 'UserPromptSubmit', at, onlyIfIdle = false } = {}
 ) {
   const [activeFailure, activeImprovement] = await Promise.all([
     localizarDespachoAtivoAutomacaoFalha(casa, { sessionId }, { at }),
     localizarDespachoAtivoAutomacaoMelhoria(casa, { sessionId })
   ])
+  const [failures, improvements] = await Promise.all([lerAutomacaoFalhas(casa), lerAutomacaoMelhorias(casa)])
+  if (failures.jobs.some(job => job.state === 'running') || improvements.jobs.some(job => job.state === 'running')) {
+    return { kind: 'executor-running', context: null }
+  }
+  if (onlyIfIdle && (activeFailure.job || activeImprovement.job)) return { kind: 'already-dispatched', context: null }
   if (activeFailure.job && activeImprovement.job) {
     const deferred = await adiarDespachoAutomaticoMelhoria(casa, {
       sessionId,

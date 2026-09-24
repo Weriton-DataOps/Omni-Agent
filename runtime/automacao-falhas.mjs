@@ -637,6 +637,7 @@ function promptFor(job, pattern) {
     '',
     'Somente `started` do adaptador confirma início. Nos comandos abaixo, <padrao>, <job> e <geracao> são os IDs acima.',
     'Objetivo obrigatório:',
+    'Separe sucesso funcional (saída correta e exit 0) de latência. Preserve tempos medidos; dois sucessos não provam estabilidade da rede. SLO exige critério prévio e avaliação própria; não ajuste o limiar depois para aprovar.',
     '1. Recupere evidência nas sessões JSONL e projeto vinculado; hash não comprova causa raiz.',
     '2. Determine causa raiz e hipótese verificável; registre com `falha-analisar <padrao> --geracao <geracao> --causa <texto> --hipotese <texto>`.',
     '3. Rode `falha-evidencias <padrao> --job <job>` e copie `bindingMarker`. Acrescente `# <bindingMarker>` aos comandos. Execute a mesma estratégia duas vezes de verdade, em execuções independentes, com critério determinístico; ação sem esse marcador não pertence a este trabalho.',
