@@ -765,22 +765,14 @@ test('hook injeta a auditoria e usa o gate de Stop sem segundo bloqueio', async 
     assert.match(submit.hookSpecificOutput.additionalContext, /AUDITORIA E AUTOCORREÇÃO INTERNAS OBRIGATÓRIAS/)
 
     await tratarHook(tool(session_id, { id: 'edit-hook', name: 'Edit' }), env)
+    // Consultivo: o Stop registra a auditoria mas nao bloqueia a sessao do dono.
     const first = await tratarHook({
       hook_event_name: 'Stop',
       session_id,
       last_assistant_message: 'Pronto, corrigi.'
     }, env)
-    assert.equal(first.decision, 'block')
-
-    const second = await tratarHook({
-      hook_event_name: 'Stop',
-      session_id,
-      stop_hook_active: true,
-      last_assistant_message: 'Pronto, corrigi.'
-    }, env)
-    assert.equal(second.suppressOutput, true)
+    assert.notEqual(first.decision, 'block')
     const store = await lerAuditoriaAutocorrecao(env.OMNI_HOME)
-    assert.equal(store.turns[0].stopBlocksIssued, 1)
     assert.equal(store.turns[0].state, 'repairing')
   } finally {
     await rm(raiz, { recursive: true, force: true })

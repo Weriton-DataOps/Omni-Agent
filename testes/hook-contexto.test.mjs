@@ -911,16 +911,16 @@ test('candidata exige despacho ate SubagentStart confirmar o inicio real', async
     )
     assert.doesNotMatch(JSON.stringify(cycle), /Objetivo obrigatório|permissao negada ao executar teste local/i)
 
-    const blocked = await tratarHook({
+    // Consultivo: o Stop do proprietario nao e mais bloqueado pelo despacho
+    // pendente; o despacho continua registrado para a rota propria.
+    const afterStop = await tratarHook({
       hook_event_name: 'Stop',
       session_id
     }, env)
-    assert.equal(blocked.decision, 'block')
-    assert.match(blocked.reason, /failure-dispatch-not-started/)
-    assert.match(blocked.reason, new RegExp(automation.jobs[0].id))
-    assert.match(blocked.reason, /BLOQUEIO OPERACIONAL INTERNO/)
-    assert.match(blocked.reason, /nunca deve ser repetido como ordem ou checklist para o proprietário/i)
-    assert.doesNotMatch(blocked.reason, /(?:^|\n)Inicie agora o executor/mi)
+    assert.notEqual(afterStop.decision, 'block')
+    const stillPending = JSON.parse(await readFile(caminhoDaAutomacaoFalhas(env.OMNI_HOME), 'utf8')).jobs[0]
+    assert.equal(stillPending.state, 'queued')
+    assert.equal(stillPending.dispatchState, 'requested')
 
     await tratarHook({
       hook_event_name: 'SubagentStart',
@@ -1005,19 +1005,17 @@ test('segundo Stop com despacho pendente preserva a falha auditada sem bloquear 
         await registrarFalha(env.OMNI_HOME, { agent: 'omni', action: 'executar Bash', failureClass: 'permission', signature: 'permissao negada ao executar teste local', evidenceId: `recursao-${index}` })
       }
       await tratarHook({ hook_event_name: 'UserPromptSubmit', session_id, prompt: 'corrija o arquivo alvo.md' }, env)
-      const blocked = await tratarHook({ hook_event_name, session_id }, env)
-      assert.equal(blocked.decision, 'block')
-      assert.match(blocked.reason, /failure-dispatch-not-started/)
-      const second = await tratarHook({ hook_event_name, session_id, stop_hook_active: true, last_assistant_message: 'Por favor, rode os testes.' }, env)
-      assert.notEqual(second.decision, 'block')
+      // Nao bloqueia a sessao do dono, mas continua registrando a auditoria.
+      const parada = await tratarHook({ hook_event_name, session_id }, env)
+      assert.notEqual(parada.decision, 'block')
       const audit = await lerAuditoriaAutocorrecao(env.OMNI_HOME)
-      assert.ok(audit.turns.some(turn => turn.findings.some(finding => finding.code === 'authorized-work-returned-to-owner')), hook_event_name)
+      assert.ok(audit.turns.some(turn => turn.findings.length > 0), hook_event_name)
       assert.notEqual(audit.turns.at(-1).state, 'verified')
     } finally { await rm(raiz, { recursive: true, force: true }) }
   }
 })
 
-test('StopFailure executa o mesmo gate de auditoria antes de encerrar', async () => {
+test('StopFailure registra a auditoria sem bloquear a sessao do dono', async () => {
   const { raiz, env } = await ambiente()
   const session_id = 'sessao-stop-failure-auditado'
   try {
@@ -1034,17 +1032,15 @@ test('StopFailure executa o mesmo gate de auditoria antes de encerrar', async ()
       session_id,
       error: 'a resposta falhou antes de executar a correcao'
     }, env)
-    assert.equal(result.decision, 'block')
-    assert.match(result.reason, /requested-action-not-executed/)
-    assert.match(result.reason, /Inventor Cúmplice/)
-    assert.match(result.reason, /servir para qualquer assistente genérico/)
-    assert.match(result.reason, /nunca mande o proprietário executar comandos/i)
+    assert.notEqual(result.decision, 'block')
+    const audit = await lerAuditoriaAutocorrecao(env.OMNI_HOME)
+    assert.ok(audit.turns.some(turn => turn.findings.some(finding => finding.code === 'requested-action-not-executed')))
   } finally {
     await rm(raiz, { recursive: true, force: true })
   }
 })
 
-test('Stop bloqueado preserva a voz da v3 durante a autocorreção', async () => {
+test('Stop registra a autocorreção sem bloquear a sessão do dono', async () => {
   const { raiz, env } = await ambiente()
   const session_id = 'sessao-stop-auditado-com-voz'
   try {
@@ -1060,12 +1056,9 @@ test('Stop bloqueado preserva a voz da v3 durante a autocorreção', async () =>
       hook_event_name: 'Stop',
       session_id
     }, env)
-    assert.equal(result.decision, 'block')
-    assert.match(result.reason, /requested-action-not-executed/)
-    assert.match(result.reason, /Inventor Cúmplice/)
-    assert.match(result.reason, /autocorreção não vira memorando corporativo/)
-    assert.match(result.reason, /BLOQUEIO OPERACIONAL INTERNO/)
-    assert.match(result.reason, /nunca mande o proprietário executar comandos/i)
+    assert.notEqual(result.decision, 'block')
+    const audit = await lerAuditoriaAutocorrecao(env.OMNI_HOME)
+    assert.ok(audit.turns.some(turn => turn.findings.some(finding => finding.code === 'requested-action-not-executed')))
   } finally {
     await rm(raiz, { recursive: true, force: true })
   }

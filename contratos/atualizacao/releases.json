@@ -308,6 +308,17 @@
         "Solicitacoes reais de autoridade mostram efeito, alvo, limite e evidencia auditada; erros tecnicos recebem retry com intervalo, nao pedido generico de permissao.",
         "Auditoria distingue execucao inline opaca de mutacao comprovada; consulta diagnostico so conta como leitura na raiz canonica integra."
       ]
+    },
+    {
+      "version": "0.25.0",
+      "changes": [
+        "Fundacao da agenda: o primeiro pedido real de cada sessao vira objetivo da missao, e prazo e proxima acao sao capturados da conversa em pt-BR para o eixo de tempo.",
+        "Painel Agora no Desktop ranqueia o que exige atencao (atrasado, bloqueado, prazo perto, parado) com o motivo e a proxima acao ao lado.",
+        "Cracha organiza texto livre em acesso SSH/PostgreSQL, nomeia sozinho e grava no recebimento; prioriza PostgreSQL direto em servidor Windows.",
+        "Acao de executor delegado correlacionado passa a entrar no ledger de autocorrecao (fim do ponto cego de subagente).",
+        "Auto-correcao e auditoria de parada tornam-se consultivas: registram aprendizado sem bloquear a sessao do proprietario.",
+        "Contrato distingue plataforma de orquestracao (proibida) de registro do trabalho do proprietario (permitido); migration 005 adiciona prazo, agendamento e ultima movimentacao as missoes."
+      ]
     }
   ]
 }

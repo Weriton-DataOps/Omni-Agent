@@ -378,76 +378,17 @@ export async function tratarHook(input, env = process.env, { contextOnly = false
     )
   }
 
-  if (input.hook_event_name === 'Stop') {
-    const [inicioFalha, inicioMelhoria] = await Promise.all([
-      exigirInicioDespachoAntesDaParada(casa, {
-        sessionId: input.session_id,
-        stopHookActive: input.stop_hook_active === true
-      }),
-      exigirInicioDespachoMelhoriaAntesDaParada(casa, {
-        sessionId: input.session_id,
-        stopHookActive: input.stop_hook_active === true
-      })
+  // Auto-correcao proativa e auditoria de parada sao CONSULTIVAS para a sessao
+  // do proprietario: registram estado e aprendizado, mas nunca bloqueiam a
+  // parada. O despacho de correcao acontece por rota propria, sem sequestrar a
+  // conversa do dono. (owner-stop-nao-bloqueia)
+  if (input.hook_event_name === 'Stop' || input.hook_event_name === 'StopFailure') {
+    await Promise.allSettled([
+      exigirInicioDespachoAntesDaParada(casa, { sessionId: input.session_id, stopHookActive: input.stop_hook_active === true }),
+      exigirInicioDespachoMelhoriaAntesDaParada(casa, { sessionId: input.session_id, stopHookActive: input.stop_hook_active === true }),
+      auditarParada(casa, input),
+      observarParada(casa, input)
     ])
-    const bloqueiosInicio = [inicioFalha, inicioMelhoria].filter((item) => item.decision === 'block')
-    if (bloqueiosInicio.length > 0) {
-      return {
-        decision: 'block',
-        reason: await motivoDeBloqueioComPersonalidade(
-          casa,
-          bloqueiosInicio.map((item) => item.reason).join('\n')
-        )
-      }
-    }
-    if ([inicioFalha, inicioMelhoria].some((item) => item.result === 'pending-recursion')) {
-      await auditarParada(casa, { ...input, stop_hook_active: true })
-      await observarParada(casa, input)
-      return saidaVazia()
-    }
-    const auditoria = await auditarParada(casa, input)
-    if (auditoria.decision === 'block') {
-      return {
-        decision: 'block',
-        reason: await motivoDeBloqueioComPersonalidade(casa, auditoria.reason)
-      }
-    }
-    await observarParada(casa, input)
-    return saidaVazia()
-  }
-
-  if (input.hook_event_name === 'StopFailure') {
-    const [inicioFalha, inicioMelhoria] = await Promise.all([
-      exigirInicioDespachoAntesDaParada(casa, {
-        sessionId: input.session_id,
-        stopHookActive: input.stop_hook_active === true
-      }),
-      exigirInicioDespachoMelhoriaAntesDaParada(casa, {
-        sessionId: input.session_id,
-        stopHookActive: input.stop_hook_active === true
-      })
-    ])
-    const bloqueiosInicio = [inicioFalha, inicioMelhoria].filter((item) => item.decision === 'block')
-    if (bloqueiosInicio.length > 0) {
-      return {
-        decision: 'block',
-        reason: await motivoDeBloqueioComPersonalidade(
-          casa,
-          bloqueiosInicio.map((item) => item.reason).join('\n')
-        )
-      }
-    }
-    if ([inicioFalha, inicioMelhoria].some((item) => item.result === 'pending-recursion')) {
-      await auditarParada(casa, { ...input, stop_hook_active: true })
-      await observarParada(casa, input)
-      return saidaVazia()
-    }
-    const [auditoria] = await Promise.all([auditarParada(casa, input), observarParada(casa, input)])
-    if (auditoria.decision === 'block') {
-      return {
-        decision: 'block',
-        reason: await motivoDeBloqueioComPersonalidade(casa, auditoria.reason)
-      }
-    }
     return saidaVazia()
   }
 
