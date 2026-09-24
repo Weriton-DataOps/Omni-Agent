@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { organizeCredentialText } from '../src/main/credential-organizer'
+import { missingAccessHint, organizeCredentialText } from '../src/main/credential-organizer'
 import { privateExecutionSources } from '../src/main/private-execution-sources'
 
 // Credenciais exclusivamente fictícias.
@@ -81,4 +81,63 @@ test('o rótulo público nunca contém segredo', () => {
   const result = organizeCredentialText(`host: 192.168.110.7\nusuario: dados\nsenha: ${SSH_PASS}\ndw`)
   assert.ok(result)
   assert.equal(result.label.includes(SSH_PASS), false)
+})
+
+test('arquivo .env com chaves PG* vira acesso PostgreSQL direto', () => {
+  const result = organizeCredentialText(`# banco de leitura\nPGHOST=192.168.110.7\nPGPORT=5432\nPGUSER=leitor\nPGPASSWORD="${PG_PASS}"\nPGDATABASE=dw`)
+  assert.ok(result && result.kind === 'document')
+  assert.deepEqual(JSON.parse(result.json).credentials[0], { kind: 'database', engine: 'postgresql', host: '192.168.110.7', port: '5432', database: 'dw', username: 'leitor', password: PG_PASS })
+})
+
+test('arquivo .env com SSH_* e tarefa de banco vira SSH + PostgreSQL via sudo', () => {
+  const result = organizeCredentialText(`SSH_HOST=192.168.110.7\nSSH_USER=dados\nSSH_PASSWORD=${SSH_PASS}`, 'medir atualização\npostgres')
+  assert.ok(result && result.kind === 'document')
+  const value = JSON.parse(result.json)
+  assert.equal(value.ssh.host, '192.168.110.7')
+  assert.equal(value.ssh.password, SSH_PASS)
+  assert.equal(value.mode, 'sudo-postgres')
+})
+
+test('.env com URL de conexão fica para o parser (rota própria de URI)', () => {
+  assert.equal(organizeCredentialText(`DATABASE_URL=postgresql://leitor:${PG_PASS}@192.168.110.7:5432/dw\nOUTRA=1`), null)
+})
+
+test('host que só veio na mensagem completa o anexo que trouxe usuário e senha', () => {
+  const result = organizeCredentialText(`usuário: dados\nsenha: ${SSH_PASS}`, 'segue acesso ssh do servidor 192.168.110.7')
+  assert.ok(result)
+  const token = result.kind === 'registration' ? JSON.parse(result.registration.token) : JSON.parse(result.json).ssh
+  assert.equal(token.host, '192.168.110.7')
+  assert.equal(token.username, 'dados')
+  assert.equal(token.password, SSH_PASS)
+})
+
+test('colagem sem rótulo, usuário e senha em duas linhas, usa o host do contexto', () => {
+  const two = organizeCredentialText(`dados\n${SSH_PASS}`, 'acesso ssh em 192.168.110.7, banco de dados postgres')
+  assert.ok(two && two.kind === 'document')
+  assert.deepEqual([JSON.parse(two.json).ssh.host, JSON.parse(two.json).ssh.username, JSON.parse(two.json).ssh.password], ['192.168.110.7', 'dados', SSH_PASS])
+})
+
+test('sem host completo, colagem solta não vira palpite', () => {
+  assert.equal(organizeCredentialText(`dados\n${SSH_PASS}`, 'segue acesso ssh no .7'), null)
+})
+
+test('a mensagem nunca fornece senha, só localizador', () => {
+  assert.equal(organizeCredentialText('usuário: dados', `ssh 192.168.110.7 senha: ${SSH_PASS}`), null)
+})
+
+test('quando o acesso SSH não fecha, a dica diz o que falta — nunca pergunta por token', () => {
+  const hint = missingAccessHint('valor1 valor2\nvalor3 valor4', 'segue acesso ssh no .7')
+  assert.ok(hint)
+  assert.match(hint, /SSH/)
+  assert.match(hint, /endereço completo/)
+  assert.doesNotMatch(hint, /token/i)
+  assert.equal(hint.includes('valor'), false)
+  // Com host no contexto, só falta usuário e senha.
+  assert.doesNotMatch(missingAccessHint('valor1 valor2', 'ssh em 192.168.110.7')!, /endereço/)
+})
+
+test('dica não intercepta JSON, URI nem login de banco financeiro', () => {
+  assert.equal(missingAccessHint('{"ssh":{}}', 'ssh'), null)
+  assert.equal(missingAccessHint(`postgresql://a:${PG_PASS}@h/db`, 'postgres'), null)
+  assert.equal(missingAccessHint('usuário: fulano\nsenha: x', 'acesso do banco do Brasil'), null)
 })

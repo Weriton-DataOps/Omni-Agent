@@ -138,7 +138,7 @@ export class Controller {
       badgeRestoreAttachment: (...args) => this.credentialIntake.restoreAttachment(...args),
       badgeReuseAttachment: (...args) => this.credentialIntake.reuseAttachment(...args),
       badgeAttachment: async (conversationId, turnId) => turnId ? this.credentialIntake.attachmentContext(conversationId, turnId) : '',
-      badgeCommitAttachment: async (conversationId, turnId) => this.credentialIntake.commitAttachment(conversationId, turnId),
+      badgeCommitAttachment: async (conversationId, turnId, context) => this.credentialIntake.commitAttachment(conversationId, turnId, context),
       badgeExecutorBrief: (conversationId, turnId, session) => this.executorBrief(conversationId, turnId, session),
       badgeSources: conversationId => this.credentialIntake.catalogSources(conversationId),
       badgeSourceStatus: () => this.credentialIntake.inventoryStatus,
@@ -153,13 +153,16 @@ export class Controller {
     const action = validatePrivateAction(turn.plan.privateAccess)!
     if (!this.credentialIntake.sourceIsBound(conversationId, turnId, action.sourceTurnId!)) throw new PrivateAccessInputError('O acesso escolhido não está vinculado a este pedido; nenhum acesso foi usado.')
     validatePrivateActionContext(action, turn.text, [action.sourceTurnId!])
+    // O que o anexo não trouxe vem do pedido público e da instrução do Omni (ex.: ".7" já
+    // escrito por extenso no briefing). Só host/porta/banco; segredo continua só no anexo.
+    const context = [turn.text, turn.plan?.instruction ?? '', action.operations?.some(operation => operation.startsWith('postgres.')) ? 'postgres' : ''].filter(Boolean).join('\n')
     if (action.persist !== false) {
-      const stored = await this.credentialIntake.commitAttachment(conversationId, turnId)
+      const stored = await this.credentialIntake.commitAttachment(conversationId, turnId, context)
       if (!['saved', 'pending'].includes(stored.state)) throw new PrivateAccessInputError(stored.message)
       c.events.push({ at: now(), turnId, kind: 'private-access', text: stored.message })
       await this.store.save()
     }
-    const { accesses, unsupported } = await this.credentialIntake.executorSources(conversationId, turnId)
+    const { accesses, unsupported } = await this.credentialIntake.executorSources(conversationId, turnId, context)
     if (!accesses.length) return 'CRACHÁ: contexto recebido, mas nenhum acesso tem adaptador executável compatível. A ponte atual oferece PostgreSQL: catálogo e atualização dos dados. Não houve conexão nem teste; o estado do cadastro está no recibo do Crachá. Informe qual operação falta; não procure nem peça segredos no chat.'
     const client = await (this.dependencies.executionBroker || this.dependencies.getBroker)()
     if (typeof client.executionCapabilities !== 'function' || !(await client.executionCapabilities()).includes('postgres.catalog')) throw new Error('O broker em execução ainda não oferece a ponte privada.')

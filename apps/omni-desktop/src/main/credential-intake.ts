@@ -3,7 +3,7 @@ import { readFile, realpath, stat } from 'node:fs/promises'
 import { isAbsolute, extname } from 'node:path'
 import type { CredentialDraft, CredentialInventoryItem, CredentialReceipt, CredentialRegistrationInput, CredentialSaved, CredentialVerification, PrivateCredentialDocumentInspection, PrivateCredentialAttachment } from '../shared/contracts'
 import { parseCredential } from './credential-parser'
-import { organizeCredentialText } from './credential-organizer'
+import { missingAccessHint, organizeCredentialText } from './credential-organizer'
 import { privateExecutionSources } from './private-execution-sources'
 import type { PrivateContextPersistence, PrivateContextRecord } from './private-context-store'
 import type { ExecutorAccess } from './executor-access'
@@ -136,7 +136,8 @@ export class CredentialIntake {
     const text = this.attachment(conversationId)
     return text ? { id: this.attachmentIds.get(conversationId) || this.record(conversationId)!.id, size: Buffer.byteLength(text, 'utf8') } : null
   }
-  async executorSources(conversationId: string, turnId: string) {
+  /** `context` = texto público do pedido e da instrução; só fornece host/porta/banco, nunca segredo. */
+  async executorSources(conversationId: string, turnId: string, context = '') {
     const saved = this.record(conversationId, turnId)
     if (saved?.credentialIds?.length && saved.raw === null && !saved.accesses?.length) return { accesses: [], unsupported: saved.credentialIds.length }
     if (saved?.accesses?.length) {
@@ -150,7 +151,7 @@ export class CredentialIntake {
     }
     const raw = this.attachment(conversationId, turnId)
     if (!raw) throw new Error('O contexto privado deste pedido expirou. Anexe novamente pelo Crachá.')
-    const organized = organizeCredentialText(raw)
+    const organized = organizeCredentialText(raw, context)
     return privateExecutionSources(organized?.kind === 'document' ? organized.json : raw, async id => (await this.getBroker()).findLatestCredential(id))
   }
   claimAttachment(conversationId: string, turnId: string, expectedId?: string): PrivateCredentialAttachment | null {
@@ -256,12 +257,12 @@ export class CredentialIntake {
    * attachment into the existing guarded Crachá lifecycle. Staging never calls
    * this method; it is the explicit boundary between "discuss" and "act".
    */
-  async commitAttachment(conversationId: string, turnId?: string): Promise<AttachmentCommit> {
+  async commitAttachment(conversationId: string, turnId?: string, context = ''): Promise<AttachmentCommit> {
     this.attachmentOperations++
-    try { return await this.commitPrivateAttachment(conversationId, turnId) }
+    try { return await this.commitPrivateAttachment(conversationId, turnId, context) }
     finally { this.attachmentOperations-- }
   }
-  private async commitPrivateAttachment(conversationId: string, turnId?: string): Promise<AttachmentCommit> {
+  private async commitPrivateAttachment(conversationId: string, turnId?: string, context = ''): Promise<AttachmentCommit> {
     let record = this.record(conversationId, turnId)
     if (record?.credentialIds?.length && record.raw === null) return { state: 'pending', credentialIds: record.credentialIds, message: 'O acesso já está cadastrado e vinculado à tarefa. Nenhum teste de conexão foi feito nesta solicitação.' }
     const raw = this.attachment(conversationId, turnId)
@@ -272,9 +273,15 @@ export class CredentialIntake {
     let generic: CredentialRegistrationInput | undefined
     try {
       // O proprietário cola texto livre; o Omni organiza localmente antes de cadastrar.
-      const organized = organizeCredentialText(raw)
+      const organized = organizeCredentialText(raw, context)
       if (organized?.kind === 'registration') generic = organized.registration
-      else accesses = (await privateExecutionSources(organized?.kind === 'document' ? organized.json : raw, id => broker.findLatestCredential(id))).accesses
+      else if (organized) accesses = (await privateExecutionSources(organized.json, id => broker.findLatestCredential(id))).accesses
+      else {
+        // SSH/PostgreSQL que não fechou: diz o que falta em vez de tratar como token.
+        const hint = missingAccessHint(raw, context)
+        if (hint) return { state: 'needs-input', message: hint }
+        accesses = (await privateExecutionSources(raw, id => broker.findLatestCredential(id))).accesses
+      }
       if (!accesses.length && !generic) {
         const parsed = parseCredential(raw, new Date(this.clock()), { autoName: true })
         if (parsed.missing.length) return { state: 'needs-input', message: parsed.missing.join(' ') }

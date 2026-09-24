@@ -32,7 +32,7 @@ export interface CoordinationPorts {
   badgeRestoreAttachment?(conversationId: string, turnId: string): void;
   badgeReuseAttachment?(conversationId: string, turnId: string, previousTurnId: string): PrivateCredentialAttachment | null;
   badgeAttachment?(conversationId: string, turnId?: string): Promise<string>;
-  badgeCommitAttachment?(conversationId: string, turnId?: string): Promise<AttachmentCommit>;
+  badgeCommitAttachment?(conversationId: string, turnId?: string, context?: string): Promise<AttachmentCommit>;
   badgeExecutorBrief?(conversationId: string, turnId: string, session: EditorSession): Promise<string>;
   badgeRevokeTask?(taskId: string): void;
 }
@@ -161,7 +161,7 @@ export class Coordinator {
     // organiza e cadastra sem esperar pedido. Cadastro não prova conexão.
     if (turn.privateAttachment && this.ports.badgeCommitAttachment) {
       try {
-        const stored = await this.ports.badgeCommitAttachment(c.id, turn.id)
+        const stored = await this.ports.badgeCommitAttachment(c.id, turn.id, turn.text)
         const status = ['saved', 'pending'].includes(stored.state) ? 'stored' : 'needs-input'
         turn.privateAttachment.status = status
         const owner = c.messages.find(message => message.id === turn.id)
@@ -213,7 +213,7 @@ export class Coordinator {
     if (schema === planSchema) prompt += '\n\nPara pedido sobre o Crachá, pense antes de responder: diferencie consulta de metadados de intenção de importar, salvar, testar ou usar material. Caminho de arquivo, JSON, certificado, chave ou “isso” pode apontar para material novo: nunca trate como busca de cadastro existente, nunca alegue que leu o arquivo apenas pelo caminho e oriente o uso do anexo privado Crachá para recebê-lo.'
     if (schema === planSchema) prompt += '\n\nO painel Crachá aceita texto privado e também possui o botão “Selecionar JSON”. Se o proprietário tiver um JSON, diga explicitamente para abrir Crachá neste card e clicar em “Selecionar JSON”; não diga “anexe”, não peça para colar um caminho de Downloads no chat e não sugira uma opção que não exista na interface.'
     for (const key of ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'OPENAI_API_KEY', 'CLAUDECODE', 'ELECTRON_RUN_AS_NODE']) delete env[key]
-    prompt += `\n\nCAPACIDADES REAIS DO CRACHÁ (implementação local; prevalece sobre relatos anteriores): ${JSON.stringify(privateAccessCapabilities)}. Quando o proprietário autorizar usar um anexo privado para executar uma tarefa, encaminhe ao executor: o runtime acrescenta o cliente real da ponte ao briefing, por referência temporária. PostgreSQL oferece catálogo paginado e medição de atualização por coluna temporal; o executor escolhe os nomes reais pelo catálogo. A ponte também abre canal SSH e executa psql DENTRO do servidor, usando senha privada ou sudo -n -u postgres com a permissão já existente; não depende de liberar conexão PostgreSQL remota no pg_hba. O par SSH/banco precisa corresponder ao mesmo destino; known_hosts ou fingerprint do Crachá confirma a identidade SSH. Não diga que falta construir a ponte SSH, que só resta colar senha ou que o cofre não consegue usar acessos. Referência emitida não confirma conexão: somente o recibo da chamada prova uso. SQL livre, shell arbitrário e escrita não são oferecidos por estes adaptadores; informe uma operação específica ausente sem inventar capacidade. Anexo recebido não é cadastro no cofre. Sem recibo de cadastro, teste ou uso, não anuncie essas operações como feitas. Anexar por si só não autoriza testar ou cadastrar. Se a finalidade já veio na mensagem, não pergunte novamente. Ao cadastrar um acesso SSH ou PostgreSQL, peça só o mínimo irredutível — host, usuário e senha ou chave; porta, nome do banco, fingerprint e o modo (senha do banco ou sudo -n -u postgres) têm padrão e o Omni completa, então não os exija nem transforme a coleta numa lista de formulário. O que não vier, complete pelo padrão e pelo contexto, e organize o texto colado sem devolver um checklist ao proprietário.`
+    prompt += `\n\nCAPACIDADES REAIS DO CRACHÁ (implementação local; prevalece sobre relatos anteriores): ${JSON.stringify(privateAccessCapabilities)}. Quando o proprietário autorizar usar um anexo privado para executar uma tarefa, encaminhe ao executor: o runtime acrescenta o cliente real da ponte ao briefing, por referência temporária. PostgreSQL oferece catálogo paginado e medição de atualização por coluna temporal; o executor escolhe os nomes reais pelo catálogo. A ponte também abre canal SSH e executa psql DENTRO do servidor, usando senha privada ou sudo -n -u postgres com a permissão já existente; não depende de liberar conexão PostgreSQL remota no pg_hba. O par SSH/banco precisa corresponder ao mesmo destino; known_hosts ou fingerprint do Crachá confirma a identidade SSH. Não diga que falta construir a ponte SSH, que só resta colar senha ou que o cofre não consegue usar acessos. Referência emitida não confirma conexão: somente o recibo da chamada prova uso. SQL livre, shell arbitrário e escrita não são oferecidos por estes adaptadores; informe uma operação específica ausente sem inventar capacidade. Anexo recebido não é cadastro no cofre. Sem recibo de cadastro, teste ou uso, não anuncie essas operações como feitas. Anexar por si só não autoriza testar ou cadastrar. Se a finalidade já veio na mensagem, não pergunte novamente. Ao cadastrar um acesso SSH ou PostgreSQL, peça só o mínimo irredutível — host, usuário e senha ou chave; porta, nome do banco, fingerprint e o modo (senha do banco ou sudo -n -u postgres) têm padrão e o Omni completa, então não os exija nem transforme a coleta numa lista de formulário. O que não vier, complete pelo padrão e pelo contexto, e organize o texto colado sem devolver um checklist ao proprietário. O Crachá lê a mensagem do proprietário e a sua instruction para completar host, porta e banco que o anexo não trouxe: se o destino vier abreviado (ex.: “.7”) e o contexto confirmar o endereço completo, escreva-o por extenso na instruction; nunca invente endereço. Arquivo .env ou KEY=VALUE também é aceito. Acesso já cadastrado para o mesmo destino é reutilizado: selecione-o como fonte em vez de pedir as credenciais de novo. Se o Crachá não fechar o acesso, a tarefa não é enviada; diga exatamente o que faltou.`
     const options: Options = {
       cwd: c.workspace, pathToClaudeCodeExecutable: await this.ports.executable(), env,
       tools: [], mcpServers: {}, strictMcpConfig: true, settingSources: [], permissionMode: 'default',
@@ -394,7 +394,7 @@ export class Coordinator {
           } else if (plan.privateAccess?.action === 'store') {
             try {
               if (!this.ports.badgeCommitAttachment) throw new Error('unavailable')
-              const result = await this.ports.badgeCommitAttachment(c.id, turn.id)
+              const result = await this.ports.badgeCommitAttachment(c.id, turn.id, [turn.text, plan.instruction ?? ''].join('\n'))
               privateResult = JSON.stringify(result)
               privateStatus(['saved', 'pending'].includes(result.state) ? 'stored' : 'needs-input')
             } catch { privateStatus('failed'); privateResult = JSON.stringify({ action: 'store', outcome: 'failed', note: 'Não há confirmação de gravação.' }) }
@@ -449,7 +449,7 @@ const reply = await this.model(c, `Responda diretamente à mensagem atual como O
           privateStatus('considered')
           turn.state = 'done'
         } catch (error) {
-          if (!['unavailable', 'stored'].includes(turn.privateAttachment?.status ?? '')) privateStatus('failed')
+          if (!['unavailable', 'stored', 'needs-input'].includes(turn.privateAttachment?.status ?? '')) privateStatus('failed')
           const response = c.messages.find(message => message.id === responseId)
           if (response) response.streaming = false
           turn.state = 'failed'; turn.error = String((error as Error).message).slice(0, 500)
@@ -487,25 +487,27 @@ const reply = await this.model(c, `Responda diretamente à mensagem atual como O
       await this.store.save(); this.emit()
       return { kind: 'project', conversationId: target.id, sessionId: session.sessionId, requestId: existing.id, title: session.name, state: existing.status }
     }
+    // Tarefa que depende do Crachá só sai com o acesso preparado. Sem isso, nada é
+    // enviado: mandar a sessão medir um banco sem acesso é despacho que já nasce falho.
+    let privateBrief = ''
+    if (turn.privateAttachment && turn.plan?.privateAccess?.action === 'use' && this.ports.badgeExecutorBrief) {
+      try { privateBrief = await this.ports.badgeExecutorBrief(origin.id, turn.id, session) }
+      catch (error) {
+        const reason = error instanceof PrivateAccessInputError ? error.message : 'O broker privado não ficou disponível nesta rodada.'
+        turn.privateAttachment.status = error instanceof PrivateAccessInputError ? 'needs-input' : 'access-failed'
+        const owner = origin.messages.find(message => message.id === turn.id)
+        if (owner?.privateAttachment) owner.privateAttachment.status = turn.privateAttachment.status
+        origin.events.push({ at: now(), turnId: turn.id, kind: 'private-access', text: reason })
+        throw new PrivateAccessInputError(`A tarefa não foi enviada à sessão porque o acesso do Crachá não ficou pronto. ${reason}`)
+      }
+    }
     const attachmentContext = await attachmentPrompt(this.store.directory, origin.id, turn.attachments)
     const request: EditorRequest = { id: turn.id, text: turn.plan!.instruction!, at: now(), status: 'sending', originConversationId: origin.id, deliveryConversationId: target.id, targetSessionId: session.sessionId, targetName: session.name, ...(turn.attachments?.length ? { attachments: turn.attachments, attachmentConversationId: origin.id } : {}), supervision: supervision || { objective: turn.text, executionBrief: turn.plan!.instruction!, retries: 0, state: 'executing' }, ...(followupOf ? { followupOf } : {}) }
     target.editorRequests = [...(target.editorRequests || []), request]
     this.store.projectEditorRequest(target, request)
     await this.store.save(); this.emit()
     const abort = new AbortController(); this.active.set(`relay:${request.id}`, abort)
-    // The grant is never stored in the public request. Delivery cannot run until it is ready.
-    let privateBrief = ''
-    if (turn.privateAttachment && turn.plan?.privateAccess?.action === 'use' && this.ports.badgeExecutorBrief) {
-      try { privateBrief = await this.ports.badgeExecutorBrief(origin.id, turn.id, session) }
-      catch (error) {
-        const reason = error instanceof PrivateAccessInputError ? error.message : 'O broker privado não ficou disponível nesta rodada.'
-        privateBrief = `CRACHÁ: a ponte está implementada, mas o acesso deste pedido não foi preparado. ${reason} Não houve uso. Não procure senhas no projeto nem peça para colar no chat; o complemento é feito no Crachá. Continue somente o trabalho independente desse acesso.`
-        turn.privateAttachment.status = error instanceof PrivateAccessInputError ? 'needs-input' : 'access-failed'
-        const owner = origin.messages.find(message => message.id === turn.id)
-        if (owner?.privateAttachment) owner.privateAttachment.status = turn.privateAttachment.status
-        origin.events.push({ at: now(), turnId: turn.id, kind: 'private-access', text: reason })
-      }
-    }
+    // The grant is never stored in the public request; it was prepared above, before any send.
     void this.ports.relay(session, [request.text, attachmentContext, privateBrief].filter(Boolean).join('\n\n'), request.id, abort).then(() => { if (request.status === 'sending') request.status = 'sent' }).catch(error => {
       this.ports.badgeRevokeTask?.(request.id)
       if (request.status === 'sending') request.status = 'uncertain'
