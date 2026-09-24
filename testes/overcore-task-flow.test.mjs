@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import test from 'node:test'
 import { NodeDocumentFingerprinter } from '../dist/adapters/node/node-document-fingerprinter.js'
 import { buildHookTurnContext } from '../dist/application/build-turn-context/build-hook-context.js'
-import { executarFluxoOvercore, contextoFluxosOvercore, observarFluxosOvercore } from '../runtime/overcore-task-flow.mjs'
+import { executarFluxoOvercore, contextoFluxosOvercore, observarFluxosOvercore, notificacaoFluxoOvercore } from '../runtime/overcore-task-flow.mjs'
 
 test('configuração privada, contexto por turno e observação retomam a mesma tarefa sem executar a fila', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'omni-flow-runtime-'))
@@ -36,6 +36,9 @@ test('configuração privada, contexto por turno e observação retomam a mesma 
     assert.equal(await contextoFluxosOvercore(directory, session, env, 'Bom dia, vamos conversar.'), null)
     assert.match(await contextoFluxosOvercore(directory, session, env, 'Peça ao Overcore uma inspeção.'), /PORTA DE TAREFAS/)
     const flow = await executarFluxoOvercore(directory, session, { operation: 'prepare', input: { objective: 'Inspecionar alvo declarado.', context: {}, discoveryAuthority: {}, availableExecutionAuthority: {} } }, 'turn-runtime-one', env)
+    assert.equal(flow.notification.ownerUpdate,'report-change')
+    const repeated=await executarFluxoOvercore(directory,session,{operation:'follow',flowId:flow.flowId},null,env)
+    assert.equal(repeated.notification.ownerUpdate,'silent')
     const context = await contextoFluxosOvercore(directory, session, env)
     const assembled = buildHookTurnContext({ persona: null, projection: '', externalTasks: context + '\n' + 'Excesso auxiliar.'.repeat(1500) })
     assert.ok(assembled.characters <= 9500)
@@ -54,4 +57,13 @@ test('configuração privada, contexto por turno e observação retomam a mesma 
     await new Promise(resolve => server.close(resolve))
     await rm(directory, { recursive: true, force: true })
   }
+})
+
+test('acompanhamento silencia horário/contador e sinaliza decisão ou resultado novo', () => {
+  const running={taskId:'task-one',status:'running',checkedAt:'before',decisions:[]}
+  assert.equal(notificacaoFluxoOvercore(running,{...running,checkedAt:'after',poll:9}).changed,false)
+  const terminal={...running,status:'succeeded',result:{resultId:'result-one'}}
+  assert.equal(notificacaoFluxoOvercore(running,terminal).changed,true)
+  assert.equal(notificacaoFluxoOvercore(terminal,{...terminal,checkedAt:'later'}).ownerUpdate,'silent')
+  assert.equal(notificacaoFluxoOvercore(running,{...running,status:'blocked',decisions:[{decisionId:'need-owner'}]}).changed,true)
 })

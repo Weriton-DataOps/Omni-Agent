@@ -79,3 +79,26 @@ Timeout: repita a mesma ação/entrada ou `follow`, nunca gere outra chave para 
 O Desktop observa tarefas admitidas e apresenta retornos no chat de origem. No plugin, a sessão usa
 `follow` durante o acompanhamento e ao retomar; o hook não executa tarefas nem abre polling infinito.
 O estado corrente vem do Overcore; o arquivo local é só vínculo/cache recuperável, fora do Git.
+
+## Acompanhamento sem ruído e prova operacional
+
+`follow` devolve `notification.changed` e `notification.ownerUpdate`. Quando for `silent`,
+continue observando sem narrar cada consulta. O monitor emite somente mudanças de estado,
+decisões, falhas ou resultado; horário da consulta e contador de polling não são novidade.
+Use um único acompanhamento por fluxo e encerre-o no estado terminal. Se o proprietário
+pedir status, responda com o estado observado, mesmo que não tenha mudado.
+
+Na inspeção não recursiva, o critério operacional suportado é:
+`Nenhum arquivo diretamente na pasta inspecionada foi criado, alterado ou removido durante a execução.`
+O Overcore comprova esse critério com snapshots e telemetria, não com a palavra do modelo.
+Mantenha a restrição de leitura; não retire o critério para obter sucesso. A prova cobre
+entradas diretas da pasta, não alterações internas em subpastas nem outros projetos.
+
+## Versão desta sessão
+
+A marca `<omni-runtime-carregado>` do hook informa versão, integridade e momento da observação
+da raiz realmente executada neste turno. É distinta da versão instalada e da invocação manual
+de um operador. O registro por sessão fica em `runtime/loaded-sessions/<sha256-da-sessao>.json`.
+Sem essa marca/readback, diga que a carga é desconhecida: ausência de SessionStart novo ou
+datas do cache não provam, sozinhas, uma versão antiga. Após recarregar o host e retomar a
+mesma conversa, confira a próxima marca. Isso não exige descartar o histórico da conversa.

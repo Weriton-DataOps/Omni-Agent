@@ -267,7 +267,8 @@ test('hook injeta contexto por turno e reativa escopos opt-in no início da sess
   assert.ok(hooks.hooks.Stop)
   assert.ok(hooks.hooks.TaskCompleted)
   assert.ok(hooks.hooks.SessionEnd)
-  const command = hooks.hooks.UserPromptSubmit[0].hooks[0]
+  const command = hooks.hooks.UserPromptSubmit[0].hooks.find(hook => hook.args?.[0]?.endsWith('hook-contexto.mjs'))
+  assert.ok(hooks.hooks.UserPromptSubmit[0].hooks.some(hook => hook.args?.[0]?.endsWith('hook-release-loaded.mjs')))
   assert.equal(command.type, 'command')
   assert.equal(command.command, 'node')
   assert.deepEqual(command.args, ['${CLAUDE_PLUGIN_ROOT}/runtime/hook-contexto.mjs'])

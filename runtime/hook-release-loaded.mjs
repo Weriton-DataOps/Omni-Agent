@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 
 import { casaDoOmni } from './memoria.mjs'
 import { confirmarReleasesCarregadas } from './release-autonoma.mjs'
+import { observarRuntimeCarregado, contextoRuntimeCarregado } from './release-session.mjs'
 
 const PLUGIN_ROOT = dirname(dirname(fileURLToPath(import.meta.url)))
 
@@ -12,8 +13,11 @@ function hash(value) {
 }
 
 export async function tratarHookReleaseLoaded(input, env = process.env, deps = {}) {
-  if (input?.hook_event_name !== 'SessionStart') return { suppressOutput: true }
+  if (!['SessionStart', 'UserPromptSubmit'].includes(input?.hook_event_name)) return { suppressOutput: true }
   const casa = (deps.casaDoOmni ?? casaDoOmni)(env)
+  const loaded = await observarRuntimeCarregado(input, casa, deps.pluginRoot ?? PLUGIN_ROOT, deps.observationDeps)
+  const identity = loaded ? { loadedPlugin: loaded, hookSpecificOutput: { hookEventName: input.hook_event_name, additionalContext: contextoRuntimeCarregado(loaded) } } : {}
+  if (input.hook_event_name === 'UserPromptSubmit') return { suppressOutput: true, ...identity }
   const result = await (deps.confirmarReleasesCarregadas ?? confirmarReleasesCarregadas)({
     casa,
     pluginRoot: deps.pluginRoot ?? PLUGIN_ROOT,
@@ -21,6 +25,7 @@ export async function tratarHookReleaseLoaded(input, env = process.env, deps = {
   })
   return {
     suppressOutput: true,
+    ...identity,
     handshake: result.result,
     confirmed: result.confirmed,
     evidenceFingerprint: hash(JSON.stringify({
