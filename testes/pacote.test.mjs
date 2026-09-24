@@ -356,7 +356,7 @@ test('a v2 permanece histórica e fora do alvo da suíte ativa', async () => {
   assert.match(candidate, /PERSONALIDADE omni-persona-v2-candidate/)
 })
 
-test('contexto ativo não carrega nomes ou caminhos estranhos ao Omni', async () => {
+test('contexto mantém produtos separados e permite apenas a porta externa acordada', async () => {
   const invariants = JSON.parse(await readFile(file('contratos/arquitetura/invariantes.json'), 'utf8'))
   const activeFiles = [
     'skills/omni/SKILL.md',
@@ -379,12 +379,17 @@ test('contexto ativo não carrega nomes ou caminhos estranhos ao Omni', async ()
     ]
   ).join('\n').toLowerCase()
   const forbidden = [
-    ['over', 'core'].join(''),
     ['ora', 'cle'].join(''),
     ['over', 'core', ' studio'].join(''),
     ['omni', '-pessoal'].join('')
   ]
   for (const name of forbidden) assert.equal(active.includes(name), false, `referência ativa indevida: ${name}`)
+  // Integração explícita não incorpora o ambiente externo à identidade do Omni.
+  const boundaryFiles = new Set(['skills/omni/SKILL.md', 'runtime/cli.mjs', 'runtime/hook-contexto.mjs'])
+  for (const path of activeFiles.filter(path => !boundaryFiles.has(path))) {
+    assert.doesNotMatch(await readFile(file(path), 'utf8'), /overcore/i, `produto externo fora da borda: ${path}`)
+  }
+  assert.doesNotMatch(JSON.stringify(invariants.operationalRole.promptRules), /overcore/i)
 })
 
 test('skill começa em pt-BR e descreve ação, delegação e proteção técnica', async () => {

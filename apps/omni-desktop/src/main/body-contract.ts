@@ -70,7 +70,18 @@ export function bodyContext(contract: BodyContract, conversation: Conversation, 
   const payload = {
     body: contract.identity, currentSurface: kindLabel[conversation.kind], conversation: { id: conversation.id, kind: conversation.kind, linkedVsCodeSession: conversation.sessionId !== null, workspace: conversation.workspace, editorOnline: conversation.editorOnline ?? null },
     capabilities: contract.surfaces.map(surface => ({ id: surface.id, purpose: surface.purpose, actions: surface.actions })),
-    state: { voiceAvailable: state.voice, activities: visible, requests, activityCount: relevant.length, requestCount: conversation.editorRequests?.length || 0 }, routing: contract.routing, guardrails: contract.guardrails
+    state: {
+      voiceAvailable: state.voice,
+      durableMemory: {
+        postgresql: 'local via broker',
+        broker: state.broker,
+        secretBoundary: 'senhas admin/runtime: cofre do Windows, nunca Crachá/chat'
+      },
+      activities: visible,
+      requests,
+      activityCount: relevant.length,
+      requestCount: conversation.editorRequests?.length || 0
+    }, routing: contract.routing, guardrails: contract.guardrails
   }
   const project = () => `CORPO DO OMNI DESKTOP (contrato ${contract.contract}; estado tipado desta rodada):\n${JSON.stringify(payload)}`
   let text = project()

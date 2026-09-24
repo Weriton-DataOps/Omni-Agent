@@ -22,6 +22,8 @@ $taskStatus = Join-Path $taskInstallRoot 'broker-status.json'
 
 [IO.Directory]::CreateDirectory($taskInstallRoot) | Out-Null
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'omni-access-broker.ps1') -Destination $taskBroker -Force
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'omni-credential-verification.ps1') -Destination $taskInstallRoot -Force
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'omni-credential-execution.ps1') -Destination $taskInstallRoot -Force
 & (Join-Path $PSScriptRoot 'protect-omni-access-broker-credential.ps1') -RuntimeCredentialTarget $RuntimeCredentialTarget -OutputFile $taskCredential | Out-Null
 
 $taskAction = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$taskBroker`" -PipeName $PipeName -AllowedClientSid $AllowedClientSid -ProtectedCredentialFile `"$taskCredential`" -ReportPath `"$taskStatus`" -InstalledService"

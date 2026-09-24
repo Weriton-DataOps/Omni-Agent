@@ -533,7 +533,17 @@ export function createBuildTurnContext(sources: TurnContextSources) {
       shortcuts: shortcutItems,
       memories: deepMemories
     }
-    await sources.recordMemoryUsage(home, selectedDeep.map((entry) => entry.memory.id))
+    const projections = {
+      fast: projectContext({ path: 'fast', policy, rules, continuity: continuity.fast, capabilities: fastCapabilities, shortcuts: fastShortcuts, memories: fastMemories, signature: sources.shortHash }),
+      deep: projectContext({ path: 'deep', policy, rules, continuity: continuity.deep, capabilities: deepCapabilities, shortcuts: shortcutItems, memories: deepMemories, signature: sources.shortHash })
+    }
+    const applied = {
+      fast: selectedFast.filter(entry => projections.fast.selected.includes(entry.memory.id)),
+      deep: selectedDeep.filter(entry => projections.deep.selected.includes(entry.memory.id))
+    }
+    // Count only the memories actually delivered, not the larger hypothetical
+    // deep ranking. Otherwise frequency becomes a self-reinforcing false signal.
+    await sources.recordMemoryUsage(home, applied[routing.selected].map((entry) => entry.memory.id))
     await sources.recordShortcutUsage(home, relevantShortcuts.map((item) => item.id))
     return {
       schemaVersion: 4,
@@ -560,23 +570,13 @@ export function createBuildTurnContext(sources: TurnContextSources) {
         considered: retrieval.considered,
         eligible: retrieval.eligible,
         excluded: retrieval.excluded,
+        applied: { fast: applied.fast.map(diagnostic), deep: applied.deep.map(diagnostic) },
         selected: {
           fast: selectedFast.map(diagnostic),
           deep: selectedDeep.map(diagnostic)
         }
       },
-      projections: {
-        fast: projectContext({
-          path: 'fast', policy, rules, continuity: continuity.fast,
-          capabilities: fastCapabilities, shortcuts: fastShortcuts, memories: fastMemories,
-          signature: sources.shortHash
-        }),
-        deep: projectContext({
-          path: 'deep', policy, rules, continuity: continuity.deep,
-          capabilities: deepCapabilities, shortcuts: shortcutItems, memories: deepMemories,
-          signature: sources.shortHash
-        })
-      }
+      projections
     }
   }
 }

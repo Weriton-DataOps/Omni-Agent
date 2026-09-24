@@ -100,6 +100,16 @@ canais de interface permanecem independentes até seus próprios contratos serem
 
 ## Fechamento do ciclo
 
+### Trabalho solicitado ao Overcore
+
+O cliente está no operador `overcore`, compartilhado com o Desktop. Ao receber pedido dirigido a
+esse ambiente, use a porta em vez de abrir uma execução local equivalente. Consulte
+`references/overcore-task-flow.md` para o formato. O hook recupera os vínculos da sessão a cada turno.
+Apresente todas as decisões do Preflight em um pacote, incorpore as escolhas reais do proprietário
+na revisão e continue o mesmo `flowId`. A porta gera fingerprints e IDs; não os invente.
+Uma pergunta sobre arquitetura não é ordem de execução. Mantenha outras sessões no destino original.
+
+
 - Em trabalho não trivial cuja definição já contenha objetivo, escopo, não objetivos, requisitos,
   critérios de sucesso, Definition of Done e restrições, registre um checkpoint estruturado no início
   e outro no encerramento. Se algum desses campos não estiver definido, não o invente: complete a

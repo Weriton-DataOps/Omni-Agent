@@ -19,6 +19,7 @@ $ErrorActionPreference = 'Stop'
 $taskRoot = Split-Path -Parent $PSScriptRoot
 $taskPsql = 'C:\Program Files\PostgreSQL\18\bin\psql.exe'
 . (Join-Path $PSScriptRoot 'omni-credential-verification.ps1')
+. (Join-Path $PSScriptRoot 'omni-credential-execution.ps1')
 $taskReport = [IO.Path]::GetFullPath($ReportPath)
 $taskReportsRoot = if ($InstalledService) { [IO.Path]::GetFullPath($PSScriptRoot) } else { [IO.Path]::GetFullPath((Join-Path $taskRoot 'out\implementation')) }
 if (-not $taskReport.StartsWith($taskReportsRoot, [StringComparison]::OrdinalIgnoreCase)) { throw 'Report path must remain below out\\implementation.' }
@@ -238,6 +239,28 @@ function Invoke-Request([string]$Raw) {
     if ($Raw.Length -gt 32768) { return @{ ok = $false; code = 'request-too-large' } }
     try { $taskRequest = $Raw | ConvertFrom-Json -ErrorAction Stop } catch { return @{ ok = $false; code = 'invalid-json' } }
     if ($null -eq $taskRequest -or $taskRequest.PSObject.Properties.Name -notcontains 'operation') { return @{ ok = $false; code = 'invalid-request' } }
+    if ($taskRequest.operation -eq 'credential.execution-capabilities') {
+        return @{ ok = $true; operations = @('postgres.catalog','postgres.freshness') }
+    }
+    if ($taskRequest.operation -eq 'credential.execute') {
+        $taskExecutionRegistration = $null; $taskExecutionSsh = $null
+        try {
+            # Validate the closed operation before resolving any private value.
+            $null = Get-CredentialExecutionSql $taskRequest.action
+            if ($taskRequest.source.PSObject.Properties.Name -contains 'ssh') {
+                $taskExecutionRegistration = Resolve-ExecutionCredential $taskRequest.source.database
+                $taskExecutionSsh = Resolve-ExecutionCredential $taskRequest.source.ssh
+                return @{ ok = $true; result = (Invoke-CredentialSshExecution $taskExecutionSsh $taskExecutionRegistration $taskRequest.action ([string]$taskRequest.source.mode)) }
+            }
+            $taskExecutionRegistration = Resolve-ExecutionCredential $taskRequest.source
+            # Execution is not a vault registration, nor an implicit status upgrade.
+            return @{ ok = $true; result = (Invoke-CredentialExecution $taskExecutionRegistration $taskRequest.action) }
+        } catch { return @{ ok = $false; code = 'private-execution-denied' } }
+        finally {
+            if ($null -ne $taskExecutionRegistration) { $taskExecutionRegistration.token = $null }
+            if ($null -ne $taskExecutionSsh) { $taskExecutionSsh.token = $null }
+        }
+    }
     if ($taskRequest.operation -eq 'health') {
         try {
             $taskHealth = Invoke-BrokerQuery "BEGIN; SET LOCAL ROLE omni_access_admin; SELECT 1; COMMIT;"
@@ -360,6 +383,34 @@ COMMIT;
             $taskJson = Invoke-BrokerQuery $taskQuery
             if ($taskJson.Length -eq 0) { return @{ ok = $true; found = $false } }
             return @{ ok = $true; found = $true; credentialJson = $taskJson }
+        } catch { return @{ ok = $false; code = 'trusted-operation-failed' } }
+    }
+    if ($taskRequest.operation -eq 'credential.list') {
+        if ($taskRequest.PSObject.Properties.Name -notcontains 'query') { return @{ ok = $false; code = 'invalid-request' } }
+        $taskCredentialQuery = [string]$taskRequest.query
+        if ($taskCredentialQuery -ne '' -and $taskCredentialQuery -notmatch '^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,79}$') { return @{ ok = $false; code = 'invalid-request' } }
+        try {
+            # The query is restricted to identifier characters before it reaches SQL. The
+            # result is deliberately a tiny, secret-free inventory projection.
+            $taskQuery = @"
+BEGIN;
+SET LOCAL ROLE omni_access_admin;
+WITH latest AS (
+  SELECT DISTINCT ON (credential_id) credential_id, version, provider_ref, account_ref, environment_ref, expires_at, status
+  FROM access.credential_versions
+  WHERE owner_id = identity.owner_id()
+    AND ('$taskCredentialQuery' = '' OR credential_id ILIKE '%$taskCredentialQuery%' OR provider_ref ILIKE '%$taskCredentialQuery%' OR account_ref ILIKE '%$taskCredentialQuery%' OR environment_ref ILIKE '%$taskCredentialQuery%')
+  ORDER BY credential_id, version DESC
+  LIMIT 20
+)
+SELECT COALESCE(json_agg(json_build_object('credentialId', credential_id, 'version', version, 'providerRef', provider_ref, 'accountRef', account_ref, 'environmentRef', environment_ref, 'expiresAt', CASE WHEN expires_at IS NULL THEN NULL ELSE to_char(expires_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') || 'T' || to_char(expires_at AT TIME ZONE 'UTC', 'HH24:MI:SS.MS') || 'Z' END, 'status', status) ORDER BY credential_id), '[]'::json)::text FROM latest;
+COMMIT;
+"@
+            $taskJson = Invoke-BrokerQuery $taskQuery
+            if ($taskJson.Length -gt 48000) { throw 'Credential inventory response exceeds broker limit.' }
+            $taskRows = $taskJson | ConvertFrom-Json -ErrorAction Stop
+            if ($null -eq $taskRows -or @($taskRows).Count -gt 20) { throw 'Credential inventory response is invalid.' }
+            return @{ ok = $true; credentialsJson = $taskJson }
         } catch { return @{ ok = $false; code = 'trusted-operation-failed' } }
     }
     if ($taskRequest.operation -in @('credential.verify', 'credential.register-verified', 'credential.verify-stored')) {

@@ -10,6 +10,7 @@ test('adapter PostgreSQL usa somente a porta do broker e nunca aceita segredo', 
   const calls: unknown[] = []
   const broker: AccessBrokerClient = {
     health: async () => ({ protocol: 'omni-access-broker-v1', status: 'ready' }),
+    listCredentialMetadata: async () => [],
     readCredentialVersion: async (credentialId, version) => { calls.push({ credentialId, version }); return metadata },
     recordCredentialObservation: async (event, expectedRevision) => { calls.push({ event, expectedRevision }); return { outcome: 'recorded', credential: metadata } }
   }

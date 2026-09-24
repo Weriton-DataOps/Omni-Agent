@@ -6,6 +6,20 @@ const now = new Date('2026-09-11T12:00:00.000Z')
 const syntheticToken = 'vcp_SYNTHETIC_ONLY_12345678'
 const parse = (text: string) => parseCredential(text, now)
 
+test('reconhece JSON de conta de serviço Google sem projetar a chave privada', () => {
+  const privateKey = '-----BEGIN PRIVATE KEY-----\nSYNTHETIC-PRIVATE-KEY\n-----END PRIVATE KEY-----\n'
+  const source = JSON.stringify({ type: 'service_account', project_id: 'my-first-project-123', private_key_id: 'synthetic-key-id', private_key: privateKey, client_email: 'ga4-omni@my-first-project-123.iam.gserviceaccount.com', token_uri: 'https://oauth2.googleapis.com/token' })
+  const result = parse(source)
+  assert.equal(result.kind, 'service-account')
+  assert.equal(result.serviceLabel, 'Google Cloud')
+  assert.equal(result.registration.providerRef, 'google-cloud')
+  assert.equal(result.registration.accountRef, 'ga4-omni')
+  assert.equal(result.registration.credentialId.startsWith('google-cloud-my-first-project-123-ga4-omni'), true)
+  assert.deepEqual(result.missing, [])
+  assert.equal(JSON.parse(result.registration.token).privateKey === privateKey, true)
+  assert.equal(JSON.stringify({ ...result, registration: { ...result.registration, token: '' } }).includes('SYNTHETIC-PRIVATE-KEY'), false)
+})
+
 test('interpreta o exemplo Vercel, conta sem dois pontos e prazo relativo', () => {
   const result = parse(`token verecel ${syntheticToken} expira em 90 dias na conta teste@example.invalid`)
   assert.equal(result.kind, 'token')
@@ -21,13 +35,14 @@ test('reconhece segredo antes do serviço e conserva a identidade sem conta do c
   const result = parse(`${syntheticToken} token da Vercel`)
   assert.equal(result.registration.credentialId, 'vercel-pessoal')
   assert.equal(JSON.parse(result.registration.token).token === syntheticToken, true)
+  assert.deepEqual(result.missing, [])
 })
 
 test('não interpreta um token sem provedor como nome do serviço', () => {
   const result = parse(`token: ${syntheticToken}`)
   assert.equal(result.registration.providerRef, 'unspecified')
   assert.equal(result.serviceLabel, 'Serviço a informar')
-  assert.equal(result.missing.some(message => message.includes('serviço')), true)
+  assert.equal(result.missing.some(message => message.includes('Como devo chamar este acesso')), true)
   assert.equal(JSON.stringify({ ...result, registration: { ...result.registration, token: '' } }).includes(syntheticToken), false)
 })
 
@@ -36,6 +51,25 @@ test('aceita provedor desconhecido somente com nome explícito', () => {
   assert.equal(result.registration.providerRef, 'servico-interno')
   assert.equal(result.registration.credentialId, 'servico-interno-equipe-homologacao')
   assert.deepEqual(result.missing, [])
+})
+
+test('entende complemento natural de serviço com URL sem gravar a URL como metadado', () => {
+  const result = parse('o serviço é Portal > https://portal.grgroup.org/login; usuário: dono; senha: senha_sintetica_123')
+  assert.equal(result.kind, 'login')
+  assert.equal(result.serviceLabel, 'Portal')
+  assert.equal(result.registration.providerRef, 'portal')
+  assert.deepEqual(result.missing, [])
+  assert.equal(JSON.parse(result.registration.token).url, 'https://portal.grgroup.org/login')
+  assert.equal(JSON.stringify({ ...result.registration, token: '' }).includes('portal.grgroup.org'), false)
+})
+
+test('uma URL de login identifica o fluxo mesmo antes do usuário e da senha', () => {
+  const result = parse('o serviço é Portal > https://portal.grgroup.org/login')
+  assert.equal(result.kind, 'login')
+  assert.equal(result.serviceLabel, 'Portal')
+  assert.equal(result.registration.providerRef, 'portal')
+  assert.deepEqual(result.missing, ['Qual é o usuário desse acesso?', 'Qual é a senha desse acesso?'])
+  assert.equal(JSON.parse(result.registration.token).url, 'https://portal.grgroup.org/login')
 })
 
 test('GitHub com senha de token não vira login nem expõe o segredo no resumo', () => {

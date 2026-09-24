@@ -4,6 +4,7 @@ const path = require('node:path')
 const leases = new Map()
 const base = () => path.join(process.env.APPDATA, 'omni', 'desktop')
 const registryPath = () => path.join(base(), 'vscode', `window-${process.pid}.json`)
+const actionsPath = () => path.join(base(), 'vscode-actions')
 const workspaces = () => (vscode.workspace.workspaceFolders || []).map(folder => folder.uri.fsPath).filter(value => typeof value === 'string' && value.length < 1000)
 exports.activate = context => {
   const reportWindow = async () => {
@@ -16,7 +17,28 @@ exports.activate = context => {
   }
   void reportWindow().catch(() => {})
   const reportTimer = setInterval(() => void reportWindow().catch(() => {}), 4000)
-  context.subscriptions.push({ dispose: () => { clearInterval(reportTimer); void fs.unlink(registryPath()).catch(() => {}) } })
+  const processActions = async () => {
+    for (const file of await fs.readdir(actionsPath()).catch(() => [])) {
+      const match = /^open-claude-([a-f0-9-]{36})\.json$/i.exec(file)
+      if (!match) continue
+      const source = path.join(actionsPath(), file)
+      let action
+      try { action = JSON.parse(await fs.readFile(source, 'utf8')) } catch { continue }
+      if (action?.id !== match[1] || action.command !== 'open-claude' || !path.isAbsolute(action.workspace) || Date.now() - Date.parse(action.at) > 30000) continue
+      if (!workspaces().some(workspace => path.resolve(workspace).toLowerCase() === path.resolve(action.workspace).toLowerCase())) continue
+      const claimed = `${source}.${process.pid}.working`
+      try { await fs.rename(source, claimed) } catch { continue }
+      const receipt = path.join(actionsPath(), `receipt-${action.id}.json`)
+      try {
+        await vscode.commands.executeCommand('claude-vscode.editor.open')
+        await fs.writeFile(receipt, JSON.stringify({ id: action.id, status: 'opened', at: new Date().toISOString() }))
+      } catch (error) {
+        await fs.writeFile(receipt, JSON.stringify({ id: action.id, status: 'failed', error: String(error?.message || error).slice(0, 240), at: new Date().toISOString() }))
+      } finally { await fs.unlink(claimed).catch(() => {}) }
+    }
+  }
+  const actionTimer = setInterval(() => void processActions().catch(() => {}), 300)
+  context.subscriptions.push({ dispose: () => { clearInterval(reportTimer); clearInterval(actionTimer); void fs.unlink(registryPath()).catch(() => {}) } })
   context.subscriptions.push(vscode.window.registerUriHandler({ async handleUri(uri) {
     try {
       if (uri.path === '/workspace') {

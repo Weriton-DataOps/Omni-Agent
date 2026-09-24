@@ -18,6 +18,7 @@ import {
 } from './evolucao.mjs'
 import { verificarIntegridadeRelease } from './integridade-release.mjs'
 import { criarSolicitacaoDelegacao } from './porta-delegacao.mjs'
+import { aprenderMelhoria } from './aprendizado-resultados.mjs'
 import {
   capturarBaselineReleaseOperacional,
   confirmarRuntimeCarregado,
@@ -34,7 +35,8 @@ const STATES = new Set([
   'running',
   'reported-unverified',
   'awaiting-release',
-  'completed'
+  'completed',
+  'learned'
 ])
 const HASH = /^[a-f0-9]{64}$/
 const PORTABLE_ARTIFACT = /^(?:adaptadores|contratos|dist|hooks|runtime|scripts|skills)\/[A-Za-z0-9._/-]+$/
@@ -119,6 +121,8 @@ function jobValido(job) {
     HASH.test(job.candidateFingerprint ?? '') &&
     HASH.test(job.targetFingerprint ?? '') &&
     STATES.has(job.state) &&
+    (job.state !== 'learned' || (typeof job.learningReceipt?.memoryId === 'string' &&
+      HASH.test(job.learningReceipt?.candidateFingerprint ?? '') && dataValida(job.learningReceipt?.recordedAt))) &&
     Number.isInteger(job.generation) && job.generation >= 1 &&
     Number.isInteger(job.attempts) && job.attempts >= 0 &&
     (job.delegationId === null || /^delegation-/.test(job.delegationId)) &&
@@ -269,6 +273,8 @@ export async function sincronizarAutomacaoMelhorias(casa, { at } = {}) {
     for (const job of store.jobs) {
       const candidate = candidates.get(job.candidateId)
       if (!candidate) continue
+      // Knowledge activation is independent of publishing executable artifacts.
+      if (job.state === 'learned' && job.learningReceipt?.candidateFingerprint === candidate.fingerprint) continue
       if (candidate.status === 'loaded-verified' || candidate.status === 'superseded') {
         job.state = 'completed'
         job.retryAt = null
@@ -328,6 +334,8 @@ export async function materializarMelhoriaComBaselineConfigurada(casa, candidate
     item.id === candidateId && item.status === 'ready'
   )
   if (!candidate) return { result: 'not-ready', candidateId }
+  const learned = await ativarAprendizadosOperacionais(casa, { candidateId, at: timestamp })
+  if (learned.memoryIds.length) return { result: 'learned', candidateId, memoryIds: learned.memoryIds }
   const automation = await lerAutomacaoMelhorias(casa)
   const pipelineOwner = automation.jobs
     .filter((item) => item.candidateId !== candidateId && SERIAL_PIPELINE_STATES.has(item.state))
@@ -392,6 +400,42 @@ export async function materializarMelhoriaComBaselineConfigurada(casa, candidate
   const result = await materialize(casa, candidateId)
   await sincronizarAutomacaoMelhorias(casa, { at: timestamp })
   return result
+}
+
+/** Persist useful knowledge now, without a Git release or another owner approval.
+ * Never call a learned procedure a loaded code fix. Existing artifacts/audits stay intact.
+ */
+export async function ativarAprendizadosOperacionais(casa, { candidateId, at } = {}) {
+  const cycle = await lerCicloOperacional(casa)
+  const timestamp = agora(at)
+  const receipts = []
+  for (const candidate of cycle.improvementCandidates) {
+    if (candidateId && candidate.id !== candidateId) continue
+    const receipt = await aprenderMelhoria(casa, candidate)
+    if (receipt) receipts.push({ candidate, receipt })
+  }
+  if (!receipts.length) return { result: 'idle', memoryIds: [] }
+  await alterar(casa, store => {
+    for (const { candidate, receipt } of receipts) {
+      let job = store.jobs.find(item => item.candidateId === candidate.id && item.state !== 'completed')
+      if (!job) {
+        job = { id: `improvement-job-${randomUUID()}`, candidateId: candidate.id,
+          candidateFingerprint: candidate.fingerprint, targetFingerprint: hash(candidate.destination),
+          state: 'learned', generation: 1, attempts: 0, delegationId: null,
+          dispatchSessionFingerprint: null, executorFingerprint: null, reasonFingerprint: null,
+          retryAt: null, baselineRepositoryFingerprint: null, baselineCommitSha: null,
+          baselineBranchFingerprint: null, baselineStatusFingerprint: null, baselineCapturedAt: null,
+          artifactFingerprint: null, implementationReceiptFingerprint: null,
+          releaseAttempts: 0, releaseRetryAt: null, createdAt: timestamp, updatedAt: timestamp }
+        store.jobs.push(job)
+      }
+      job.state = 'learned'
+      job.learningReceipt = { ...receipt, recordedAt: job.learningReceipt?.recordedAt || timestamp }
+      job.reasonFingerprint = null; job.retryAt = null; job.releaseRetryAt = null
+      job.updatedAt = timestamp
+    }
+  })
+  return { result: 'learned', memoryIds: receipts.map(item => item.receipt.memoryId) }
 }
 
 function promptExecucao(candidate, marker) {

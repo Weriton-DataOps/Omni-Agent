@@ -7,7 +7,7 @@ export const MEMORY_WRITE_PIPELINE_VERSION = 2
 const SINAIS = [
   {
     type: 'preference',
-    pattern: /\b(?:eu\s+)?(?:prefiro|gosto de|nao gosto de|minha preferencia|quero que voce|me explique sempre)\b/,
+    pattern: /\b(?:eu\s+)?(?:prefiro|gosto de|nao gosto de|minha preferencia|nao quero|quero que voce|quero que o omni|me explique sempre)\b/,
     confidence: 0.9,
     importance: 0.75
   },
@@ -19,7 +19,7 @@ const SINAIS = [
   },
   {
     type: 'objective',
-    pattern: /\b(?:meu objetivo|minha meta|quero construir|estou construindo|quero chegar)\b/,
+    pattern: /\b(?:meu objetivo|o objetivo|minha meta|a intencao|quero construir|estou construindo|quero chegar)\b/,
     confidence: 0.82,
     importance: 0.85
   },
@@ -85,6 +85,10 @@ export function analisarExperiencias(texto, { scope = { type: 'user' } } = {}) {
     if (!original) return []
     const normalized = normalizar(original)
     if (isTransientMemory(original)) return [{ result: 'transient', reason: 'explicitly-transient' }]
+    // A question can contain words such as "posso", "salvar" or "lembrar"
+    // without defining anything durable.  Retain explicit statements in a
+    // mixed message, but never turn a bare question into a permanent fact.
+    if (/\?\s*$/u.test(original)) return []
     const fact = declaredProjectFact(original)
     const signal = fact ? { type: 'semantic', confidence: 0.9, importance: 0.8 } : SINAIS.find((candidate) => candidate.pattern.test(normalized))
     if (!signal) return []
@@ -96,7 +100,7 @@ export function analisarExperiencias(texto, { scope = { type: 'user' } } = {}) {
     const specificity = Math.min(1, Math.max(0.35, original.length / 240))
     const score = arredondar(signal.confidence * 0.5 + signal.importance * 0.35 + specificity * 0.15)
     if (score < 0.6) return []
-    const explicitDeclaration = Boolean(fact) || /\b(?:lembre|guarde|registre|fica definido|de agora em diante|sempre que|quando eu disser|prefiro|quero que voce|me explique sempre)\b/.test(normalized)
+    const explicitDeclaration = Boolean(fact) || /\b(?:lembre|guarde|registre|fica definido|de agora em diante|sempre que|quando eu disser|prefiro|nao quero|quero que voce|quero que o omni|o objetivo|a intencao|me explique sempre)\b/.test(normalized)
     return [{
       result: 'validated',
       text: original,

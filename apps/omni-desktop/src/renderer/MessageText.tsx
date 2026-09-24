@@ -1,6 +1,23 @@
-import React, { type ReactNode } from 'react'
+import React, { createContext, useContext, type ReactNode } from 'react'
+import { documentReference } from '../shared/document-reference'
 
-interface MessageTextProps { text: string; streaming?: boolean }
+interface MessageTextProps { text: string; streaming?: boolean; onOpenDocument?: (reference: string) => void }
+export const DocumentLinks = createContext<{ openDocument: (reference: string) => void; openUrl?: (url: string) => void } | null>(null)
+
+function DocumentLink({ reference, children, fallback }: { reference: string; children: ReactNode; fallback: ReactNode }) {
+  const actions = useContext(DocumentLinks)
+  return actions ? <a className="chat-link document-link" href="#document" title={`Abrir ${reference} em outra janela`} onClick={event => {
+    event.preventDefault(); actions.openDocument(reference)
+  }}>{children}</a> : <>{fallback}</>
+}
+function WebLink({ href, children }: { href: string; children: ReactNode }) {
+  const actions = useContext(DocumentLinks)
+  return <a className="chat-link" href={href} title="Abrir no navegador" onClick={event => {
+    event.preventDefault()
+    if (actions?.openUrl) actions.openUrl(href)
+    else void window.omni.openUrl(href)
+  }}>{children}</a>
+}
 
 function safeUrl(value: string): string | null {
   if (/[\u0000-\u0020\u007f]/.test(value)) return null
@@ -12,10 +29,7 @@ function safeUrl(value: string): string | null {
 }
 
 function link(href: string, label: ReactNode, key: number): ReactNode {
-  return <a key={key} className="chat-link" href={href} title="Abrir no navegador" onClick={event => {
-    event.preventDefault()
-    void window.omni.openUrl(href)
-  }}>{label}</a>
+  return <WebLink key={key} href={href}>{label}</WebLink>
 }
 
 function closingMarker(value: string, marker: string, from: number, code = false): number {
@@ -31,7 +45,7 @@ function closingMarker(value: string, marker: string, from: number, code = false
 }
 
 /** React text nodes keep both Markdown and arbitrary executor text escaped. */
-function inline(value: string, streaming: boolean, depth = 0): ReactNode[] {
+function inline(value: string, streaming: boolean, depth = 0, documents = true): ReactNode[] {
   if (depth > 12) return [value]
   const output: ReactNode[] = []
   let plain = ''
@@ -48,7 +62,9 @@ function inline(value: string, streaming: boolean, depth = 0): ReactNode[] {
       const end = closingMarker(value, marker, index + marker.length, true)
       if (end >= 0 || streaming) {
         flush()
-        output.push(<code key={index}>{value.slice(index + marker.length, end >= 0 ? end : undefined)}</code>)
+        const literal = value.slice(index + marker.length, end >= 0 ? end : undefined)
+        const code = <code key={index}>{literal}</code>
+        output.push(documents && end >= 0 && documentReference(literal) ? <DocumentLink key={index} reference={literal} fallback={code}>{code}</DocumentLink> : code)
         index = end >= 0 ? end + marker.length : value.length
         continue
       }
@@ -59,7 +75,10 @@ function inline(value: string, streaming: boolean, depth = 0): ReactNode[] {
       if (complete) {
         flush()
         const href = safeUrl(complete[2])
-        output.push(href ? link(href, inline(complete[1], false, depth + 1), index) : complete[0])
+        const label = inline(complete[1], false, depth + 1, false)
+        output.push(href ? link(href, label, index) : documents && documentReference(complete[2])
+          ? <DocumentLink key={index} reference={complete[2]} fallback={complete[0]}>{label}</DocumentLink>
+          : /^#[\p{L}\p{N}_-]+$/u.test(complete[2]) ? <a key={index} className="chat-link" href={complete[2]} onClick={event => { event.preventDefault(); document.getElementById(complete[2].slice(1))?.scrollIntoView() }}>{label}</a> : complete[0])
         index += complete[0].length
         continue
       }
@@ -68,6 +87,13 @@ function inline(value: string, streaming: boolean, depth = 0): ReactNode[] {
         if (partial) {
           flush(); output.push(...inline(partial[1], true, depth + 1)); index = value.length; continue
         }
+      }
+    }
+    // Old executor replies also contain plain paths, not only Markdown links.
+    if (documents && (index === 0 || /[\s(]/.test(value[index - 1]))) {
+      const raw = value.slice(index).match(/^(?:[a-z]:[\\/]|\.{0,2}[\\/])?[\p{L}\p{N}_./\\-]+\.(?:md|markdown)(?::\d+)?(?:#[\p{L}\p{N}_-]+)?(?=$|[\s,;.!?)])/iu)?.[0]
+      if (raw && documentReference(raw) && !(streaming && index + raw.length === value.length)) {
+        flush(); output.push(<DocumentLink key={index} reference={raw} fallback={raw}>{raw}</DocumentLink>); index += raw.length; continue
       }
     }
     if ((char === 'h' || char === 'H') && /^https?:\/\//i.test(value.slice(index))) {
@@ -90,7 +116,7 @@ function inline(value: string, streaming: boolean, depth = 0): ReactNode[] {
         const end = closingMarker(value, marker, index + marker.length)
         if (end >= 0 || streaming) {
           flush()
-          const children = inline(value.slice(index + marker.length, end >= 0 ? end : undefined), streaming && end < 0, depth + 1)
+          const children = inline(value.slice(index + marker.length, end >= 0 ? end : undefined), streaming && end < 0, depth + 1, documents)
           output.push(marker.length === 3 ? <strong key={index}><em>{children}</em></strong>
             : marker === '~~' ? <del key={index}>{children}</del>
             : marker.length === 2 ? <strong key={index}>{children}</strong> : <em key={index}>{children}</em>)
@@ -110,11 +136,14 @@ const headingStart = (line: string) => line.match(/^ {0,3}(#{1,6})\s+(.*)$/)
 const listStart = (line: string) => line.match(/^ {0,3}(?:([-+*])|(\d+)[.)])\s+(.*)$/)
 const rule = (line: string) => /^ {0,3}(?:(?:\*\s*){3,}|(?:-\s*){3,}|(?:_\s*){3,})$/.test(line)
 const blockStart = (line: string) => fenceStart(line) || headingStart(line) || listStart(line) || /^ {0,3}>/.test(line) || rule(line)
+const tableCells = (line: string) => line.trim().replace(/^\|/, '').replace(/(?<!\\)\|$/, '').split(/(?<!\\)\|/).map(cell => cell.trim())
+const tableRule = (line = '') => line.includes('|') && tableCells(line).every(cell => /^:?-{3,}:?$/.test(cell))
 
 function blocks(text: string, streaming: boolean, depth = 0): ReactNode[] {
   if (depth > 12) return [text]
   const lines = text.replace(/\r\n?/g, '\n').split('\n')
   const output: ReactNode[] = []
+  const headings = new Map<string, number>()
   const isTail = (nextLine: number) => streaming && lines.slice(nextLine).every(line => !line.trim())
   let index = 0
   while (index < lines.length) {
@@ -136,7 +165,21 @@ function blocks(text: string, streaming: boolean, depth = 0): ReactNode[] {
     const heading = headingStart(line)
     if (heading) {
       index++
-      output.push(React.createElement('h' + heading[1].length, { key: start }, inline(heading[2].replace(/\s+#+\s*$/, ''), isTail(index))))
+      const title = heading[2].replace(/\s+#+\s*$/, '')
+      const slug = title.toLowerCase().replace(/[^\p{L}\p{N}\s_-]/gu, '').trim().replace(/\s/g, '-')
+      const count = headings.get(slug) || 0; headings.set(slug, count + 1)
+      output.push(React.createElement('h' + heading[1].length, { key: start, id: slug + (count ? `-${count}` : '') }, inline(title, isTail(index))))
+      continue
+    }
+    if (line.includes('|') && tableRule(lines[index + 1])) {
+      const titles = tableCells(line), alignment = tableCells(lines[index + 1])
+      const rows: ReactNode[] = []
+      index += 2
+      while (index < lines.length && lines[index].trim() && lines[index].includes('|')) {
+        const cells = tableCells(lines[index++])
+        rows.push(<tr key={index}>{titles.map((_, col) => <td key={col}>{inline(cells[col] || '', false)}</td>)}</tr>)
+      }
+      output.push(<div className="markdown-table" key={start}><table><thead><tr>{titles.map((title, col) => <th key={col} style={{ textAlign: alignment[col]?.endsWith(':') ? alignment[col].startsWith(':') ? 'center' : 'right' : 'left' }}>{inline(title, false)}</th>)}</tr></thead><tbody>{rows}</tbody></table></div>)
       continue
     }
     if (rule(line)) { output.push(<hr key={start} />); index++; continue }
@@ -149,24 +192,38 @@ function blocks(text: string, streaming: boolean, depth = 0): ReactNode[] {
     const list = listStart(line)
     if (list) {
       const ordered = !!list[2]
+      const indent = line.match(/^ */)![0].length
       const items: ReactNode[] = []
       while (index < lines.length) {
         const item = listStart(lines[index])
-        if (!item || !!item[2] !== ordered) break
-        items.push(<li key={index}>{inline(item[3], isTail(index + 1))}</li>)
+        if (!item || !!item[2] !== ordered || lines[index].match(/^ */)![0].length !== indent) break
+        const itemStart = index, contentIndent = item[0].length - item[3].length
+        const content = [item[3]]
         index++
+        while (index < lines.length) {
+          if (!lines[index].trim()) {
+            const next = lines[index + 1] || ''
+            if (!next.trim() || (!listStart(next) && next.match(/^ */)![0].length <= indent)) break
+            index++; continue
+          }
+          const spaces = lines[index].match(/^ */)![0].length
+          if (spaces <= indent && blockStart(lines[index])) break
+          content.push(lines[index++].slice(Math.min(spaces, contentIndent)))
+        }
+        items.push(<li key={itemStart}>{content.length === 1 ? inline(content[0], isTail(index)) : blocks(content.join('\n'), isTail(index), depth + 1)}</li>)
       }
       output.push(ordered ? <ol key={start} start={Number(list[2]) === 1 ? undefined : Number(list[2])}>{items}</ol> : <ul key={start}>{items}</ul>)
       continue
     }
     const paragraph: string[] = [line]
     index++
-    while (index < lines.length && lines[index].trim() && !blockStart(lines[index])) paragraph.push(lines[index++])
+    while (index < lines.length && lines[index].trim() && !blockStart(lines[index]) && !tableRule(lines[index + 1])) paragraph.push(lines[index++])
     output.push(<p key={start}>{inline(paragraph.join('\n'), isTail(index))}</p>)
   }
   return output
 }
 
-export function MessageText({ text, streaming = false }: MessageTextProps) {
-  return <div className={'message-text' + (streaming ? ' streaming' : '')} aria-busy={streaming}>{blocks(text, streaming)}</div>
+export function MessageText({ text, streaming = false, onOpenDocument }: MessageTextProps) {
+  const content = <div className={'message-text' + (streaming ? ' streaming' : '')} aria-busy={streaming}>{blocks(text, streaming)}</div>
+  return onOpenDocument ? <DocumentLinks.Provider value={{ openDocument: onOpenDocument }}>{content}</DocumentLinks.Provider> : content
 }

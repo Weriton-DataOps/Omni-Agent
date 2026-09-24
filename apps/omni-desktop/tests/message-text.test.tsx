@@ -2,7 +2,7 @@ import React from 'react'
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { MessageText } from '../src/renderer/MessageText'
+import { MessageText, DocumentLinks } from '../src/renderer/MessageText'
 
 const render = (text: string, streaming = false) => renderToStaticMarkup(<MessageText text={text} streaming={streaming} />)
 
@@ -50,14 +50,14 @@ test('fence fechado mantém código literal e permite texto logo na linha seguin
 
 test('heading, parágrafo e listas não dependem de linhas vazias', () => {
   const html = render('## O que voltou\nEntrega validada.\n- Código pronto\n- Teste passou\n### Próximo passo\n1. Publicar\n2. Conferir')
-  assert.match(html, /<h2>O que voltou<\/h2><p>Entrega validada\.<\/p><ul><li>Código pronto<\/li><li>Teste passou<\/li><\/ul><h3>Próximo passo<\/h3><ol><li>Publicar<\/li><li>Conferir<\/li><\/ol>/)
+  assert.match(html, /<h2 id="o-que-voltou">O que voltou<\/h2><p>Entrega validada\.<\/p><ul><li>Código pronto<\/li><li>Teste passou<\/li><\/ul><h3 id="próximo-passo">Próximo passo<\/h3><ol><li>Publicar<\/li><li>Conferir<\/li><\/ol>/)
   assert.doesNotMatch(html, /##|&gt;- /)
 })
 
 test('quebras simples de texto e numeração inicial são preservadas', () => {
   assert.match(render('Primeira linha\nSegunda linha'), /<p>Primeira linha<br\/>Segunda linha<\/p>/)
   assert.match(render('3. Conferir\n4. Entregar'), /<ol start="3"><li>Conferir<\/li><li>Entregar<\/li><\/ol>/)
-  assert.match(render('> ## Evidência\n> Texto conferido'), /<blockquote><h2>Evidência<\/h2><p>Texto conferido<\/p><\/blockquote>/)
+  assert.match(render('> ## Evidência\n> Texto conferido'), /<blockquote><h2 id="evidência">Evidência<\/h2><p>Texto conferido<\/p><\/blockquote>/)
 })
 
 test('URLs em negrito continuam clicáveis e pontuação fica fora do endereço', () => {
@@ -98,4 +98,30 @@ test('HTML e atributos vindos do texto permanecem escapados', () => {
 test('código com URL é literal e nunca cria link', () => {
   assert.doesNotMatch(render('`https://example.com/**x**`'), /<a\b|<strong>/)
   assert.doesNotMatch(render('```html\n<a href="javascript:alert(1)">texto</a>\n```'), /<a\b/)
+})
+
+test('referências locais antigas viram links somente com contexto de projeto', () => {
+  const renderDocument = (text: string, streaming = false) => renderToStaticMarkup(<DocumentLinks.Provider value={{ openDocument: () => {} }}><MessageText text={text} streaming={streaming} /></DocumentLinks.Provider>)
+  assert.match(renderDocument('**O plano está em `planejamentos/fase1-station.md`**.'), /<strong>O plano está em <a[^>]+class="chat-link document-link"[^>]*><code>planejamentos\/fase1-station.md<\/code><\/a><\/strong>/)
+  assert.match(renderDocument('[Plano](<docs/Plano completo.md>)'), /class="chat-link document-link"/)
+  assert.match(renderDocument('Veja README.md.'), /<a[^>]+>README.md<\/a>\./)
+  assert.doesNotMatch(renderDocument('```sh\ncat README.md\n```'), /<a\b/)
+  assert.doesNotMatch(renderDocument('`README.md', true), /<a\b/)
+  assert.doesNotMatch(render('`README.md`'), /<a\b/)
+  assert.doesNotMatch(renderDocument('[Chave](file:///secret.md)'), /<a\b/)
+  assert.equal((renderDocument('[`README.md`](README.md)').match(/<a\b/g) || []).length, 1)
+})
+
+test('leitor renderiza tabelas sem executar HTML', () => {
+  const html = render('| Etapa | Situação |\n| --- | --- |\n| 1 | **Pronto** |\n| 2 | <script>evil()</script> |')
+  assert.match(html, /<table><thead>/)
+  assert.match(html, /<td><strong>Pronto<\/strong><\/td>/)
+  assert.doesNotMatch(html, /<script>/)
+  assert.match(html, /&lt;script&gt;/)
+})
+
+test('documento mantém continuação e hierarquia das listas', () => {
+  const html = render('- **Primeiro** trecho\n  continuação do mesmo item.\n- **Categorias**\n  - Origem A\n  - Origem B\n- Conclusão\n\nFim.')
+  assert.match(html, /<li><p><strong>Primeiro<\/strong> trecho<br\/>continuação do mesmo item\.<\/p><\/li>/)
+  assert.match(html, /<li><p><strong>Categorias<\/strong><\/p><ul><li>Origem A<\/li><li>Origem B<\/li><\/ul><\/li><li>Conclusão<\/li><\/ul><p>Fim\.<\/p>/)
 })

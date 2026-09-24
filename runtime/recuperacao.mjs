@@ -116,7 +116,8 @@ function escopoScore(memory, current) {
     environment: current.environmentId
   }
   const currentId = ids[memory.scope.type]
-  return currentId && memory.scope.id === currentId
+  const scopeId = value => typeof value === 'string' && /^[a-z]:[\\/]/i.test(value) ? value.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase() : value
+  return currentId && scopeId(memory.scope.id) === scopeId(currentId)
     ? { eligible: true, score: 1 }
     : { eligible: false, score: 0 }
 }
@@ -190,6 +191,19 @@ export async function ranquearMemorias(memories, {
   const intentTypes = tiposDaIntencao(intent)
   const ranked = []
   const excluded = []
+  // Stable owner directions are a separate lane from topic similarity. A new
+  // style/coordination preference must not lose to an old, frequently injected
+  // memory. Keep only the latest explicit direction for each narrow topic.
+  const directions = new Map()
+  for (const memory of memories) {
+    if (memory.scope?.type !== 'user' || memory.type !== 'preference' || memory.confidence < 0.9 || !/^(?:explicit-plugin-command|user-prompt-pipeline)/.test(memory.source || '') || (memory.expiresAt && Date.parse(memory.expiresAt) <= now)) continue
+    const text = normalizar(memory.text)
+    const topic = /\b(memoria|memorias|aprendizado\w*|autoaprimoramento)\b/.test(text) ? 'learning'
+      : /\b(textos?|respostas?|resumos?|concisao|detalh\w*)\b/.test(text) ? 'communication'
+      : /\bomni\b/.test(text) && /\b(conduz\w*|deleg\w*|autonomia|evidencias|decisoes)\b/.test(text) ? 'coordination' : null
+    if (topic && (!directions.has(topic) || Date.parse(memory.updatedAt) > Date.parse(directions.get(topic).updatedAt))) directions.set(topic, memory)
+  }
+  const directionIds = new Set([...directions.values()].map(memory => memory.id))
 
   for (const memory of memories) {
     if (memory.expiresAt !== null && Date.parse(memory.expiresAt) <= now) {
@@ -208,7 +222,7 @@ export async function ranquearMemorias(memories, {
     const semantic = Math.max(conceptSimilarity, similaridadeFuzzy(queryTokens, memoryTokens))
     const context = contextoScore(memory, intentTypes)
     const intentMatch = semantic * 0.6 + lexical * 0.25 + context * 0.15
-    if (!normalizar(intent) || intentMatch < config.minimumIntentMatch) {
+    if (!directionIds.has(memory.id) && (!normalizar(intent) || intentMatch < config.minimumIntentMatch)) {
       excluded.push({ id: memory.id, reason: 'below-intent-threshold' })
       continue
     }
@@ -237,7 +251,7 @@ export async function ranquearMemorias(memories, {
     })
   }
 
-  ranked.sort((left, right) => right.score - left.score || left.memory.id.localeCompare(right.memory.id))
+  ranked.sort((left, right) => Number(directionIds.has(right.memory.id)) - Number(directionIds.has(left.memory.id)) || right.score - left.score || left.memory.id.localeCompare(right.memory.id))
   return {
     schemaVersion: 1,
     algorithm: config.algorithm,

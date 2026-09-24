@@ -11,7 +11,8 @@ import {
   lembrarExplicitamente,
   lerMemoria,
   prepararMemoria,
-  proporLicao
+  proporLicao,
+  registrarFatoOperacional
 } from '../runtime/memoria.mjs'
 
 async function home() {
@@ -116,6 +117,23 @@ test('pedido explícito vira memória confirmada no runtime, não no plugin', as
     assert.equal(memory.confirmed[0].validation.status, 'confirmed')
     assert.equal(memory.confirmed[0].occurrences, 1)
     assert.match(caminhoDaMemoria(casa), /memory[\\/]memory\.json$/)
+  } finally {
+    await rm(casa, { recursive: true, force: true })
+  }
+})
+
+test('fato operacional verificado é confirmado e consolidado sem guardar conversa bruta', async () => {
+  const casa = await home()
+  try {
+    const text = 'Projeto Growth: C:\\Workspaces\\Growth'
+    const first = await registrarFatoOperacional(casa, text, { source: 'runtime-verified-workspace' })
+    const second = await registrarFatoOperacional(casa, text, { source: 'runtime-verified-workspace' })
+    assert.equal(first.result, 'confirmed')
+    assert.equal(second.result, 'reinforced')
+    const memory = await lerMemoria(casa)
+    assert.equal(memory.confirmed.length, 1)
+    assert.equal(memory.confirmed[0].source, 'runtime-verified-workspace')
+    assert.equal(memory.confirmed[0].occurrences, 2)
   } finally {
     await rm(casa, { recursive: true, force: true })
   }

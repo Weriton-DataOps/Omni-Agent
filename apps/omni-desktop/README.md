@@ -17,6 +17,12 @@ compacta acima do chat. O histórico do editor é uma consulta separada, com aut
 compactações, instruções internas e mensagens técnicas não são tratadas como falas do usuário.
 Nenhum transcript é apagado. A projeção anterior fica arquivada localmente na migração.
 
+Quando há filhos, o acesso **N subagente(s) · ver mapa** abre a árvore da sessão, com
+objetivo, estado, última ferramenta registrada, resposta final e métricas disponíveis.
+O chat central também oferece o mapa das tarefas do Omni. Abrir o mapa é somente consulta:
+não cria agentes, não envia comandos e não consome o resumo do card. Detalhes técnicos em
+[Mapa de agentes](docs/agent-map.md).
+
 ### Execuções e continuidade de trabalho
 
 A lateral esquerda mantém a sessão atual e o acesso ao histórico no topo. Abaixo dela,
@@ -30,8 +36,8 @@ texto. Conversa simples recebe resposta; trabalho local vai a um subagente; trab
 O plano de encaminhamento é interno. A confirmação curta identifica o executor realmente
 registrado e distingue criação/envio de recebimento ou execução. Uma troca de formulação do
 modelo não pode anunciar um subagente e disparar outra sessão. Conversas sem execução recebem
-uma geração própria em streaming após o planejamento; relatórios também chegam em streaming,
-sem animação artificial. Inventário autorizado de metadados locais do cofre e de contas é tarefa
+uma geração própria em streaming após o planejamento. Resumos de execução são preparados antes
+do clique no card e apresentados com digitação visual rápida. Inventário de metadados de contas é tarefa
 pessoal da máquina, não alteração no repositório Omni; segredos continuam no intake/broker.
 
 Pedidos externos mantêm ID, conversa de origem autorizadora, chat de destino, sessão destinatária, estado e evidência do
@@ -43,8 +49,8 @@ e relato não é verificação independente. Sessão desconectada e entrega ince
 O Omni avalia cada retorno automaticamente. Se faltar execução ou uma informação que o
 executor pode obter dentro do pedido autorizado, envia uma correção ao mesmo subagente ou
 sessão e publica uma atualização no chat de destino. O card volta a indicar execução;
-a central permanece livre. Resultados finais aguardam **Receber retorno** no card do agente ou
-da sessão. A ordem dos cliques define a sequência dos textos em cada destino; não há entrega automática
+a central permanece livre. O resumo final fica pronto antes do clique no próprio card verde do agente ou
+da sessão, sem botão de retorno. A ordem dos cliques define a sequência dos textos em cada destino; não há entrega automática
 nem painel separado no composer. Relatos originais ficam disponíveis nos detalhes. Cancelamentos
 impedem retomada automática. As tentativas
 são persistidas, limitadas a três correções e interrompidas se o mesmo relato voltar sem
@@ -57,11 +63,12 @@ sessão externa mantém os limites e permissões dessa sessão, não os do mensa
 `node scripts/live-coordination.mjs` cria um receptor isolado sem ferramentas, também limitado
 a US$ 0,75, e testa cálculo, envio, retorno e síntese sem tocar em projetos reais.
 
-A extensão VS Code 0.1.1 registra a cada quatro segundos as janelas e as sessões Omni
-que ela abriu, em um arquivo local efêmero. O Desktop só aceita registros recentes e
-apresenta o workspace e a quantidade de sessões no painel. Depois de atualizar a
-extensão, uma janela VS Code já em execução precisa ser recarregada uma vez para ativar
-essa versão; nenhuma credencial, conteúdo de conversa ou comando é gravado nesse registro.
+O monitor detecta sessões Claude abertas no VS Code e vincula cada UUID ao seu chat sem
+clique prévio. O histórico da sessão informa execução e respostas: azul pulsante durante
+execução, verde fixo somente após preparar o resumo novo. A leitura apaga o verde; o card
+não reapresenta retornos antigos. Uma janela de projeto sem Claude não vira card de sessão.
+A extensão continua registrando janelas para ações diretas no editor, sem conteúdo de conversa
+ou credenciais nesses registros.
 
 ## Contexto e dados
 
@@ -131,6 +138,24 @@ seleções de microfone/voz passam a valer na próxima abertura do Realtime.
 Referência conferida com OpenAI Docs: https://developers.openai.com/api/docs/guides/speech-to-text
 
 ## Desenvolvimento e validação
+
+## Documentos Markdown em janela independente
+
+Referências locais como `planejamentos/fase1-station.md`, `[Plano](planejamentos/fase1-station.md)`
+e caminhos `.md` entre crases viram links nas mensagens, inclusive no histórico já salvo.
+O clique abre um leitor próprio do Omni, em outra janela, mantendo o chat e seu rascunho.
+O leitor tem **Ver Markdown / Ver formatado**, **Atualizar** e **Fechar**; Escape fecha só o documento.
+O arquivo é aberto somente para leitura; listas, tabelas, títulos e blocos de código são formatados.
+
+A referência é resolvida na pasta da conversa de origem (inclusive quando o relatório de um
+subagente aparece no chat central). Dentro do documento, links para outros `.md` são relativos
+à pasta daquele arquivo. Reabrir o mesmo documento reutiliza a janela. Arquivos ausentes
+geram uma mensagem explícita, sem procurar um homônimo em outro projeto.
+
+O leitor aceita Markdown UTF-8 de até 2 MB dentro da pasta do projeto. Rejeita travessia e
+links simbólicos para fora dela. Tem preload próprio, sandbox e isolamento de contexto;
+não recebe a API do chat ou do Crachá, não executa HTML e não carrega imagens remotas.
+Teste local isolado: `npm run test:document-ui` (main, IPC, preload e renderer reais).
 
 ## Atualização local pela interface
 

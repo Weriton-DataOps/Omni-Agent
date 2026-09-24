@@ -17,6 +17,26 @@ test('conversa comum não vira memória', () => {
   assert.equal(result.reason, 'no-memory-signal')
 })
 
+test('diretriz operacional do proprietário é confirmada sem depender da frase "lembre"', async () => {
+  const casa = await home()
+  try {
+    const text = 'O objetivo é usar o VS Code somente como executor excepcional; o Omni deve compreender, decidir e acompanhar as tarefas no Desktop.'
+    const result = await processarExperiencia(casa, text)
+    assert.equal(result.result, 'confirmed')
+    assert.equal(result.classification, 'objective')
+    const memory = await lerMemoria(casa)
+    assert.equal(memory.confirmed.length, 1)
+    assert.equal(memory.confirmed[0].text, text)
+  } finally {
+    await rm(casa, { recursive: true, force: true })
+  }
+})
+
+test('pergunta sobre memória não é confundida com uma diretriz persistente', () => {
+  const result = analisarExperiencia('Você consegue guardar isso na memória?')
+  assert.equal(result.result, 'discarded')
+})
+
 test('extração guarda somente a frase persistente, não o pedido inteiro', () => {
   const result = analisarExperiencia(
     'Tenho duas observações sobre o teste. Prefiro mapas antes de explicações longas. Pode continuar?'

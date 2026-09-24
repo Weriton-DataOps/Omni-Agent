@@ -2,24 +2,6 @@
   "schemaVersion": 1,
   "releases": [
     {
-      "version": "0.23.1",
-      "changes": [
-        "Passou a persistir no PostgreSQL interno os achados operacionais sanitizados: categoria, estado, contagem e fingerprints; conversa, comandos, anexos e credenciais continuam fora do ledger.",
-        "Adicionou a migration checksummed 004 e a operação autenticada learning.record-improvement no broker, com RLS por proprietário e idempotência por evento.",
-        "Ligou o ciclo de autoaprendizado ao ledger durável em hooks e no Desktop, preservando o cache local como camada de trabalho.",
-        "O painel do Desktop agora mostra a versão, a assinatura e o estado de integridade do núcleo carregado, separado da confirmação da build local aplicada."
-      ]
-    },
-    {
-      "version": "0.23.0",
-      "changes": [
-        "Adicionou a especialidade de financas pessoais e produto financeiro, com analise verificavel e handoff seguro para agentes de codigo.",
-        "Corrigiu a coordenacao do Desktop: retorno no chat do executor, recibos reais, fila por card e streaming publico ordenado.",
-        "Adicionou indicadores de atividade, texto formatado e a atualizacao local do Desktop com confirmacao apos o reinicio.",
-        "Manteve credenciais, conversas privadas e dados financeiros fora de logs, prompts de delegacao e do payload publicado."
-      ]
-    },
-    {
       "version": "0.13.0",
       "changes": [
         "Adicionou a suíte histórica de evals do núcleo do Omni.",
@@ -240,6 +222,63 @@
       "changes": [
         "Permitiu a primeira escrita reversivel do Overcore somente com diario, checkpoint, verificacao, reconciliacao e revalidacao imediata pelo Omni.",
         "Adicionou revalidacao HTTP local vinculada ao pedido e ao effectKey antes de filesystem.modify, mantendo negados efeitos irreversiveis, segredo, privilegio e publicacao."
+      ]
+    },
+    {
+      "version": "0.23.0",
+      "changes": [
+        "Adicionou a especialidade de financas pessoais e produto financeiro, com analise verificavel e handoff seguro para agentes de codigo.",
+        "Corrigiu a coordenacao do Desktop: retorno no chat do executor, recibos reais, fila por card e streaming publico ordenado.",
+        "Adicionou indicadores de atividade, texto formatado e a atualizacao local do Desktop com confirmacao apos o reinicio.",
+        "Manteve credenciais, conversas privadas e dados financeiros fora de logs, prompts de delegacao e do payload publicado."
+      ]
+    },
+    {
+      "version": "0.23.1",
+      "changes": [
+        "Passou a persistir no PostgreSQL interno os achados operacionais sanitizados: categoria, estado, contagem e fingerprints; conversa, comandos, anexos e credenciais continuam fora do ledger.",
+        "Adicionou a migration checksummed 004 e a operação autenticada learning.record-improvement no broker, com RLS por proprietário e idempotência por evento.",
+        "Ligou o ciclo de autoaprendizado ao ledger durável em hooks e no Desktop, preservando o cache local como camada de trabalho.",
+        "O painel do Desktop agora mostra a versão, a assinatura e o estado de integridade do núcleo carregado, separado da confirmação da build local aplicada."
+      ]
+    },
+    {
+      "version": "0.23.2",
+      "changes": [
+        "Conectou a auditoria periodica do Desktop ao aprendizado operacional deduplicado e sanitizado.",
+        "Corrigiu correlacao de retornos, fronteiras entre turnos, anexos de texto e imagem e selecao explicita de projeto.",
+        "Validou cards por telemetria, resumo preparado antes do clique e preservacao de rascunhos em falhas de envio.",
+        "Preparacao local: esta entrada nao comprova publicacao, instalacao do plugin em outros hosts nem readback."
+      ]
+    },
+    {
+      "version": "0.23.3",
+      "changes": [
+        "Ativa licoes operacionais uteis como memoria atribuida sem aguardar autorizacao adicional ou release de codigo.",
+        "Registra aprendizados de resultados revisados, recupera escritas interrompidas e sincroniza com PostgreSQL sem reenviar tarefas.",
+        "Separa erro da aplicacao de sucesso do wrapper, preserva evidencias anteriores e impede correcoes identicas repetidas.",
+        "Retira predecessores da contagem de pedidos pendentes e registra os IDs de memoria recuperados.",
+        "Preparacao local: nao implica publicacao remota ou instalacao do plugin em outros hosts."
+      ]
+    },
+    {
+      "version": "0.24.0",
+      "changes": [
+        "Ligou o fluxo de tarefas do Omni ao Overcore independente: decisões agrupadas, revisão do mesmo pedido, admissão e consulta de resultado verificado.",
+        "Adicionou retorno ao chat de origem no Desktop, com persistência por conversa e deduplicação após reinício.",
+        "Consolidou os avanços locais de memória e aprendizado das versões 0.23.1 a 0.23.3, sem incluir conversas ou credenciais no pacote.",
+        "Consolidou melhorias do Desktop: anexos, evidência de execução, mapa de agentes, leitor Markdown e tratamento de contexto privado no Crachá.",
+        "Mantém o estado do Overcore fora da memória pessoal e exige readback de versão e fingerprint para distinguir instalação de carregamento."
+      ]
+    },
+    {
+      "version": "0.24.1",
+      "changes": [
+        "Implementa referências privadas de uso do Crachá vinculadas à sessão, tarefa e projeto, com prazo, revogação e idempotência por chamada.",
+        "Entrega ao executor um cliente real para catálogo e atualização de dados PostgreSQL, diretamente ou por canal SSH com psql dentro do servidor.",
+        "Mantém senhas no broker, verifica a identidade SSH e usa somente permissões já existentes, sem alterar pg_hba ou sudoers.",
+        "Separa a execução privada do broker de memória, registra recibos reais e informa ao coordenador as capacidades disponíveis.",
+        "Preparação local validada com credenciais fictícias; não comprova conexão com servidor de produção, nem autoriza SQL livre ou escrita."
       ]
     }
   ]

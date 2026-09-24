@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm as removeFixture, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
+
+// Windows can briefly hold fixture files after asynchronous ledger flushes.
+const rm = (path, options) => removeFixture(path, { ...options, maxRetries: 8, retryDelay: 25 })
 
 import {
   adaptarFimSubagenteClaude,

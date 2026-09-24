@@ -12,6 +12,7 @@ import { assinaturaDiagnosticaFalha, observarFerramenta, observarPrompt } from '
 import { analisarExperiencias } from './pipeline-memoria.mjs'
 import { materializarMelhoriaComBaselineConfigurada } from './automacao-melhorias.mjs'
 import { fingerprintObjetivo } from './passe.mjs'
+import { auditarDesktop } from './auditoria-desktop.mjs'
 
 export const DAILY_SCAN_SCHEMA_VERSION = 2
 const CONTRACT_PATH = new URL('../contratos/aprendizado/varredura-diaria.json', import.meta.url)
@@ -813,6 +814,7 @@ export async function varrerAtividadesDoDia(casa, {
     }
     if (automatic) store.lastAutomaticCheckAt = now.toISOString()
     const before = await contadores(casa)
+    const desktopAudit = await auditarDesktop(casa)
     const cycle = await lerCicloOperacional(casa)
     const activated = new Set([
       ...store.activatedSessionFingerprints,
@@ -887,6 +889,7 @@ export async function varrerAtividadesDoDia(casa, {
       activitiesProcessed: pending.length,
       activitiesAlreadyKnown: extracted.activities.length - pending.length,
       observations,
+      desktopAudit,
       before,
       after,
       changes: {

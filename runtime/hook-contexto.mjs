@@ -19,6 +19,7 @@ import {
   renderTurnPersonalityAdjustment
 } from '../dist/core/personality/personality.js'
 import { montarContexto } from './contexto.mjs'
+import { contextoFluxosOvercore } from './overcore-task-flow.mjs'
 import { casaDoOmni } from './memoria.mjs'
 import { processarExperiencia } from './pipeline-memoria.mjs'
 import { sincronizarMemoriaDuravel } from './sincronizacao-memoria-duravel.mjs'
@@ -36,7 +37,7 @@ import { registrarCoberturaAoVivo } from './varredura-diaria.mjs'
 import {
   exigirInicioDespachoAntesDaParada
 } from './automacao-falhas.mjs'
-import { exigirInicioDespachoMelhoriaAntesDaParada } from './automacao-melhorias.mjs'
+import { exigirInicioDespachoMelhoriaAntesDaParada, ativarAprendizadosOperacionais } from './automacao-melhorias.mjs'
 import {
   adaptarFimSubagenteClaude,
   adaptarInicioSubagenteClaude,
@@ -110,14 +111,15 @@ function avisoDegradacao(falhas) {
   ].join(' ')
 }
 
-function saidaComContexto(hookEventName, additionalContext) {
+function saidaComContexto(hookEventName, additionalContext, metadata = null) {
   const text = String(additionalContext ?? '')
   if (text.length > 9_500) throw new Error('Contexto do hook excedeu o orçamento block-aware de 9.500 caracteres.')
   return {
     suppressOutput: true,
     hookSpecificOutput: {
       hookEventName,
-      additionalContext: text
+      additionalContext: text,
+      ...(metadata ? { omniMetadata: metadata } : {})
     }
   }
 }
@@ -163,7 +165,7 @@ async function motivoDeBloqueioComPersonalidade(casa, motivo) {
   ].join('\n')
 }
 
-export async function tratarHook(input, env = process.env) {
+export async function tratarHook(input, env = process.env, { contextOnly = false, executorAvailable = true } = {}) {
   const parsedInput = parseClaudeHookInput(input)
   if (!parsedInput.ok) return saidaVazia()
   input = parsedInput.value
@@ -453,21 +455,24 @@ export async function tratarHook(input, env = process.env) {
   if (!intencao) return saidaVazia()
 
   const falhas = [...estadoSessao.falhas]
-  const [, observacaoPrompt, auditoria] = await Promise.all([
+  const [experiencia, observacaoPrompt, auditoria] = contextOnly ? [] : await Promise.all([
     tentarComponente('memoria-experiencia', () => processarExperiencia(casa, intencao), falhas),
     tentarComponente('observador-prompt', () => observarPrompt(casa, input), falhas),
     tentarComponente('auditoria-turno', () => abrirTurnoAuditoria(casa, input), falhas)
   ])
-  await tentarComponente('sincronizacao-memoria-duravel', () => sincronizarMemoriaDuravel(casa), falhas)
-  await tentarComponente('sincronizacao-missoes-duraveis', () => sincronizarMissoesDuraveis(casa), falhas)
-  await tentarComponente('sincronizacao-aprendizado-operacional', () => sincronizarAprendizadoOperacional(casa), falhas)
+  if (!contextOnly) await tentarComponente('aprendizado-operacional', () => ativarAprendizadosOperacionais(casa), falhas)
+  const memorySync = contextOnly ? null : await tentarComponente('sincronizacao-memoria-duravel', () => sincronizarMemoriaDuravel(casa), falhas)
+  if (!contextOnly) {
+    await tentarComponente('sincronizacao-missoes-duraveis', () => sincronizarMissoesDuraveis(casa), falhas)
+    await tentarComponente('sincronizacao-aprendizado-operacional', () => sincronizarAprendizadoOperacional(casa), falhas)
+  }
   if (observacaoPrompt?.observationFailure?.result === 'failed') {
     falhas.push({
       nome: 'observador-prompt-operacional',
       mensagem: observacaoPrompt.observationFailure.error ?? 'Error'
     })
   }
-  await tentarComponente(
+  if (!contextOnly) await tentarComponente(
     'cobertura-ao-vivo',
     () => registrarCoberturaAoVivo(casa, {
       sessionId: input.session_id,
@@ -475,7 +480,7 @@ export async function tratarHook(input, env = process.env) {
     }),
     falhas
   )
-  const [contexto, persona, automacao, auditoriaSistema] = await Promise.all([
+  const [contexto, persona, automacao, auditoriaSistema, tarefasExternas] = await Promise.all([
     tentarComponente(
       'contexto-memoria',
       () => montarContexto(casa, {
@@ -490,7 +495,7 @@ export async function tratarHook(input, env = process.env) {
       () => lerPersonalidadeAtiva({ pluginRoot: raiz }),
       falhas
     ),
-    tentarComponente(
+    contextOnly || !executorAvailable ? null : tentarComponente(
       'arbitro-automacoes',
       () => contextoProximaAutomacaoClaude(casa, {
         sessionId: input.session_id,
@@ -498,11 +503,12 @@ export async function tratarHook(input, env = process.env) {
       }),
       falhas
     ),
-    tentarComponente(
+    contextOnly ? null : tentarComponente(
       'auditoria-sistema',
       () => consumirContextoAuditoriaSistema(casa),
       falhas
-    )
+    ),
+    tentarComponente('tarefas-externas', () => contextoFluxosOvercore(casa, input.session_id, env, input.prompt), falhas)
   ])
   let projecao = null
   const rota = contexto?.routing?.selected
@@ -532,9 +538,21 @@ export async function tratarHook(input, env = process.env) {
       automation: automacao?.context,
       audit: auditoria?.context,
       systemAudit: auditoriaSistema,
+      externalTasks: tarefasExternas,
       degradation: avisoDegradacao(falhas),
       gallerySeed: sementeDaGaleria(input)
-    }).text
+    }).text,
+    {
+      ...(!contextOnly ? { persistence: { recorded: experiencia?.memories?.length ?? (experiencia?.memory ? 1 : 0), synchronized: ['synced', 'empty'].includes(memorySync?.result) } } : {}),
+      memory: {
+        considered: contexto?.retrieval?.considered ?? 0,
+        eligible: contexto?.retrieval?.eligible ?? 0,
+        applied: rotaDaProjecao ? (contexto?.retrieval?.applied?.[rotaDaProjecao]?.length ?? 0) : 0,
+        appliedIds: rotaDaProjecao ? (contexto?.retrieval?.applied?.[rotaDaProjecao] ?? []).map(item => typeof item === 'string' ? item : item.id).filter(Boolean) : [],
+        route: rotaDaProjecao ?? null
+      },
+      degraded: falhas.length > 0
+    }
   )
 }
 

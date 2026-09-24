@@ -4,8 +4,9 @@ import { pathToFileURL } from 'node:url'
 import { Controller } from './controller'
 import { Store } from './store'
 import { home, root, broker, mintVoiceToken, transcribeAudio } from './runtime'
-import { CredentialIntake } from './credential-intake'
 import { LocalUpdateService } from './update-service'
+import { resultId } from './ipc-identifiers'
+import { DocumentWindows } from './document-windows'
 let window: BrowserWindow | null = null
 let tray: Tray | null = null
 let quitting = false
@@ -13,8 +14,7 @@ let shuttingDown = false
 const page = join(import.meta.dirname, '../renderer/index.html')
 const trustedUrl = process.env.ELECTRON_RENDERER_URL || pathToFileURL(page).href
 const store = new Store(join(home, 'desktop'))
-const credentialIntake = new CredentialIntake(broker)
-const updates = new LocalUpdateService([join(import.meta.dirname, 'index.js'), join(import.meta.dirname, '../preload/index.cjs'), page], join(home, 'desktop', 'update-preferences.json'))
+const updates = new LocalUpdateService([join(import.meta.dirname, 'index.js'), join(import.meta.dirname, '../preload/index.cjs'), page, join(import.meta.dirname, '../preload/document.cjs'), join(import.meta.dirname, '../renderer/document.html'), join(root, 'apps/omni-desktop/scripts/use-cracha.mjs'), join(root, 'apps/omni-desktop/scripts/ssh-executor.mjs'), join(root, 'dist/adapters/windows/node-access-broker-client.js'), join(root, 'scripts/omni-credential-execution.ps1'), join(root, 'contratos/atualizacao/integridade.json')], join(home, 'desktop', 'update-preferences.json'))
 async function releaseIdentity() {
   try {
     const { verificarIntegridadeRelease } = await import(pathToFileURL(join(root, 'runtime', 'integridade-release.mjs')).href)
@@ -27,6 +27,7 @@ async function releaseIdentity() {
 const controller = new Controller(store, snapshot => {
   if (window && !window.isDestroyed()) window.webContents.send('omni:change', snapshot)
 })
+const credentialIntake = controller.credentialIntake
 const id = (v: unknown) => { if (typeof v !== 'string' || !/^[a-f0-9-]{36}$/i.test(v)) throw new Error('Identificador inválido.'); return v }
 const externalUrl = (value: unknown) => {
   if (typeof value !== 'string' || value.length > 2048) throw new Error('Link inválido.')
@@ -68,8 +69,8 @@ else {
     window.setMenuBarVisibility(false)
     window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
     window.webContents.on('will-navigate', event => event.preventDefault())
-    window.webContents.on('render-process-gone', () => credentialIntake.discard())
-    window.on('hide', () => credentialIntake.discard())
+    window.webContents.on('render-process-gone', () => credentialIntake.discardDrafts())
+    window.on('hide', () => credentialIntake.discardDrafts())
     window.webContents.session.setPermissionRequestHandler((contents, permission, callback, details) => {
       callback(contents === window?.webContents && permission === 'media' && contents.getURL() === trustedUrl && 'mediaTypes' in details && (details.mediaTypes || []).every((t: string) => t === 'audio'))
     })
@@ -90,6 +91,10 @@ else {
     const applyUpdate = async () => {
       await checkForUpdate()
       if (!updates.canApply()) throw new Error('Não há uma atualização local pronta para aplicar.')
+      if (credentialIntake.hasPrivateContext || controller.executorAccess.hasGrants) {
+        const detail = 'Há contexto privado temporário no Crachá. A atualização aguarda seu tratamento, descarte ou expiração para não apagá-lo.'
+        controller.setUpdateStatus(updates.markBlocked(detail)); throw new Error(detail)
+      }
       if (controller.active.size) {
         controller.setUpdateStatus(updates.markBlocked('Há uma resposta ou encaminhamento em andamento. Quando ele terminar, atualize sem interromper o trabalho.'))
         throw new Error('O Omni está trabalhando. Aguarde a resposta terminar para atualizar.')
@@ -121,7 +126,10 @@ else {
     })
     register('delegate', (value, text) => { if (typeof text !== 'string') throw new Error('Mensagem inválida.'); return controller.delegate(id(value), text) })
     register('consume-task', value => controller.consumeTask(id(value)))
-    register('release-result', value => controller.releaseResult(id(value)))
+    register('release-result', value => controller.releaseResult(resultId(value)))
+    register('attachment-preview', (conversationId, attachmentId) => controller.attachmentPreview(id(conversationId), id(attachmentId)))
+    const documents = new DocumentWindows(join(import.meta.dirname, '../renderer/document.html'), join(import.meta.dirname, '../preload/document.cjs'), value => shell.openExternal(externalUrl(value)), process.env.ELECTRON_RENDERER_URL)
+    register('document-open', (conversationId, reference) => documents.open(store.get(id(conversationId)).workspace, reference))
     register('acknowledge-returns', value => controller.acknowledgeReturns(id(value)))
     register('workspace', async value => {
       const c = store.get(id(value)); await controller.assertIdle(c)
@@ -131,16 +139,41 @@ else {
       c.workspace = resolve(result.filePaths[0]); await store.save(); controller.emit()
     })
     register('send', (value, text, channel) => { if (typeof text !== 'string') throw new Error('Mensagem inválida.'); return controller.send(id(value), text, channel === 'voice' ? 'voice' : 'text') })
-    register('send-attachments', (value, text, channel, attachments) => { if (typeof text !== 'string') throw new Error('Invalid message.'); return controller.send(id(value), text, channel === 'voice' ? 'voice' : 'text', attachments) })
+    register('send-attachments', (value, text, channel, attachments, privateAttachmentId) => { if (typeof text !== 'string') throw new Error('Invalid message.'); return controller.send(id(value), text, channel === 'voice' ? 'voice' : 'text', attachments, privateAttachmentId === undefined ? undefined : id(privateAttachmentId)) })
     register('cancel', value => controller.cancel(id(value)))
     register('decide', (value, allow) => controller.decide(id(value), allow === true))
+    register('editor-block', (value, allow) => controller.resolveEditorBlock(id(value), allow === true))
     register('sessions', value => controller.sessions(id(value)))
     register('resume', (value, sessionId) => controller.resume(id(value), id(sessionId)))
     register('editor', async value => { await shell.openExternal(await controller.handoff(id(value))) })
     register('credential-prepare', value => credentialIntake.prepare(value))
+    register('credential-prepare-path', value => credentialIntake.prepareDocumentPath(value))
+    register('credential-pick-document', async () => {
+      const result = await dialog.showOpenDialog(window!, {
+        title: 'Selecionar JSON privado para o Crachá',
+        properties: ['openFile'],
+        filters: [{ name: 'Documento JSON', extensions: ['json'] }]
+      })
+      if (result.canceled || !result.filePaths[0]) return null
+      return credentialIntake.prepareDocumentPath(result.filePaths[0])
+    })
+    register('credential-pick-attachment', async conversationId => {
+      const result = await dialog.showOpenDialog(window!, {
+        title: 'Selecionar JSON privado para o Crachá',
+        properties: ['openFile'],
+        filters: [{ name: 'Documento JSON', extensions: ['json'] }]
+      })
+      if (result.canceled || !result.filePaths[0]) return null
+      return credentialIntake.stageAttachmentPath(id(conversationId), result.filePaths[0])
+    })
+    register('credential-lookup', value => credentialIntake.lookup(value))
     register('credential-test', value => credentialIntake.test(value))
     register('credential-save', value => credentialIntake.save(value))
+    register('credential-save-pending', value => credentialIntake.savePending(value))
     register('credential-discard', () => credentialIntake.discard())
+    register('credential-attachment-stage', (conversationId, text) => credentialIntake.stageAttachment(id(conversationId), text))
+    register('credential-attachment', conversationId => credentialIntake.attachmentInfo(id(conversationId)))
+    register('credential-attachment-discard', conversationId => credentialIntake.discardAttachment(id(conversationId)))
     register('open-url', async value => { await shell.openExternal(externalUrl(value)) })
     register('voice', async value => { store.get(id(value)); return mintVoiceToken() })
     register('transcribe', transcribeAudio)
@@ -161,7 +194,8 @@ else {
     setInterval(() => void (async () => {
       const status = await updates.check()
       if (status.autoApply && updates.canApply()) {
-        if (controller.active.size) controller.setUpdateStatus(updates.markBlocked('Atualização local pronta. Ela será aplicada assim que o Omni não estiver respondendo ou encaminhando trabalho.'))
+        if (credentialIntake.hasPrivateContext || controller.executorAccess.hasGrants) controller.setUpdateStatus(updates.markBlocked('Atualização aguardando: há contexto privado temporário ou referência de uso no Crachá. Ele não será descartado para reiniciar.'))
+        else if (controller.active.size) controller.setUpdateStatus(updates.markBlocked('Atualização local pronta. Ela será aplicada assim que o Omni não estiver respondendo ou encaminhando trabalho.'))
         else await applyUpdate()
       } else controller.setUpdateStatus(status)
     })().catch(() => controller.setUpdateStatus(updates.markBlocked('Não foi possível aplicar a atualização automaticamente. Você pode tentar pelo botão Atualizar.'))), 5000).unref()

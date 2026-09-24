@@ -6,6 +6,7 @@ out/
 .prints/
 *.log
 *.tmp
+*.vsix
 .DS_Store
 .claude/
 

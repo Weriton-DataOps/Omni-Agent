@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import type { CredentialRegistrationInput } from '../shared/contracts'
 
-export type CredentialKind = 'token' | 'login' | 'database' | 'active-directory' | 'certificate'
+export type CredentialKind = 'token' | 'login' | 'database' | 'ssh' | 'active-directory' | 'certificate' | 'service-account'
 export interface ParsedCredential {
   registration: CredentialRegistrationInput
   kind: CredentialKind
@@ -22,14 +22,37 @@ function field(text: string, names: string): string {
   return (match?.[1] ?? match?.[2] ?? match?.[3] ?? '').trim()
 }
 
+/** Accept a natural complement such as "o serviço é Portal > https://...".
+ * The URL is a locator, never service metadata and never part of the secret payload. */
+function serviceField(text: string): string {
+  const match = /(?:^|[\s,;])(?:serviço|servico|sistema|provedor|service|provider)\s*(?::|=|é|eh)\s*(?:"([^"\r\n]*)"|'([^'\r\n]*)'|([^,;\r\n>]+?))(?=\s*(?:>|https?:\/\/|[,;\r\n]|$))/i.exec(text)
+  return (match?.[1] ?? match?.[2] ?? match?.[3] ?? field(text, 'serviço|servico|sistema|provedor|service|provider')).trim()
+}
+
 function atom(text: string, names: string): string {
   const pattern = new RegExp(`(?:^|[\\s,;])(?:${names})(?:\\s*[:=]\\s*|\\s+)(?:"([^"\\r\\n]*)"|'([^'\\r\\n]*)'|([^\\s,;]+))`, 'i')
   const match = pattern.exec(text)
   return (match?.[1] ?? match?.[2] ?? match?.[3] ?? '').trim()
 }
 
+type GoogleServiceAccount = { projectId: string; clientEmail: string; privateKey: string; privateKeyId: string; tokenUri: string }
+const asText = (value: unknown) => typeof value === 'string' ? value.trim() : ''
+/** Parse a local service-account document without reflecting its private key. */
+function googleServiceAccount(text: string): GoogleServiceAccount | null {
+  let document: unknown
+  try { document = JSON.parse(text) } catch { return null }
+  if (!document || typeof document !== 'object' || Array.isArray(document)) return null
+  const item = document as Record<string, unknown>
+  if (item.type !== 'service_account') return null
+  return {
+    projectId: asText(item.project_id), clientEmail: asText(item.client_email), privateKey: typeof item.private_key === 'string' ? item.private_key : '',
+    privateKeyId: asText(item.private_key_id), tokenUri: asText(item.token_uri),
+  }
+}
+
 const recognized = (value: string) => {
   const text = normalize(value)
+  if (/\bssh\b/.test(text)) return { id: 'ssh', label: 'SSH' }
   if (/\b(?:vercel|verecel)\b/.test(text)) return { id: 'vercel', label: 'Vercel' }
   if (/\bgithub\b/.test(text)) return { id: 'github', label: 'GitHub' }
   if (/\b(?:postgres|postgresql)\b/.test(text)) return { id: 'postgresql', label: 'PostgreSQL' }
@@ -57,11 +80,28 @@ function expiry(text: string, now: Date): string | null {
 /** Runs exclusively in the trusted main process. Callers must never log this result or its input. */
 export function parseCredential(text: string, now: Date = new Date()): ParsedCredential {
   if (typeof text !== 'string' || !text.trim() || Buffer.byteLength(text, 'utf8') > 16000 || !Number.isFinite(now.getTime())) throw new Error('Envie uma descrição de acesso válida, com até 16 KB.')
+  const google = googleServiceAccount(text)
+  if (google) {
+    const missing: string[] = []
+    if (!google.projectId) missing.push('O JSON da conta de serviço não informa project_id.')
+    if (!google.clientEmail) missing.push('O JSON da conta de serviço não informa client_email.')
+    if (!google.privateKey || !/-----BEGIN PRIVATE KEY-----[\s\S]+-----END PRIVATE KEY-----/.test(google.privateKey)) missing.push('O JSON da conta de serviço não traz uma private_key válida.')
+    if (google.tokenUri && google.tokenUri !== 'https://oauth2.googleapis.com/token') missing.push('A token_uri da conta de serviço não é o endpoint Google esperado.')
+    const projectRef = ref(google.projectId, 'project')
+    const accountRef = ref(google.clientEmail.split('@')[0] || '', 'service-account')
+    const token = JSON.stringify({ kind: 'service-account', projectId: google.projectId, clientEmail: google.clientEmail, privateKey: google.privateKey, privateKeyId: google.privateKeyId, tokenUri: google.tokenUri || 'https://oauth2.googleapis.com/token' })
+    if (Buffer.byteLength(token, 'utf8') > 2400) throw new Error('Este JSON de conta de serviço excede o limite de 2.400 bytes do cofre.')
+    return {
+      registration: { credentialId: identifier(`google-cloud-${projectRef}-${accountRef}`), providerRef: 'google-cloud', accountRef, environmentRef: 'unspecified', token, expiresAt: null, renewalMode: 'rotate' },
+      kind: 'service-account', serviceLabel: 'Google Cloud', missing,
+    }
+  }
   const missing: string[] = []
   const pem = /-----BEGIN (CERTIFICATE|PRIVATE KEY|ENCRYPTED PRIVATE KEY|RSA PRIVATE KEY|EC PRIVATE KEY)-----[\s\S]+?-----END \1-----/g
   const certificatePem = text.match(pem)?.join('\n') ?? ''
   const withoutPem = text.replace(pem, ' ')
   const uriText = /\b(?:postgres(?:ql)?|mysql|mssql|sqlserver):\/\/[^\s<>"']+/i.exec(withoutPem)?.[0]
+  const serviceUrl = /\bhttps?:\/\/[^\s<>"']+/i.exec(withoutPem)?.[0]?.replace(/[.,;]+$/, '') ?? ''
   let uri: URL | undefined
   if (uriText) {
     try { uri = new URL(uriText.replace(/[;,]$/, '')) } catch { throw new Error('A conexão do banco está incompleta ou inválida.') }
@@ -72,10 +112,13 @@ export function parseCredential(text: string, now: Date = new Date()): ParsedCre
   const classification = [suppliedPassword, suppliedAccount].filter(Boolean).reduce((safe, value) => safe.split(value).join(' '), plain)
   const lower = normalize(classification)
   const known = recognized(classification) ?? (uri ? recognized(uri.protocol.replace(':', '')) : null)
-  const kind: CredentialKind = certificatePem || /\b(?:certificado|certificate|pem)\b/.test(lower) ? 'certificate'
+  const kind: CredentialKind = /\bssh\b/.test(lower) ? 'ssh' : certificatePem || /\b(?:certificado|certificate|pem)\b/.test(lower) ? 'certificate'
     : uri || /\b(?:postgres(?:ql)?|mysql|sql server|sqlserver|mssql|banco de dados|database)\b/.test(lower) ? 'database'
       : /\b(?:active directory|active-directory|ad|dominio)\b/.test(lower) ? 'active-directory'
-        : /\b(?:usuario|username|login|senha|password)\b/.test(lower) && !/\b(?:token|chave|api key)\b/.test(lower) ? 'login' : 'token'
+        // A URL that explicitly points at an authentication page is enough to
+        // identify this as a login flow. The URL remains inside the protected
+        // payload; it never becomes inventory metadata or chat text.
+        : (/\b(?:usuario|username|login|senha|password)\b/.test(lower) || /\/(?:login|signin|sign-in|auth)(?:[/?#]|$)/i.test(serviceUrl)) && !/\b(?:token|chave|api key)\b/.test(lower) ? 'login' : 'token'
 
   let username = atom(plain, 'usuário|usuario|username|user|login')
   let password = suppliedPassword
@@ -84,7 +127,7 @@ export function parseCredential(text: string, now: Date = new Date()): ParsedCre
   let database = atom(plain, 'banco|database|db')
   let domain = atom(plain, 'domínio|dominio|domain')
   const explicitAccount = suppliedAccount
-  const explicitService = field(plain, 'serviço|servico|sistema|provedor|service|provider')
+  const explicitService = serviceField(plain)
   const explicitEnvironment = atom(plain, 'ambiente|environment')
   let account = explicitAccount || username || 'pessoal'
   let secret = ''
@@ -119,6 +162,12 @@ export function parseCredential(text: string, now: Date = new Date()): ParsedCre
     if (!database) missing.push('Qual é o nome do banco?')
     if (port && (!/^\d+$/.test(port) || Number(port) < 1 || Number(port) > 65535)) throw new Error('Informe uma porta de banco válida.')
   }
+  if (kind === 'ssh') {
+    if (!host) missing.push('Qual é o host SSH?')
+    if (!username) missing.push('Qual é o usuário SSH?')
+    if (!password && !certificatePem) missing.push('Inclua a senha ou chave privada SSH no Crachá.')
+    if (port && (!/^\d+$/.test(port) || Number(port) < 1 || Number(port) > 65535)) throw new Error('Informe uma porta SSH válida.')
+  }
   if (kind === 'database' || kind === 'active-directory' || kind === 'login') {
     if (!username) missing.push('Qual é o usuário desse acesso?')
     if (!password) missing.push('Qual é a senha desse acesso?')
@@ -130,7 +179,9 @@ export function parseCredential(text: string, now: Date = new Date()): ParsedCre
   const hasSecret = (value: string) => secrets.some(item => item.length >= 8 ? value.includes(item) : value === item)
   const safeService = explicitService && explicitService.length <= 100 && /^[\p{L}\p{N} ._-]+$/u.test(explicitService) && !hasSecret(explicitService) ? explicitService : ''
   const provider = safeService ? recognized(safeService) ?? { id: ref(safeService, 'unspecified'), label: safeService } : known
-  if (!provider) missing.push('Para qual serviço ou sistema é esse acesso? Informe “serviço: nome”.')
+  // A token needs a stable name for later retrieval, but never a project,
+  // website or planned action. Those belong to the later Omni conversation.
+  if (!provider) missing.push('Como devo chamar este acesso? Ex.: “Vercel”. Não preciso do projeto, site ou ação agora.')
   if (kind === 'database' && !['postgresql', 'mysql', 'sqlserver'].includes(known?.id ?? '')) missing.push('Qual é o tipo de banco: PostgreSQL, MySQL ou SQL Server?')
   if ([account, username, host, database, domain, explicitEnvironment, provider?.label ?? ''].some(value => value && hasSecret(value))) throw new Error('Separe o nome da conta, o ambiente e o segredo em campos diferentes.')
 
@@ -139,13 +190,14 @@ export function parseCredential(text: string, now: Date = new Date()): ParsedCre
   const accountRef = ref(account, 'pessoal')
   const engine = known?.id ?? 'unspecified'
   const details = kind === 'database' ? { host, port, database, username, password, engine, ...(uri?.searchParams.get('sslmode') ? { sslmode: uri.searchParams.get('sslmode')! } : {}) }
-    : kind === 'active-directory' ? { domain, username, password, ...(host ? { host } : {}) }
+    : kind === 'ssh' ? { host, port: port || '22', username, ...(certificatePem ? { privateKey: certificatePem, ...(password ? { passphrase: password } : {}) } : { password }), ...(atom(plain, 'fingerprint|hostKeySha256') ? { hostKeySha256: atom(plain, 'fingerprint|hostKeySha256') } : {}) }
+      : kind === 'active-directory' ? { domain, username, password, ...(host ? { host } : {}) }
       : kind === 'certificate' ? { certificatePem, ...(password ? { password } : {}) }
-        : kind === 'login' ? { username, password } : { token: secret }
+        : kind === 'login' ? { username, password, ...(serviceUrl ? { url: serviceUrl } : {}) } : { token: secret }
   const token = JSON.stringify({ kind, ...details })
   if (Buffer.byteLength(token, 'utf8') > 2400) throw new Error('Este acesso excede o limite de 2.400 bytes do cofre. Use uma referência de certificado ou credencial menor.')
   const defaultPort = ({ postgresql: '5432', mysql: '3306', sqlserver: '1433' } as Record<string, string>)[engine] || ''
-  const target = kind === 'database' ? [host, port || defaultPort, database].filter(Boolean).map(value => ref(value, 'unspecified')) : kind === 'active-directory' ? [ref(domain, 'unspecified')] : []
+  const target = kind === 'database' ? [host, port || defaultPort, database].filter(Boolean).map(value => ref(value, 'unspecified')) : kind === 'ssh' ? [ref(host, 'host'), port || '22'] : kind === 'active-directory' ? [ref(domain, 'unspecified')] : []
   const credentialId = identifier([providerRef, accountRef, ...(explicitEnvironment ? [environmentRef] : []), ...target].join('-'))
   return {
     registration: { credentialId, providerRef, accountRef, environmentRef, token, expiresAt: expiry(plain, now), renewalMode: kind === 'login' || kind === 'active-directory' ? 'reauthenticate' : 'rotate' },

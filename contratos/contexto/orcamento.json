@@ -3,9 +3,9 @@
   "policy": "context-budget-v1",
   "paths": {
     "fast": {
-      "totalCharacters": 1800,
+      "totalCharacters": 2400,
       "capabilityLimit": 3,
-      "categories": { "mandatory": 1200, "highPriority": 300, "relevant": 250, "optional": 50 }
+      "categories": { "mandatory": 1200, "highPriority": 300, "relevant": 850, "optional": 50 }
     },
     "deep": {
       "totalCharacters": 5200,

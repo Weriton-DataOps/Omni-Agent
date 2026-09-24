@@ -567,6 +567,9 @@ async function registrar(casa, entrada) {
       (item) => `${item.scope.type}:${item.scope.id ?? ''}:${normalizar(item.text)}` === key
     )
     if (existente) {
+      if (entrada.evidenceRef && existente.evidence.some(item => item.reference === entrada.evidenceRef)) {
+        return { result: 'already-recorded', memory: existente }
+      }
       const agora = new Date().toISOString()
       existente.occurrences += 1
       existente.updatedAt = agora
@@ -574,7 +577,7 @@ async function registrar(casa, entrada) {
       existente.importance = Math.max(existente.importance, entrada.importance ?? 0.5)
       existente.evidence = [
         ...existente.evidence,
-        { kind: entrada.evidenceKind, recordedAt: agora }
+        { kind: entrada.evidenceKind, recordedAt: agora, ...(entrada.evidenceRef ? { reference: entrada.evidenceRef } : {}) }
       ].slice(-20)
 
       if (entrada.status === 'confirmed' && existente.status === 'candidate') {
@@ -611,12 +614,12 @@ async function registrar(casa, entrada) {
         status: entrada.status === 'confirmed' ? 'confirmed' : 'validated',
         reasons: []
       },
-      evidence: [{ kind: entrada.evidenceKind, recordedAt: agora }],
+      evidence: [{ kind: entrada.evidenceKind, recordedAt: agora, ...(entrada.evidenceRef ? { reference: entrada.evidenceRef } : {}) }],
       createdAt: agora,
       updatedAt: agora,
       lastValidatedAt: entrada.status === 'confirmed' ? agora : null,
       usageCount: 0,
-      expiresAt: null
+      expiresAt: entrada.expiresAt ?? null
     }
     if (item.status === 'confirmed') {
       memoria.confirmed = [...memoria.confirmed, item]
@@ -642,6 +645,35 @@ export function lembrarExplicitamente(casa, text, type = 'semantic', scope = { t
     importance: importanciaPadrao(type),
     validation: { status: 'confirmed', reasons: ['explicit-owner-request'] },
     evidenceKind: 'explicit-request'
+  })
+}
+
+/**
+ * Records a small, verified operational fact without treating a raw
+ * conversation as durable memory.  This is intentionally narrower than the
+ * owner-facing memory pipeline: callers may use it only after the runtime has
+ * observed the fact itself (for example, an existing workspace successfully
+ * opened by Omni).  It lets later turns act on verified context instead of
+ * repeatedly asking the owner for the same route.
+ */
+export function registrarFatoOperacional(casa, text, {
+  type = 'semantic',
+  scope = { type: 'user' },
+  source = 'runtime-verified-fact',
+  importance = 0.82
+} = {}) {
+  if (!MEMORY_TYPES.has(type)) throw new Error('Tipo de fato operacional invÃ¡lido.')
+  if (!String(source).startsWith('runtime-')) throw new Error('Fonte de fato operacional invÃ¡lida.')
+  return registrar(casa, {
+    text,
+    type,
+    scope,
+    source,
+    status: 'confirmed',
+    confidence: 0.98,
+    importance,
+    validation: { status: 'confirmed', reasons: ['runtime-verified-fact'] },
+    evidenceKind: 'runtime-verification'
   })
 }
 
@@ -688,6 +720,18 @@ export function registrarMemoriaAnalisada(casa, analise) {
       reasons: analise.validationReasons
     },
     evidenceKind: analise.evidenceKind
+  })
+}
+
+/** Validated, attributed learning is usable immediately; it never grants authority. */
+export function registrarAprendizado(casa, { text, type = 'procedural', scope, reference, reasons, expiresAt = null }) {
+  if (!/^[a-f0-9]{64}$/.test(reference || '') || !Array.isArray(reasons) || !reasons.length) throw new Error('Aprendizado sem proveniencia.')
+  if (!['procedural', 'episodic', 'semantic'].includes(type) || !scope || !SCOPE_TYPES.has(scope.type)) throw new Error('Escopo de aprendizado invalido.')
+  return registrar(casa, {
+    text, type, scope, source: 'runtime-attributed-learning-v1', status: 'confirmed',
+    confidence: 0.85, importance: 0.82, expiresAt,
+    validation: { status: 'confirmed', reasons: ['automatic-useful-learning', 'not-an-authority-grant', ...reasons] },
+    evidenceKind: 'attributed-learning', evidenceRef: reference
   })
 }
 

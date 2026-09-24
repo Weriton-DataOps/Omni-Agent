@@ -1,8 +1,9 @@
 import { connect } from 'node:net'
+import { credentialExecutionOperation, type CredentialExecutionSource, type CredentialExecutionOperation, type CredentialExecutionResult } from '../../contracts/credential-execution.js'
 
 import { parseCredentialMetadata } from '../../contracts/credential-metadata.js'
 import type { CredentialMetadata, CredentialObservation } from '../../core/access/credential.js'
-import type { AccessBrokerClient } from '../../ports/access-broker-client.js'
+import type { AccessBrokerClient, CredentialMetadataSummary } from '../../ports/access-broker-client.js'
 import type { DurableMemoryClient, DurableMemoryEntry } from '../../ports/durable-memory-client.js'
 import type { DurableOperationalLearningClient, DurableOperationalLearningFinding } from '../../ports/durable-operational-learning-client.js'
 import type { DurableMission, DurableMissionClient } from '../../ports/durable-mission-client.js'
@@ -51,6 +52,21 @@ function registrationReceipt(value: unknown): CredentialRegistrationReceipt {
   return { credentialId: String(item.credentialId), version: Number(item.version), providerRef: String(item.providerRef), accountRef: String(item.accountRef), environmentRef: String(item.environmentRef), secretRef: item.secretRef, status: String(item.status), expiresAt: item.expiresAt === null ? null : new Date(String(item.expiresAt)).toISOString() }
 }
 
+function credentialMetadataSummary(value: unknown): CredentialMetadataSummary {
+  const item = record(value)
+  for (const key of ['credentialId', 'providerRef', 'accountRef', 'environmentRef']) safeIdentifier(String(item[key] ?? ''), key)
+  if (!Number.isSafeInteger(item.version) || Number(item.version) < 1 ||
+      !['unverified', 'active', 'expired', 'suspect', 'invalid', 'revoked', 'disabled', 'replaced'].includes(String(item.status)) ||
+      (item.expiresAt !== null && (typeof item.expiresAt !== 'string' || !Number.isFinite(Date.parse(item.expiresAt))))) {
+    throw new Error('Access broker credential inventory response is invalid.')
+  }
+  return {
+    credentialId: String(item.credentialId), version: Number(item.version), providerRef: String(item.providerRef),
+    accountRef: String(item.accountRef), environmentRef: String(item.environmentRef), status: String(item.status),
+    expiresAt: item.expiresAt === null ? null : new Date(String(item.expiresAt)).toISOString()
+  }
+}
+
 function record(value: unknown): Response {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new Error('Access broker returned an invalid response.')
   return value as Response
@@ -58,6 +74,11 @@ function record(value: unknown): Response {
 
 function safeIdentifier(value: string, label: string): string {
   if (!/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,159}$/u.test(value)) throw new Error(`${label} is invalid.`)
+  return value
+}
+
+function safeInventoryQuery(value: string): string {
+  if (typeof value !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,79}$/u.test(value)) throw new Error('Credential inventory query is invalid.')
   return value
 }
 
@@ -130,6 +151,24 @@ export class NodeAccessBrokerClient implements AccessBrokerClient, DurableMemory
     if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 10_000) throw new Error('Access broker timeout is invalid.')
   }
 
+  async executionCapabilities(): Promise<string[]> {
+    const response = await this.call({ operation: 'credential.execution-capabilities' })
+    if (!Array.isArray(response.operations) || response.operations.some(value => !['postgres.catalog', 'postgres.freshness'].includes(String(value)))) throw new Error('Invalid private capabilities.')
+    return response.operations as string[]
+  }
+
+  async executeCredential(source: CredentialExecutionSource, operation: CredentialExecutionOperation): Promise<CredentialExecutionResult> {
+    const action = credentialExecutionOperation(operation)
+    const leaf = (value: Exclude<CredentialExecutionSource, { ssh: unknown }>) => 'registration' in value
+      ? { registrationBase64: Buffer.from(JSON.stringify(credentialRegistration(value.registration)), 'utf8').toString('base64') }
+      : { credentialId: safeIdentifier(value.credentialId, 'credentialId'), version: safeVersion(value.version) }
+    const reference = 'ssh' in source ? { ssh: leaf(source.ssh), database: leaf(source.database), mode: source.mode } : leaf(source)
+    const response = await this.call({ operation: 'credential.execute', source: reference, action }, 25_000)
+    const result = record(response.result)
+    if (result.operation !== action.kind || !['completed', 'unsupported', 'unavailable', 'timeout', 'denied', 'host-key-required'].includes(String(result.outcome))) throw new Error('Invalid private execution receipt.')
+    return { operation: action.kind, outcome: result.outcome as CredentialExecutionResult['outcome'], data: result.outcome === 'completed' ? result.data : null }
+  }
+
   async health(): Promise<{ readonly protocol: 'omni-access-broker-v1'; readonly status: 'ready' | 'degraded' }> {
     const response = await this.call({ operation: 'health' })
     if (response.protocol !== 'omni-access-broker-v1' || (response.status !== 'ready' && response.status !== 'degraded')) {
@@ -191,6 +230,18 @@ export class NodeAccessBrokerClient implements AccessBrokerClient, DurableMemory
       throw new Error('Access broker credential lookup response is invalid.')
     }
     return { credentialId: String(receipt.credentialId), version: Number(receipt.version), providerRef: String(receipt.providerRef), accountRef: String(receipt.accountRef), environmentRef: String(receipt.environmentRef), secretRef: receipt.secretRef, expiresAt: receipt.expiresAt as string | null, status: receipt.status }
+  }
+
+  async listCredentialMetadata(query?: string): Promise<readonly CredentialMetadataSummary[]> {
+    const needle = query === undefined ? '' : safeInventoryQuery(query)
+    const response = await this.call({ operation: 'credential.list', query: needle })
+    if (typeof response.credentialsJson !== 'string' || Buffer.byteLength(response.credentialsJson, 'utf8') > 48_000) {
+      throw new Error('Access broker credential inventory response is invalid.')
+    }
+    let raw: unknown
+    try { raw = JSON.parse(response.credentialsJson) } catch { throw new Error('Access broker credential inventory response is invalid.') }
+    if (!Array.isArray(raw) || raw.length > 20) throw new Error('Access broker credential inventory response is invalid.')
+    return raw.map(credentialMetadataSummary)
   }
 
   async readCredentialVersion(credentialId: string, version: number): Promise<CredentialMetadata | null> {
@@ -319,9 +370,9 @@ export class NodeAccessBrokerClient implements AccessBrokerClient, DurableMemory
             finish(error instanceof Error ? error : new Error('Access broker response is invalid.'))
           }
         })
-        socket.once('error', retry)
+        socket.once('error', () => { if (connected && request.operation === 'credential.execute') { socket.destroy(); finish(new Error('Private execution result is unavailable; do not retry automatically.')) } else retry() })
         socket.once('end', () => {
-          if (!settled && connected && received.length === 0) retry()
+          if (!settled && connected && received.length === 0 && request.operation !== 'credential.execute') retry()
           else if (!settled) finish(new Error('Access broker closed without a response.'))
         })
       }

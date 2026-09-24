@@ -7,7 +7,7 @@ import type { query, Options } from '@anthropic-ai/claude-agent-sdk'
 import { Store } from '../src/main/store'
 import { Controller } from '../src/main/controller'
 import { Coordinator } from '../src/main/coordinator'
-import { validateReview } from '../src/shared/supervision'
+import { canApproveBlocker, validateReview } from '../src/shared/supervision'
 
 async function until(check: () => boolean) {
   const deadline = Date.now() + 5000
@@ -49,7 +49,7 @@ test('falha local é corrigida automaticamente; resultado final só entra após 
     assert.equal(store.conversations.filter(c => c.kind === 'task').length, 1)
     assert.equal(sessions[0], sessions[1])
     release()
-    await until(() => store.get(id).deliveryState === 'ready')
+    await until(() => controller.snapshot().results?.find(ticket => ticket.id === id)?.state === 'ready')
     assert.equal(store.get(id).acknowledgedAt, undefined)
     assert.equal(parent.messages.some(m => m.id === `report:${id}`), false)
     await controller.releaseResult(id)
@@ -61,7 +61,7 @@ test('falha local é corrigida automaticamente; resultado final só entra após 
     assert.equal(parent.messages.length, count)
     await until(() => controller.active.size === 0)
     await store.save()
-  } finally { await rm(dir, { recursive: true }) }
+  } finally { await rm(dir, { recursive: true, maxRetries: 8, retryDelay: 25 }) }
 })
 
 test('retorno externo incompleto volta à mesma sessão uma vez, com origem preservada e sem clique', async () => {
@@ -81,9 +81,11 @@ test('retorno externo incompleto volta à mesma sessão uma vez, com origem pres
     const event = { requestId: request.id, kind: 'blocked' as const, text: 'Faltou executar o teste.', at: new Date().toISOString(), evidenceId: 'report-1' }
     await coordinator.observe(target, [event], true)
     await until(() => !!target.editorRequests![0].summary)
+    await until(() => sent.length === 1)
     assert.equal(sent.length, 1); assert.equal(sent[0].sessionId, session.sessionId)
     assert.match(sent[0].text, /Teste autorizado/)
-    assert.match(target.messages.at(-1)!.text, /Correção encaminhada/)
+    await until(() => !!target.messages.find(message => message.id === 'editor-report:original'))
+    assert.match(target.messages.find(message => message.id === 'editor-report:original')!.text, /Correção encaminhada/)
     assert.equal(target.messages.filter(message => message.id === 'editor-forwarded:original').length, 1)
     assert.equal(origin.messages.length, 0)
     await coordinator.observe(target, [event], true)
@@ -99,7 +101,7 @@ test('retorno externo incompleto volta à mesma sessão uma vez, com origem pres
     assert.equal(sent.length, 1)
     assert.equal(next.deliveryState, 'ready')
     assert.equal(origin.messages.some(m => m.id === `editor-report:${next.id}`), false)
-  } finally { await rm(dir, { recursive: true }) }
+  } finally { await rm(dir, { recursive: true, maxRetries: 8, retryDelay: 25 }) }
 })
 
 test('reinício durante devolução preserva o envio já registrado e publica a atualização uma única vez', async () => {
@@ -122,11 +124,12 @@ test('reinício durante devolução preserva o envio já registrado e publica a 
     assert.equal(restored.get(target.id).editorRequests!.length, 2)
     assert.equal(restored.get(origin.id).messages.length, 0)
     const notices = () => restored.get(target.id).messages.filter(message => message.id === 'editor-report:original')
+    await until(() => notices().length === 1)
     assert.equal(notices().length, 1); assert.match(notices()[0].text, /Correção encaminhada/)
     c.resume()
     assert.equal(notices().length, 1)
     await restored.save()
-  } finally { await rm(dir, { recursive: true }) }
+  } finally { await rm(dir, { recursive: true, maxRetries: 8, retryDelay: 25 }) }
 })
 
 test('avaliação não permite ampliar escopo e respeita cancelamento e ausência de progresso', async () => {

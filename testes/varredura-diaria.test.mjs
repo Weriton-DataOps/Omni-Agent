@@ -133,7 +133,8 @@ test('varredura recupera lacunas do Omni, aprende rotina repetida e nao duplica 
       lerAtalhos(home),
       lerCicloOperacional(home)
     ])
-    assert.equal(memory.confirmed.length, 1)
+    assert.equal(memory.confirmed.filter(item => item.source !== 'runtime-attributed-learning-v1').length, 1)
+    assert.equal(memory.confirmed.filter(item => item.source === 'runtime-attributed-learning-v1').length, 1, 'procedimento repetido fica utilizável sem aguardar release')
     assert.ok(failures.patterns.length >= 2)
     assert.equal(shortcuts.shortcuts.length, 1)
     assert.equal(shortcuts.shortcuts[0].status, 'validated')

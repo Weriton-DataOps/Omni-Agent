@@ -4,6 +4,9 @@ Núcleo canônico de um único agente pessoal: conversa, continuidade de trabalh
 execução e aprendizado operacional. A primeira interface local está em `apps/omni-desktop`, com
 texto, voz e sessões Claude/VS Code. Consulte seu README para validações e limites desta versão.
 
+O fluxo externo de tarefas do Overcore está ligado ao operador e ao Desktop, mantendo os projetos
+independentes. Consulte [configuração, evidências e limites](docs/integracoes/overcore-task-flow.md).
+
 ## O que funciona hoje
 
 ```text

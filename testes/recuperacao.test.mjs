@@ -10,6 +10,17 @@ import { ranquearMemorias } from '../runtime/recuperacao.mjs'
 
 const NOW = Date.parse('2026-08-25T12:00:00.000Z')
 
+test('diretriz atual de comunicação vence hábito antigo frequente sem puxar preferências alheias', async () => {
+  const shared = { type: 'preference', source: 'user-prompt-pipeline-v2', confidence: 0.95 }
+  const result = await ranquearMemorias([
+    memory('mem-antiga', 'Prefiro respostas curtas sempre.', { ...shared, usageCount: 900, updatedAt: '2026-08-20T00:00:00Z' }),
+    memory('mem-atual', 'Prefiro textos curtos, mas longos quando importantes ou solicitados.', { ...shared, updatedAt: '2026-08-25T00:00:00Z' }),
+    memory('mem-cafe', 'Prefiro café sem açúcar.', { ...shared, usageCount: 900 })
+  ], { intent: 'Qual o resultado da tarefa?', now: NOW })
+  assert.equal(result.ranked[0].memory.id, 'mem-atual')
+  assert.ok(!result.ranked.some(item => item.memory.id === 'mem-cafe'))
+})
+
 function memory(id, text, overrides = {}) {
   return {
     id,
@@ -75,6 +86,15 @@ test('escopo de projeto diferente é excluído antes do ranking', async () => {
   assert.deepEqual(result.excluded, [
     { id: 'mem-projeto-errado', reason: 'scope-mismatch' }
   ])
+})
+
+test('caminho Windows preserva escopo entre barras e caixa sem misturar homônimos', async () => {
+  const result = await ranquearMemorias([
+    memory('mem-certo', 'o projeto usa mapas', { scope: { type: 'project', id: 'C:\\Projetos\\Omni\\' } }),
+    memory('mem-outro', 'o projeto usa mapas', { scope: { type: 'project', id: 'D:\\Projetos\\Omni' } })
+  ], { intent: 'mapa do projeto', projectId: 'c:/projetos/omni', now: NOW })
+  assert.deepEqual(result.ranked.map(entry => entry.memory.id), ['mem-certo'])
+  assert.deepEqual(result.excluded, [{ id: 'mem-outro', reason: 'scope-mismatch' }])
 })
 
 test('recência, frequência, confiança e importância participam da ordem', async () => {

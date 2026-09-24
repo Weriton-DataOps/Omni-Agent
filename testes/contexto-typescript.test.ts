@@ -79,6 +79,14 @@ test('ContextBlock omite forma compacta inteira antes de culpar blocos obrigató
   assert.equal(result.truncated, true)
 })
 
+test('briefing executável fica inteiro mesmo com índice externo e contexto auxiliar grandes', () => {
+  const briefing = '[failure-dispatch-required]\n<failure-dispatch-briefing>\n' + 'Passo operacional com evidência.\n'.repeat(140) + '</failure-dispatch-briefing>'
+  const result = buildHookTurnContext({ persona: null, projection: '', automation: briefing, externalTasks: 'Índice recuperável externo.\n'.repeat(200) })
+  assert.ok(result.characters <= 9500)
+  assert.ok(result.text.includes(briefing))
+  assert.ok(result.omitted.includes('turn:external-tasks'))
+})
+
 test('montagem de turno preserva personalidade, regras, memória e fechamento sob 9500', () => {
   const result = buildHookTurnContext({
     persona: {

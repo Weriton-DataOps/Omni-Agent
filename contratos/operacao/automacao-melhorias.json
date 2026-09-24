@@ -8,7 +8,8 @@
     "running",
     "reported-unverified",
     "awaiting-release",
-    "completed"
+    "completed",
+    "learned"
   ],
   "retry": {
     "baseSeconds": 600,
@@ -37,6 +38,13 @@
     "releaseThrough": "omni-autonomous-operational-release",
     "releaseRetryForward": true,
     "completionState": "loaded-verified"
+  },
+  "learning": {
+    "mode": "automatic-attributed-memory",
+    "requiresOwnerApproval": false,
+    "destinations": ["personality", "procedure", "eval"],
+    "minimumOccurrences": 2,
+    "codeReleaseRemainsSeparate": true
   },
   "privacy": {
     "storeRawConversation": false,

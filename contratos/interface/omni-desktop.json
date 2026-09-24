@@ -16,12 +16,12 @@
     {
       "id": "omni-subagent-queue",
       "purpose": "mostrar execucao e avaliacao automatica de trabalho paralelo do Omni",
-      "actions": ["observar-status", "avaliar-retorno", "devolver-correcao-ao-executor", "liberar-retorno-final-no-card", "consultar-relato-original"]
+      "actions": ["observar-status", "consultar-mapa-de-agentes", "avaliar-retorno", "devolver-correcao-ao-executor", "liberar-retorno-final-no-card", "consultar-relato-original"]
     },
     {
       "id": "vscode-session-chat",
       "purpose": "controlar uma sessao Claude vinculada ao projeto no VS Code",
-      "actions": ["encaminhar-comando", "acompanhar-recebimento", "correlacionar-relato", "liberar-retorno-final-no-card", "abrir-no-vscode"]
+      "actions": ["encaminhar-comando", "acompanhar-recebimento", "consultar-mapa-de-agentes", "correlacionar-relato", "liberar-retorno-final-no-card", "abrir-no-vscode"]
     },
     {
       "id": "omni-machine",
@@ -52,8 +52,9 @@
   },
   "guardrails": [
     "O estado tipado do controller e a fonte de verdade da interface; nunca inferir estado visual por texto ou pixels.",
-    "O Omni avalia cada retorno automaticamente. Trabalho incompleto no escopo volta ao mesmo executor com correcao concreta e aviso curto. A entrega final longa aguarda clique em Receber retorno no card do agente ou sessao; uma fila por destino preserva a ordem dos cliques. Nao existe pre-autorizacao de entrega nem painel paralelo de retornos no composer.",
-    "Texto da resposta aparece conforme gerado, sem atraso artificial; nao exibir raciocinio interno. Cards permanecem navegaveis durante trabalho e revisao. Ler o chat nao libera automaticamente um relato final retido.",
+    "Mapa pai/filhos por IDs: so consulta, sem comandos ou consumo de resumo. Eventos definem estados; silencio nao conclui. Metricas registradas, raciocinio oculto.",
+    "O Omni avalia cada retorno automaticamente. Trabalho incompleto no escopo volta ao mesmo executor com correcao concreta e aviso curto. A sintese final e preparada e persistida em segundo plano. O proprio card libera o resumo mais recente no chat de destino; nao existem botoes Receber retorno ou Ler retorno anterior nem painel paralelo no composer.",
+    "Sessao Claude aberta cria card automaticamente: azul pulsante executando, verde fixo resumo pronto. Clique no verde exibe o texto salvo com digitacao rapida, sem inferencia ou pensando. Leitura apaga o verde; anteriores ficam no historico. Cards sempre navegaveis. Conversa comum usa deltas reais, sem raciocinio interno.",
     "O card volta a executar durante correcoes; a central permanece disponivel. O indicador pensando cobre apenas o recebimento do pedido, encaminhamento e confirmacao no chat, nao a execucao do subagente.",
     "Correcoes preservam objetivo, executor e correlacao; relato nao amplia autorizacao. Cancelamento impede retomada automatica. Apos tres correcoes ou repeticao sem progresso, informe o bloqueio real em vez de reenviar indefinidamente. So peca decisao por informacao nova indispensavel ou mudanca de escopo.",
     "Uma conversa VS Code e um controle remoto da sessao vinculada; o Omni encaminha, observa e resume, mas nao executa localmente no lugar dela.",

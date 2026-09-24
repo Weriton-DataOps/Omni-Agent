@@ -215,6 +215,7 @@ function sourceRefValida(value) {
     typeof value.canonicalCaseId === 'string' && value.canonicalCaseId.length <= 120 &&
     SAFE_CONTRACT_ID.test(value.canonicalCaseId)
   if (!common) return false
+  if (value.kind === 'desktop-audit') return HASH_SHA256.test(value.eventFingerprint ?? '')
   if (value.kind === 'personality-eval') {
     return HASH_SHA256.test(value.evalRoundFingerprint ?? '') &&
       HASH_SHA256.test(value.triggerFingerprint ?? '') &&
@@ -231,6 +232,7 @@ function sourceRefValida(value) {
 
 function normalizarSourceRef(value) {
   if (!sourceRefValida(value)) return null
+  if (value.kind === 'desktop-audit') return { kind: value.kind, eventFingerprint: value.eventFingerprint, reasonCode: value.reasonCode, canonicalCaseId: value.canonicalCaseId }
   if (value.kind === 'personality-eval') {
     return {
       kind: value.kind,
@@ -255,6 +257,7 @@ function normalizarSourceRef(value) {
 }
 
 function chaveSourceRef(value) {
+  if (value.kind === 'desktop-audit') return `${value.kind}:${value.reasonCode}:${value.eventFingerprint}`
   return value.kind === 'personality-eval'
     ? `${value.kind}:${value.evalRoundFingerprint}:${value.canonicalCaseId}:${value.reasonCodeHash}`
     : `${value.kind}:${value.turnFingerprint}`
@@ -863,7 +866,10 @@ async function travar(casa) {
         await unlink(path).catch(() => undefined)
       }
     } catch (error) {
-      if (error?.code !== 'EEXIST') throw error
+      // On Windows a simultaneous close/unlink can surface as EPERM instead of
+      // EEXIST. It is contention on this exact lock path, not a permission grant;
+      // retry it under the same bounded lease protocol.
+      if (!['EEXIST', 'EPERM'].includes(error?.code)) throw error
       const age = Date.now() - (await stat(path).catch(() => ({ mtimeMs: Date.now() }))).mtimeMs
       if (age > 10_000) await unlink(path).catch(() => undefined)
       await new Promise((resolveWait) => setTimeout(resolveWait, 50))

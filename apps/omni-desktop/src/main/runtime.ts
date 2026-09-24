@@ -15,6 +15,21 @@ export async function broker() {
   const { NodeAccessBrokerClient } = await moduleAt('dist/adapters/windows/node-access-broker-client.js')
   return new NodeAccessBrokerClient(undefined, 10000)
 }
+let privateBrokerStarting: Promise<any> | undefined
+export async function executionBroker() {
+  if (privateBrokerStarting) return privateBrokerStarting
+  privateBrokerStarting = (async () => {
+    const { NodeAccessBrokerClient } = await moduleAt('dist/adapters/windows/node-access-broker-client.js')
+    const client = new NodeAccessBrokerClient('\\\\.\\pipe\\omni-private-executor-v1', 1500)
+    try { await client.executionCapabilities(); return client } catch { /* start the isolated host below */ }
+    await exec('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', join(root, 'scripts/start-omni-private-executor.ps1')], { windowsHide: true, timeout: 10000 })
+    for (let i = 0; i < 8; i++) {
+      try { await client.executionCapabilities(); return client } catch { await new Promise(resolve => setTimeout(resolve, 250)) }
+    }
+    throw new Error('A ponte privada não ficou disponível. Nenhuma credencial foi usada.')
+  })()
+  try { return await privateBrokerStarting } finally { privateBrokerStarting = undefined }
+}
 export async function startRuntime(): Promise<void> {
   try { if ((await (await broker()).health()).status === 'ready') return } catch { /* start below */ }
   await exec('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', join(root, 'scripts/start-user-omni-runtime.ps1')], { windowsHide: true, timeout: 30000 })

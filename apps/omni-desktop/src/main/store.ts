@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { Conversation, EditorRequest } from '../shared/contracts'
@@ -24,6 +24,7 @@ export class Store {
         if ('autoDeliver' in c) { delete (c as { autoDeliver?: unknown }).autoDeliver; migrated = true }
         for (const message of c.messages) if (message.streaming) { message.streaming = false; message.interrupted = true; migrated = true }
         if (c.deliveryState === 'delivering') { c.deliveryState = 'ready'; c.deliveryError = true; migrated = true }
+        if (c.editorReturn?.deliveryState === 'delivering') { c.editorReturn.deliveryState = 'ready'; c.editorReturn.deliveryError = true; migrated = true }
         if (!['task', 'external'].includes(c.kind)) c.kind = 'central'
         if (!c.parentConversationId) delete c.parentConversationId
         if (c.kind === 'external' && c.editorProjectionVersion !== 2) {
@@ -61,7 +62,21 @@ export class Store {
     const operation = this.writes.catch(() => {}).then(async () => {
       const temporary = join(this.directory, `${randomUUID()}.tmp`)
       await writeFile(temporary, content, { mode: 0o600 })
-      await rename(temporary, join(this.directory, 'conversations.json'))
+      const destination = join(this.directory, 'conversations.json')
+      let lastError: unknown
+      for (let attempt = 0; attempt < 5; attempt++) {
+        try {
+          await rename(temporary, destination)
+          return
+        } catch (error) {
+          lastError = error
+          const code = (error as NodeJS.ErrnoException).code
+          if (!['EPERM', 'EBUSY', 'ENOTEMPTY'].includes(code || '') || attempt === 4) break
+          await new Promise(resolve => setTimeout(resolve, 25 * (attempt + 1)))
+        }
+      }
+      await unlink(temporary).catch(() => {})
+      throw lastError
     })
     this.writes = operation
     return operation

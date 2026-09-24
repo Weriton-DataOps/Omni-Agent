@@ -29,6 +29,7 @@ export interface HookTurnContextInput {
   readonly automation?: string | null
   readonly audit?: string | null
   readonly systemAudit?: string | null
+  readonly externalTasks?: string | null
   readonly degradation?: string | null
   readonly gallerySeed?: string | null
   readonly budgetCharacters?: number
@@ -130,8 +131,15 @@ export function buildHookTurnContext(input: HookTurnContextInput): ContextAssemb
       content: `AUDITORIA E AUTOCORREÇÃO INTERNAS OBRIGATÓRIAS: confira pedido, ações e estado real. Corrija divergências autorizadas; mudança e delegação exigem readback. Nunca devolva comandos ao proprietário nem declare sucesso sem prova. ${input.audit.match(/turno=[^ ]+\s*tipo=[^ ]+\s*vinculo=[^ ]+/u)?.[0] ?? ''} ${input.audit.match(/omni-request-binding:[a-f0-9]{64}/u)?.[0] ? `Sem alvo literal, vincule o comando com ${input.audit.match(/omni-request-binding:[a-f0-9]{64}/u)?.[0]}; o marcador não substitui a prova.` : ''}`
     } : null,
     optionalBlock('turn:system-audit', input.systemAudit, 35),
+    // An executable briefing must fit whole. Discard this recoverable index
+    // before compacting the higher-priority dispatch into an unusable fragment.
+    input.automation?.includes('dispatch-required')
+      ? optionalBlock('turn:external-tasks', input.externalTasks, 98)
+      : compactableBlock('turn:external-tasks', input.externalTasks, 98, 3),
     ...projectionToContextBlocks(input.projection),
-    compactableBlock('turn:automation', input.automation, 99, 16),
+    input.automation?.includes('dispatch-required')
+      ? { kind: 'required', id: 'turn:automation', content: input.automation }
+      : compactableBlock('turn:automation', input.automation, 99, 16),
     { kind: 'required', id: 'turn:closing', content: CRITICAL_TURN_CLOSING }
   ]
   return assembleWithNotice(blocks.filter((block): block is ContextBlock => block !== null), budget)
@@ -218,6 +226,7 @@ export function renderLegacyAdditionalContext(input: Omit<HookTurnContextInput, 
     ...(input.automation ? ['', input.automation] : []),
     ...(input.audit ? ['', input.audit] : []),
     ...(input.systemAudit ? ['', input.systemAudit] : []),
+    ...(input.externalTasks ? ['', input.externalTasks] : []),
     '',
     'CONTEXTO RECUPERADO PARA ESTE TURNO:',
     input.projection

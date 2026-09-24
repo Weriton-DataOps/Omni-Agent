@@ -277,6 +277,12 @@ function resumirFalha(item) {
 }
 
 async function main() {
+  if (action === 'overcore') {
+    const { options } = lerOpcoes(parts)
+    if (!options.sessao || !options.entrada) throw new Error('Use: overcore --sessao <id> --idempotencia <id-do-pedido> --entrada <JSON absoluto>.')
+    const { executarFluxoOvercore } = await import('./overcore-task-flow.mjs')
+    return { ok: true, externalTask: await executarFluxoOvercore(home, options.sessao, await lerEntradaJson(options.entrada), options.idempotencia) }
+  }
   if (action === 'projeto-vscode-abrir') {
     const { options, positionals } = lerOpcoes(parts)
     const literalTarget = options.alvo ?? positionals.join(' ').trim()

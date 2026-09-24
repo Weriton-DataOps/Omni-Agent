@@ -1,4 +1,10 @@
+param([string[]]$MemoryIds = @(), [switch]$ActiveMemory)
 $ErrorActionPreference = 'Stop'
+if ($ActiveMemory) {
+ $taskLocalMemory = Get-Content -LiteralPath (Join-Path $env:APPDATA 'omni\memory\memory.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+ $MemoryIds = @($taskLocalMemory.confirmed.id) + @($taskLocalMemory.candidates.id)
+}
+foreach ($taskMemoryId in $MemoryIds) { if ($taskMemoryId -notmatch '^mem-[a-zA-Z0-9-]{1,160}$') { throw 'Identificador de memória inválido.' } }
 # Fixed, read-only inventory; no supplied SQL, no secret values in output.
 Add-Type -TypeDefinition @'
 using System;
@@ -30,12 +36,18 @@ SELECT json_build_object('database',current_database(),'port',inet_server_port()
 SELECT json_agg(t) FROM (SELECT schemaname,tablename FROM pg_tables WHERE schemaname NOT IN ('pg_catalog','information_schema') ORDER BY 1,2) t;
 SELECT json_build_object('memory', (SELECT count(*) FROM memory.entries), 'imports',(SELECT count(*) FROM memory.import_receipts),'missions',(SELECT count(*) FROM operations.missions),'missionEvents',(SELECT count(*) FROM operations.mission_events),'operationalLearningFindings',(SELECT count(*) FROM learning.improvement_findings),'operationalLearningEvents',(SELECT count(*) FROM learning.improvement_events),'credentialVersions',(SELECT count(*) FROM access.credential_versions),'credentialEvents',(SELECT count(*) FROM audit.credential_events));
 SELECT json_agg(t) FROM (SELECT lane,memory_type,count(*) AS total FROM memory.entries GROUP BY lane,memory_type ORDER BY 1,2) t;
+SELECT json_agg(t) FROM (SELECT payload->>'source' AS source,count(*) AS total,min(source_updated_at) AS oldest,max(source_updated_at) AS newest FROM memory.entries GROUP BY 1 ORDER BY total DESC) t;
+SELECT json_build_object('distinctMemoryTexts',(SELECT count(DISTINCT text_fingerprint) FROM memory.entries),'lastMemoryImport',(SELECT max(imported_at) FROM memory.entries));
 SELECT json_agg(t) FROM (SELECT mission_id,objective,state,updated_at FROM operations.missions ORDER BY updated_at DESC LIMIT 15) t;
 SELECT json_agg(t) FROM (SELECT provider_ref,status,expiry_kind,expires_at,count(*) AS total FROM access.credential_versions GROUP BY 1,2,3,4) t;
 SELECT json_agg(t) FROM (SELECT id FROM omni_meta.schema_migrations ORDER BY id) t;
 SELECT json_agg(t) FROM (SELECT lane,memory_type,text_fingerprint AS sampleFingerprint FROM memory.entries WHERE memory_type IN ('preference','procedural','semantic') ORDER BY source_updated_at DESC LIMIT 12) t;
 ROLLBACK;
 '@)
+ if ($MemoryIds.Count -gt 0) {
+   $taskMemoryList = ($MemoryIds | ForEach-Object { "'$_'" }) -join ','
+   $taskProcess.StandardInput.WriteLine("SELECT json_build_object('requested',$($MemoryIds.Count),'found',count(*),'ids',json_agg(memory_id),'fingerprints',json_agg(text_fingerprint)) FROM memory.entries WHERE memory_id IN ($taskMemoryList);")
+ }
  $taskProcess.StandardInput.Close()
  $taskOutput=$taskProcess.StandardOutput.ReadToEnd()
  $taskError=$taskProcess.StandardError.ReadToEnd()
