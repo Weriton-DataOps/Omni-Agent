@@ -39,7 +39,7 @@ export interface EditorRequest extends ResultDelivery {
   report?: string; evidenceId?: string; summary?: string; reportOutcome?: 'completed' | 'blocked';
   summaryAttempted?: boolean; summaryError?: string; disconnected?: boolean; acknowledgedAt?: string;
 }
-export interface CoordinationTurn { id: string; text: string; at: string; state: 'queued' | 'planning' | 'planned' | 'done' | 'failed'; memoryCaptured?: boolean; attachments?: Attachment[]; privateAttachment?: PrivateAttachmentReceipt; plan?: { reply: string; action: 'reply' | 'local' | 'project' | 'overcore'; sessionId: string | null; instruction: string | null; /** Existing local worker which must receive this as a continuation, never a second task. */ taskId?: string | null }; error?: string }
+export interface CoordinationTurn { id: string; text: string; at: string; state: 'queued' | 'planning' | 'planned' | 'done' | 'failed'; memoryCaptured?: boolean; attachments?: Attachment[]; privateAttachment?: PrivateAttachmentReceipt; plan?: { reply: string; action: 'reply' | 'local' | 'project' | 'overcore'; sessionId: string | null; instruction: string | null; privateAccess?: import('./private-action').PrivateAction | null; /** Existing local worker which must receive this as a continuation, never a second task. */ taskId?: string | null }; error?: string }
 /**
  * A privacy-safe projection of an execution step. `input` and `output` are
  * already redacted before they are persisted or sent to the renderer.

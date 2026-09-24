@@ -24,6 +24,14 @@
       "actions": ["encaminhar-comando", "acompanhar-recebimento", "consultar-mapa-de-agentes", "correlacionar-relato", "liberar-retorno-final-no-card", "abrir-no-vscode"]
     },
     {
+      "id": "agora",
+      "purpose": "mostrar o que merece atencao do proprietario agora: missoes abertas com objetivo, proxima acao, prazo e o que esta parado ha tempo",
+      "actions": ["listar-missoes-ativas", "mostrar-proxima-acao", "sinalizar-prazo-e-aging", "abrir-conversa-da-missao"],
+      "readsFrom": "operations.missions",
+      "writes": false,
+      "notOrchestration": "reflete estado observado e registrado; nao agenda nem despacha execucao"
+    },
+    {
       "id": "omni-machine",
       "purpose": "tarefas pessoais autorizadas na maquina, distintas de alterar o repositorio Omni",
       "actions": ["delegar-inspecao-local-de-metadados", "receber-relato-no-card"]

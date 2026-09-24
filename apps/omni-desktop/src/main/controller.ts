@@ -8,7 +8,8 @@ import { Coordinator, isStatusInquiry } from './coordinator'
 import { externalTaskNoticeId, externalTaskReceipt } from './external-task-receipt'
 import { CredentialIntake } from './credential-intake'
 import { ExecutorAccessBridge } from './executor-access'
-import { authorizesPrivateExecution, PrivateAccessInputError } from '../shared/private-access'
+import { PrivateAccessInputError } from '../shared/private-access'
+import { validatePrivateAction, validatePrivateActionContext } from '../shared/private-action'
 import type { EditorExecution } from './editor-transcript'
 import { ResultDeliveryQueue } from './result-delivery'
 import { updateEditorReturn } from './editor-return-state'
@@ -139,6 +140,8 @@ export class Controller {
       badgeAttachment: async (conversationId, turnId) => turnId ? this.credentialIntake.attachmentContext(conversationId, turnId) : '',
       badgeCommitAttachment: async (conversationId, turnId) => this.credentialIntake.commitAttachment(conversationId, turnId),
       badgeExecutorBrief: (conversationId, turnId, session) => this.executorBrief(conversationId, turnId, session),
+      badgeSources: conversationId => this.credentialIntake.catalogSources(conversationId),
+      badgeSourceStatus: () => this.credentialIntake.inventoryStatus,
       badgeRevokeTask: taskId => this.executorAccess.revokeTask(taskId)
     }, agentQuery, this.active)
     this.deliveries = new ResultDeliveryQueue(store, (...args) => this.coordinator.summarize(...args), () => this.emit(), this.active)
@@ -146,12 +149,21 @@ export class Controller {
   private async executorBrief(conversationId: string, turnId: string, session: Pick<EditorSession, 'sessionId' | 'cwd'>): Promise<string> {
     const c = this.store.get(conversationId)
     const turn = c.coordinationTurns?.find(item => item.id === turnId)
-    if (!turn?.privateAttachment || !authorizesPrivateExecution(turn.text)) return ''
+    if (!turn?.privateAttachment || turn.plan?.privateAccess?.action !== 'use') return ''
+    const action = validatePrivateAction(turn.plan.privateAccess)!
+    if (!this.credentialIntake.sourceIsBound(conversationId, turnId, action.sourceTurnId!)) throw new PrivateAccessInputError('O acesso escolhido não está vinculado a este pedido; nenhum acesso foi usado.')
+    validatePrivateActionContext(action, turn.text, [action.sourceTurnId!])
+    if (action.persist !== false) {
+      const stored = await this.credentialIntake.commitAttachment(conversationId, turnId)
+      if (!['saved', 'pending'].includes(stored.state)) throw new PrivateAccessInputError(stored.message)
+      c.events.push({ at: now(), turnId, kind: 'private-access', text: stored.message })
+      await this.store.save()
+    }
     const { accesses, unsupported } = await this.credentialIntake.executorSources(conversationId, turnId)
-    if (!accesses.length) return 'CRACHÁ: contexto recebido, mas nenhum acesso tem adaptador executável compatível. A ponte atual oferece PostgreSQL: catálogo e atualização dos dados. Não houve conexão, cadastro ou teste. Informe qual operação falta; não procure nem peça segredos no chat.'
+    if (!accesses.length) return 'CRACHÁ: contexto recebido, mas nenhum acesso tem adaptador executável compatível. A ponte atual oferece PostgreSQL: catálogo e atualização dos dados. Não houve conexão nem teste; o estado do cadastro está no recibo do Crachá. Informe qual operação falta; não procure nem peça segredos no chat.'
     const client = await (this.dependencies.executionBroker || this.dependencies.getBroker)()
     if (typeof client.executionCapabilities !== 'function' || !(await client.executionCapabilities()).includes('postgres.catalog')) throw new Error('O broker em execução ainda não oferece a ponte privada.')
-    const brief = await this.executorAccess.issue({ sessionId: session.sessionId, taskId: turnId, conversationId, workspace: session.cwd }, accesses, join(root, 'apps/omni-desktop/scripts/use-cracha.mjs'))
+    const brief = await this.executorAccess.issue({ sessionId: session.sessionId, taskId: turnId, conversationId, workspace: session.cwd }, accesses, join(root, 'apps/omni-desktop/scripts/use-cracha.mjs'), undefined, action.operations)
     turn.privateAttachment.status = 'access-ready'
     const message = c.messages.find(item => item.id === turnId)
     if (message?.privateAttachment) message.privateAttachment.status = 'access-ready'

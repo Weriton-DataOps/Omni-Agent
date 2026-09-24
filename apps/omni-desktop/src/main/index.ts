@@ -7,6 +7,7 @@ import { home, root, broker, mintVoiceToken, transcribeAudio } from './runtime'
 import { LocalUpdateService } from './update-service'
 import { resultId } from './ipc-identifiers'
 import { DocumentWindows } from './document-windows'
+import { PrivateContextStore, windowsPrivateContextCrypto } from './private-context-store'
 let window: BrowserWindow | null = null
 let tray: Tray | null = null
 let quitting = false
@@ -64,6 +65,7 @@ else {
     })()
   })
   app.whenReady().then(async () => {
+    credentialIntake.configurePersistence(new PrivateContextStore(join(home, 'desktop/private-context'), windowsPrivateContextCrypto), conversationId => store.get(conversationId).workspace)
     window = new BrowserWindow({ title: 'Omni', width: 1320, height: 850, minWidth: 900, minHeight: 650, backgroundColor: '#101317', show: false,
       webPreferences: { preload: join(import.meta.dirname, '../preload/index.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false } })
     window.setMenuBarVisibility(false)

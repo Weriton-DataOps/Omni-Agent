@@ -30,21 +30,26 @@ test('novo relato do mesmo pedido substitui bloqueio já lido e é avaliado sem 
   await coordinator.observe(target, [observations[1]], true); assert.equal(updated.evidenceId, 'new')
 }))
 
-test('pergunta simples sobre o Crachá é respondida pelo Desktop sem modelo, card ou sessão VS Code', async () => {
+test('pergunta sobre capacidade passa pelo modelo, sem inventário ou execução automática', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'omni-badge-question-'))
+  const active = new Map<string, AbortController>()
   try {
     const store = new Store(dir); await store.load(); const card = store.get(await store.create(dir, 'external'))
-    let modelCalls = 0, lookups = 0
-    const forbidden = (async function* () { modelCalls++; throw new Error('A pergunta não deve chegar ao modelo') }) as unknown as typeof query
+    let calls = 0, lookups = 0
+    const model = (async function* ({ options }: { options: Options }) {
+      calls++
+      if (options.outputFormat) yield successPlan({ action: 'reply', sessionId: null, instruction: null, privateAccess: null, reply: 'Explicar a capacidade disponível.' })
+      else yield { type: 'result', subtype: 'success', is_error: false, result: 'Posso receber contexto privado e preparar acesso limitado para a tarefa.' }
+    }) as unknown as typeof query
     const coordinator = new Coordinator(store, () => {}, {
-      sessions: async () => [], relay: async () => {}, open: async () => card.id, local: async () => card.id,
+      sessions: async () => [], relay: async () => { throw Error('Não executar') }, open: async () => card.id, local: async () => card.id,
       context: async () => '', executable: async () => 'test.exe', badgeLookup: async () => { lookups++; return [] }
-    }, forbidden)
+    }, model, active)
     await coordinator.enqueue(card, 'consegue enxergar o Crachá agora?', 'text')
-    assert.equal(modelCalls, 0); assert.equal(lookups, 0)
-    assert.match(card.messages.at(-1)?.text || '', /^Sim\. O Crachá é uma capacidade privada do Omni:/)
-    assert.equal(card.coordinationTurns?.length || 0, 0)
-  } finally { await rm(dir, { recursive: true, maxRetries: 8, retryDelay: 25 }) }
+    await until(() => card.coordinationTurns?.[0].state === 'done' && !active.size)
+    assert.equal(calls, 2); assert.equal(lookups, 0)
+    assert.match(card.messages.at(-1)!.text, /contexto privado/)
+  } finally { await until(() => !active.size); await rm(dir, { recursive: true, maxRetries: 8, retryDelay: 25 }) }
 })
 
 test('resultado de sucesso com flag textual false não vira erro de coordenação', async () => {
@@ -98,13 +103,21 @@ test('consulta segura ao Crachá usa somente o inventário privado, sem relay', 
   const dir = await mkdtemp(join(tmpdir(), 'omni-badge-lookup-'))
   try {
     const store = new Store(dir); await store.load(); const card = store.get(await store.create(dir, 'external'))
+    const active = new Map<string, AbortController>()
     let received = ''
     const coordinator = new Coordinator(store, () => {}, {
       sessions: async () => [], relay: async () => { throw new Error('Não deve relay') }, open: async () => card.id, local: async () => card.id,
       context: async () => '', executable: async () => 'test.exe',
       badgeLookup: async text => { received = text; return [{ credentialId: 'portal-pessoal', version: 1, providerRef: 'portal', accountRef: 'pessoal', environmentRef: 'unspecified', expiresAt: null, status: 'unverified' }] }
-    }, (async function* () { throw new Error('Não deve chamar modelo') }) as unknown as typeof query)
+}, (async function* ({ options, prompt }: { options: Options; prompt: string }) {
+      if (options.outputFormat) yield successPlan({ action: 'reply', sessionId: null, instruction: null, reply: 'Consultar metadados.', privateAccess: { action: 'inventory', sourceTurnId: null, operations: [], authorizationQuote: null } })
+      else {
+        assert.match(prompt, /Recibo factual da ferramenta privada/)
+        yield { type: 'result', subtype: 'success', is_error: false, result: prompt.includes('vercel-pessoal') ? 'vercel · pessoal (verified)' : 'portal · pessoal (unverified)' }
+      }
+    }) as unknown as typeof query, active)
     await coordinator.enqueue(card, 'veja no Crachá se temos acesso ao Portal', 'text')
+    await until(() => card.coordinationTurns?.[0].state === 'done' && !active.size)
     assert.equal(received, 'veja no Crachá se temos acesso ao Portal')
     assert.match(card.messages.at(-1)?.text || '', /portal · pessoal \(unverified\)/)
   } finally { await rm(dir, { recursive: true, maxRetries: 8, retryDelay: 25 }) }
@@ -114,13 +127,21 @@ test('consulta direta de metadados de token guardado não confunde a menção co
   const dir = await mkdtemp(join(tmpdir(), 'omni-badge-stored-use-'))
   try {
     const store = new Store(dir); await store.load(); const card = store.get(await store.create(dir, 'external'))
+    const active = new Map<string, AbortController>()
     let lookup = ''
     const coordinator = new Coordinator(store, () => {}, {
       sessions: async () => [], relay: async () => { throw new Error('Não deve relay') }, open: async () => card.id, local: async () => card.id,
       context: async () => '', executable: async () => 'test.exe',
       badgeLookup: async text => { lookup = text; return [{ credentialId: 'vercel-pessoal', version: 1, providerRef: 'vercel', accountRef: 'pessoal', environmentRef: 'unspecified', expiresAt: null, status: 'verified' }] }
-    }, (async function* () { throw new Error('Não deve chamar modelo') }) as unknown as typeof query)
+    }, (async function* ({ options, prompt }: { options: Options; prompt: string }) {
+      if (options.outputFormat) yield successPlan({ action: 'reply', sessionId: null, instruction: null, reply: 'Consultar metadados.', privateAccess: { action: 'inventory', sourceTurnId: null, operations: [], authorizationQuote: null } })
+      else {
+        assert.match(prompt, /vercel-pessoal/)
+        yield { type: 'result', subtype: 'success', is_error: false, result: 'vercel · pessoal (verified)' }
+      }
+    }) as unknown as typeof query, active)
     await coordinator.enqueue(card, 'veja no Crachá se temos o token da Vercel', 'text')
+    await until(() => card.coordinationTurns?.[0].state === 'done' && !active.size)
     assert.equal(lookup, 'veja no Crachá se temos o token da Vercel')
     assert.match(card.messages.at(-1)?.text || '', /vercel · pessoal \(verified\)/)
     assert.doesNotMatch(card.messages.at(-1)?.text || '', /segredo não entra neste chat/)
@@ -247,7 +268,7 @@ test('complemento do mesmo assunto entra no subagente local ativo, sem abrir out
   } finally { await rm(dir, { recursive: true, maxRetries: 8, retryDelay: 25 }) }
 })
 
-test('comando explícito envia a demanda anterior ao subagente local sem exigir pasta nem novo planejamento', async () => {
+test('comando contextual é interpretado e complementa o subagente existente sem exigir pasta', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'omni-explicit-local-delegation-'))
   try {
     const store = new Store(dir); await store.load()
@@ -257,15 +278,19 @@ test('comando explícito envia a demanda anterior ao subagente local sem exigir 
     child.phase = 'running'; child.supervision = { objective: 'Comparar provedores.', retries: 0, state: 'executing' }
     let modelCalls = 0, delegated = ''
     const active = new Map<string, AbortController>()
-    const forbidden = (async function* () { modelCalls++; throw new Error('O comando explícito não deve depender do planejador.') }) as unknown as typeof query
+    const model = (async function* ({ prompt }: { prompt: string }) {
+      modelCalls++; assert.match(prompt, /Compare SendGrid e MSP Go/); assert.ok(prompt.includes(child.id))
+      yield successPlan({ action: 'local', taskId: child.id, sessionId: null, reply: 'Complementar a pesquisa existente.', instruction: 'Compare SendGrid e MSP Go. Explore, pesquise custos e métricas.' })
+    }) as unknown as typeof query
     const coordinator = new Coordinator(store, () => {}, {
       sessions: async () => [], relay: async () => { throw new Error('não deve relay') }, open: async () => origin.id,
-      local: async (_parent, text, turnId) => { delegated = text; child.originTurnId = turnId; return child.id },
+      local: async () => { throw Error('Não criar outro subagente') },
+      appendLocal: async (_parent, taskId, text) => { assert.equal(taskId, child.id); delegated = text; return child.id },
       context: async () => '', executable: async () => 'test.exe'
-    }, forbidden, active)
+    }, model, active)
     await coordinator.enqueue(origin, 'manda para um subagente fazer', 'text')
     await until(() => origin.coordinationTurns?.[0].state === 'done' && active.size === 0)
-    assert.equal(modelCalls, 0)
+    assert.equal(modelCalls, 1)
     assert.match(delegated, /Compare SendGrid e MSP Go/)
     assert.match(delegated, /Explore, pesquise/)
     assert.equal(origin.coordinationTurns?.[0].plan?.action, 'local')
@@ -307,7 +332,7 @@ test('pedido para usar credencial guardada passa pela interpretação antes de q
     const fake = (async function* ({ options, prompt }: { options: Options; prompt: string }) {
       calls++
       if (options.outputFormat) {
-        assert.match(prompt, /Pense antes de responder/)
+assert.match(prompt, /DECISÃO SEMÂNTICA DO CRACHÁ/)
         yield successPlan({ action: 'reply', sessionId: null, instruction: null, reply: 'Vou entender o escopo antes de preparar qualquer uso.' })
       } else yield { type: 'result', subtype: 'success', is_error: false, result: 'Entendi que você quer usar um acesso guardado. Primeiro vou confirmar o serviço e o objetivo; nenhum segredo foi lido ou enviado.', structured_output: undefined }
     }) as unknown as typeof query
@@ -322,21 +347,58 @@ test('pedido para usar credencial guardada passa pela interpretação antes de q
   } finally { await rm(dir, { recursive: true, maxRetries: 8, retryDelay: 25 }) }
 })
 
-test('ordem para guardar anexo privado é tratada no Crachá, sem modelo ou VS Code', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'omni-badge-commit-'))
+test('Crachá grava no recebimento, sem pedido e sem conectar', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'omni-badge-autostore-'))
+  const active = new Map<string, AbortController>()
   try {
     const store = new Store(dir); await store.load(); const card = store.get(await store.create(dir, 'external'))
-    let commits = 0, modelCalls = 0, relays = 0
+    let commits = 0
+    const model = (async function* ({ options }: { options: Options }) {
+      if (options.outputFormat) yield successPlan({ action: 'reply', sessionId: null, instruction: null, reply: 'Recebido.' })
+      else yield { type: 'result', subtype: 'success', is_error: false, result: 'Recebido.' }
+    }) as unknown as typeof query
+    const coordinator = new Coordinator(store, () => {}, {
+      sessions: async () => [], relay: async () => {}, open: async () => card.id, local: async () => card.id,
+      context: async () => '', executable: async () => 'test.exe', badgeAttachment: async () => 'Há um anexo privado do Crachá.',
+      badgeClaimAttachment: () => ({ id: 'private-fixture', attachedAt: new Date().toISOString(), expiresAt: new Date(Date.now()+60000).toISOString() }),
+      badgeCommitAttachment: async () => { commits++; return { state: 'pending', message: 'SSH + PostgreSQL cadastrado, ainda não validado.' } }
+    }, model, active)
+    await coordinator.enqueue(card, 'segue o acesso', 'text', [], 'segue o acesso', 'private-fixture')
+    assert.equal(commits, 1)
+    assert.equal(card.coordinationTurns![0].privateAttachment!.status, 'stored')
+    await until(() => card.coordinationTurns?.[0].state === 'done' && !active.size)
+    assert.equal(card.coordinationTurns![0].privateAttachment!.status, 'stored')
+    assert.equal(card.events.some(event => event.kind === 'private-access' && /cadastrado/.test(event.text)), true)
+  } finally { await until(() => !active.size); await rm(dir, { recursive: true, maxRetries: 8, retryDelay: 25 }) }
+})
+
+test('guardar explicitamente confirma o cadastro já feito no recebimento e responde a partir do recibo real', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'omni-badge-commit-'))
+  const active = new Map<string, AbortController>()
+  try {
+    const store = new Store(dir); await store.load(); const card = store.get(await store.create(dir, 'external'))
+    let commits = 0, calls = 0, relays = 0
+    const text = 'Guarde este acesso no Crachá, mas não conecte ao servidor.'
+    const model = (async function* ({ options, prompt }: { options: Options; prompt: string }) {
+      calls++
+      if (options.outputFormat) yield successPlan({ action: 'reply', sessionId: null, instruction: null, reply: 'Guardar sem conectar.', privateAccess: { action: 'store', sourceTurnId: card.coordinationTurns![0].id, operations: [], authorizationQuote: 'Guarde este acesso no Crachá' } })
+      else {
+        assert.match(prompt, /guardado no Crachá como pendente/)
+        yield { type: 'result', subtype: 'success', is_error: false, result: 'Vercel foi guardado no Crachá como pendente, sem conexão.' }
+      }
+    }) as unknown as typeof query
     const coordinator = new Coordinator(store, () => {}, {
       sessions: async () => [], relay: async () => { relays++ }, open: async () => card.id, local: async () => card.id,
       context: async () => '', executable: async () => 'test.exe', badgeAttachment: async () => 'Há um anexo privado do Crachá.',
+      badgeClaimAttachment: () => ({ id: 'private-fixture', attachedAt: new Date().toISOString(), expiresAt: new Date(Date.now()+60000).toISOString() }),
       badgeCommitAttachment: async () => { commits++; return { state: 'pending', message: 'Vercel foi guardado no Crachá como pendente de validação segura.' } }
-    }, (async function* () { modelCalls++; throw new Error('não deve chamar modelo') }) as unknown as typeof query)
-    await coordinator.enqueue(card, 'segue o documento: faça o que for preciso para ficar gravado no Crachá', 'text')
-    await until(() => card.coordinationTurns?.[0].state === 'done')
-    assert.equal(commits, 1); assert.equal(modelCalls, 0); assert.equal(relays, 0)
-    assert.match(card.messages.at(-1)?.text || '', /guardado no Crachá/)
-  } finally { await rm(dir, { recursive: true, maxRetries: 8, retryDelay: 25 }) }
+    }, model, active)
+    await coordinator.enqueue(card, text, 'text', [], text, 'private-fixture')
+    await until(() => card.coordinationTurns?.[0].state === 'done' && !active.size)
+    // Recebimento + pedido explícito; o intake real responde ao segundo como "já cadastrado".
+    assert.equal(commits, 2); assert.equal(calls, 2); assert.equal(relays, 0)
+    assert.match(card.messages.at(-1)!.text, /guardado no Crachá/)
+  } finally { await until(() => !active.size); await rm(dir, { recursive: true, maxRetries: 8, retryDelay: 25 }) }
 })
 
 async function routingFixture(run: (fixture: { store: Store; origin: Conversation; target: Conversation; session: { sessionId: string; cwd: string; name: string; pid: number; address: string }; dir: string }) => Promise<void>) {
@@ -402,9 +464,9 @@ test('checagem de coerência exige revisão, sem remapear código do Crachá ou 
   assert.match(planConflict(plan, 'central', 'cadê a lista?')!, /promete um subagente pessoal/)
   assert.equal(planConflict({ ...plan, reply: 'Não vou usar um subagente local; vou encaminhar à sessão.' }, 'central', 'Confira o projeto'), null)
   assert.equal(planConflict({ ...plan, reply: 'Vou pedir a implementação na sessão.' }, 'central', 'Implemente a interface para listar os acessos do Crachá.'), null)
-  assert.match(planConflict({ ...plan, reply: 'Vou pedir a listagem.' }, 'central', 'Liste os metadados dos acessos do Crachá.' )!, /Crachá privado/)
-  assert.match(planConflict({ ...plan, reply: 'Vou pedir a listagem nesta sessão.' }, 'external', 'Liste os acessos do Crachá.')!, /Crachá privado/)
-  assert.match(planConflict({ ...plan, reply: 'Vou usar o acesso no projeto.' }, 'external', 'Veja no Crachá se temos credencial para o portal e use-a.')!, /Crachá privado/)
+  assert.equal(planConflict({ ...plan, reply: 'Vou pedir a listagem.' }, 'central', 'Liste os metadados dos acessos do Crachá.' ), null)
+  assert.equal(planConflict({ ...plan, reply: 'Vou pedir a listagem nesta sessão.' }, 'external', 'Liste os acessos do Crachá.'), null)
+  assert.equal(planConflict({ ...plan, reply: 'Vou usar o acesso no projeto.' }, 'external', 'Veja no Crachá se temos credencial para o portal e use-a.'), null)
   assert.match(planConflict({ action: 'reply', sessionId: null, instruction: null, reply: 'Cole aqui a resposta do VS Code.' }, 'external', 'Traduza o retorno.', false, true)!, /histórico recente/i)
 })
 
@@ -451,7 +513,10 @@ test('card VS Code encaminha a implementação do Crachá sem exigir troca manua
     const omni = { sessionId: 'omni-53', cwd: 'C:\\Users\\wp.santos\\Documents\\Omni', name: 'Omni', pid: 2, address: 'uds:omni' }
     let relayed = ''
     const active = new Map<string, AbortController>()
-    const fake = (async function* () { throw new Error('o comando explícito deve gerar o briefing sem nova inferência') }) as unknown as typeof query
+    const fake = (async function* ({ prompt }: { prompt: string }) {
+      assert.match(prompt, /implementar a gaveta privada/)
+      yield successPlan({ action: 'project', sessionId: omni.sessionId, reply: 'Implementar na sessão Omni.', instruction: 'Implementar a capacidade privada do Crachá com referência opaca, limitada ao pedido e de uso único. Validar isolamento e destino.' })
+    }) as unknown as typeof query
     const coordinator = new Coordinator(store, () => {}, {
       sessions: async () => [tracking, omni], relay: async (session, text) => { assert.equal(session.sessionId, omni.sessionId); relayed = text },
       open: async session => session.sessionId === omni.sessionId ? omniCard.id : source.id,
@@ -564,7 +629,7 @@ test('inventário pessoal da máquina é reavaliado como local sem ler valores d
     calls++
     assert.match(prompt, /Habilidade do Crachá/)
     assert.match(prompt, /Nunca exponha valores secretos|Nunca peça segredo/)
-    if (calls === 1) yield successPlan({ action: 'project', reply: 'Vou consultar a sessão Omni.', sessionId: session.sessionId, instruction: 'Consultar metadados do cofre.' })
+if (calls === 1) yield successPlan({ action: 'project', reply: 'Vou consultar a sessão Omni.', sessionId: session.sessionId, instruction: 'Consultar metadados do cofre.', privateAccess: { action: 'inventory', sourceTurnId: null, operations: [], authorizationQuote: null } })
     else yield successPlan({ action: 'local', reply: 'Vou consultar apenas metadados locais.', sessionId: null, instruction: 'Listar somente nomes e tipos de acessos locais; não ler nem revelar senhas ou tokens.' })
   }) as unknown as typeof query
   const coordinator = new Coordinator(store, () => {}, { sessions: async () => [session], relay: async () => { sends++ }, open: async () => target.id, local: async (parent, text, turnId) => {

@@ -932,6 +932,29 @@ export async function bloquearAutomacaoFalha(casa, id, reason, options = {}) {
       const strategy = safeText(options.strategy, 'Estratégia tentada', 3, 500)
       const strategyFingerprint = hash(strategy)
       if (job.strategyFingerprints.includes(strategyFingerprint)) return { result: 'strategy-repeated', job }
+      // Teto de tentativas: bloqueio que sobrevive a varias estrategias e
+      // estrutural, nao azar. Em vez de girar pra sempre, escala ao proprietario.
+      const maxRetryable = Number.isInteger(contract.maximumRetryableAttempts) && contract.maximumRetryableAttempts > 0
+        ? contract.maximumRetryableAttempts
+        : 5
+      if (job.attempts >= maxRetryable) {
+        job.state = 'needs-owner'
+        await clearDispatchAfterTerminal(casa, job, {
+          state: 'cancelled',
+          reason: 'Tentativas retryable esgotadas; o bloqueio persiste entre estrategias e provavelmente e estrutural.',
+          at: timestamp,
+          preserveAuthority: true
+        })
+        job.reasonClass = 'owner-authority'
+        job.reasonFingerprint = hash(`retryable-exhausted:${safeReason}|${evidenceId}`)
+        job.requiredEffectFingerprint = hash('retryable-exhausted')
+        job.targetFingerprint = hash(`job:${job.id}`)
+        job.nextAttemptAt = null
+        job.strategyFingerprints.push(strategyFingerprint)
+        job.updatedAt = timestamp
+        await save(casa, store)
+        return { result: 'needs-owner', job, reason: 'retryable-exhausted' }
+      }
       job.state = 'queued'
       await clearDispatchAfterTerminal(casa, job, {
         state: 'failed',

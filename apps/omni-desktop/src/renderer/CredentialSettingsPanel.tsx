@@ -53,7 +53,7 @@ export function CredentialSettings({ conversationId, conversationTitle, onAttach
         <button type="button" onClick={() => void attachJson()} disabled={busy}>Selecionar JSON</button>
         <button type="submit" disabled={!hasInput || busy}>{busy ? 'Anexando…' : 'Anexar ao Omni'}</button>
       </div>
-      <small>O conteúdo fica temporariamente no Crachá, não em chat, histórico, arquivo, log ou VS Code. Ao enviar a mensagem, o chip sai do rascunho e aparece apenas um recibo privado, sem os dados.</small>
+      <small>O contexto fica criptografado pela sua conta Windows e sobrevive ao reinício, por até 30 dias antes do cadastro. Ao autorizar guardar ou usar, o Omni cadastra os acessos sem teste obrigatório e os vincula à tarefa. Senhas não aparecem no chat, histórico ou VS Code. Cadastro não significa conexão validada.</small>
     </form>
   </section>
 }

@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { ClaudeActivationStore } from '../dist/adapters/claude/activation-store.js'
 import {
   isOmniActivationCommand,
+  isPrimaryClaudeScope,
   parseClaudeHookInput
 } from '../dist/adapters/claude/host-input.js'
 import {
@@ -42,7 +43,8 @@ import {
   adaptarFimSubagenteClaude,
   adaptarInicioSubagenteClaude,
   contextoProximaAutomacaoClaude,
-  enriquecerEventoFerramentaClaude
+  enriquecerEventoFerramentaClaude,
+  registrarAcaoSubagenteClaude
 } from './adaptador-claude-delegacao.mjs'
 import { consumirContextoAuditoriaSistema } from './auditoria-sistema.mjs'
 import {
@@ -296,6 +298,21 @@ export async function tratarHook(input, env = process.env, { contextOnly = false
     await tentarComponente(
       'adaptador-claude-delegacao-relato',
       () => adaptarFimSubagenteClaude(casa, input),
+      falhas
+    )
+    return saidaVazia()
+  }
+
+  // Ferramenta usada por executor delegado: o marcador de ativacao nunca vale
+  // para subagente, mas a delegacao correlacionada autentica o registro.
+  if (
+    (input.hook_event_name === 'PostToolUse' || input.hook_event_name === 'PostToolUseFailure') &&
+    !isPrimaryClaudeScope(input)
+  ) {
+    const falhas = []
+    await tentarComponente(
+      'auditoria-acao-delegada',
+      () => registrarAcaoSubagenteClaude(casa, input),
       falhas
     )
     return saidaVazia()

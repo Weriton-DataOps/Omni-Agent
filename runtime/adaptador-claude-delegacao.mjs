@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 
-import { registrarDelegacaoAuditoria } from './auditoria-autocorrecao.mjs'
+import { registrarAcaoAuditoria, registrarDelegacaoAuditoria } from './auditoria-autocorrecao.mjs'
 import {
   confirmarInicioAutomacaoFalha,
   localizarDespachoAtivoAutomacaoFalha,
@@ -258,6 +258,25 @@ export async function adaptarInicioSubagenteClaude(casa, input, { at } = {}) {
     summary: `Executor ${texto(input?.agent_type, 80) ?? 'externo'} iniciado`
   }, { at })
   return { ...transition, audit, automation, correlationSource: binding.source }
+}
+
+// Acao de ferramenta de um executor delegado. So entra no ledger quando o
+// executor ja foi vinculado a uma delegacao viva desta sessao pelo evento
+// `started`; executor sem correlacao continua invisivel ao ledger.
+export async function registrarAcaoSubagenteClaude(casa, input, { at } = {}) {
+  const executorRef = texto(input?.agent_id, 500)
+  if (!executorRef) return { result: 'ignored', action: null, delegationId: null }
+  const cycle = await lerCicloOperacional(casa)
+  const agentFingerprint = hash(executorRef)
+  const sessionFingerprint = hash(input?.session_id ?? 'session-unknown')
+  const delegation = cycle.delegations.find((item) =>
+    item.agentFingerprint === agentFingerprint &&
+    item.sessionFingerprint === sessionFingerprint &&
+    !TERMINAL_DELEGATION_STATES.has(item.state)
+  )
+  if (!delegation) return { result: 'uncorrelated', action: null, delegationId: null }
+  const registered = await registrarAcaoAuditoria(casa, input, { at })
+  return { ...registered, delegationId: delegation.id }
 }
 
 async function delegacaoDoFim(casa, input) {

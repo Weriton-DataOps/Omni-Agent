@@ -41,6 +41,14 @@
   "architecture": {
     "embeddedExecutionPlatform": false,
     "forbiddenComponents": ["task-manager", "dag", "graph-engine", "event-store", "artifact-registry", "agent-sdk", "harness"],
+    "forbiddenComponentsMeaning": "Proibe o Omni de orquestrar execucao: agendar, encadear, despachar em grafo ou executar tarefas de agentes como plataforma. Nao proibe registrar e observar o trabalho do proprietario.",
+    "ownerWorkRegistry": {
+      "allowed": true,
+      "role": "delegador-e-observador-macro",
+      "scope": ["demandas", "ideias", "compromissos", "prazos", "projetos", "estado-e-proxima-acao", "atividade-observada-inclusive-delegada"],
+      "store": "operations.missions",
+      "notOrchestration": "O registro descreve e acompanha o trabalho; a execucao continua com o executor adequado pela porta neutra."
+    },
     "overcoreStudio": "reference-only",
     "futureOvercore": "external-rebuild-from-zero"
   },

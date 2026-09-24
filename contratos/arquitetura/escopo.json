@@ -23,6 +23,7 @@
     "agent-sdk",
     "harness"
   ],
+  "forbiddenEmbeddedComponentsMeaning": "Proibido embutir plataforma de orquestracao/execucao. Registro e observacao macro do trabalho do proprietario sao permitidos: ver invariantes.architecture.ownerWorkRegistry.",
   "delegationIntegration": {
     "contract": "omni-neutral-delegation-v1",
     "lifecycle": "omni-operational-cycle-v1",

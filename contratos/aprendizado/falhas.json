@@ -63,6 +63,7 @@
     "dispatchTimeoutMinutes": 15,
     "leaseMinutes": 60,
     "maximumConcurrentJobs": 1,
+    "maximumRetryableAttempts": 5,
     "excludedActions": [
       "executar delegation-control",
       "aplicar personalidade canonica na conversa"

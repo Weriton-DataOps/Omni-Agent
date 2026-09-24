@@ -958,8 +958,15 @@ export async function observarEvento(casa, input, { at } = {}) {
     session.updatedAt = recordedAt
     if (eventType === 'user-prompt' && summary) {
       session.currentStep = summary
+      // Objetivo explicito ("meu objetivo e...") sempre manda. Sem ele, o
+      // primeiro pedido real da sessao vira o objetivo e nao e sobrescrito
+      // pelos pedidos seguintes; assim toda sessao com trabalho ganha alvo.
       const objective = textoSeguro(input?.objective, 240)
       if (objective) session.objective = objective
+      else if (!session.objective) {
+        const fallback = textoSeguro(input?.objectiveFallback, 240)
+        if (fallback) session.objective = fallback
+      }
     }
     if (eventType === 'stop') session.state = 'waiting-user'
     if (eventType === 'session-end') session.state = 'closed'

@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { ExecutorAccessBridge } from '../src/main/executor-access'
 import { privateExecutionSources } from '../src/main/private-execution-sources'
-import { authorizesPrivateExecution } from '../src/shared/private-access'
+import { validatePrivateAction, validatePrivateActionContext } from '../src/shared/private-action'
 import { useCracha } from '../scripts/use-cracha.mjs'
 import { Coordinator } from '../src/main/coordinator'
 import { CredentialIntake } from '../src/main/credential-intake'
@@ -27,14 +27,14 @@ test('fonte privada: SSH + PostgreSQL, par explícito, sem gravação e sem esco
   assert.equal(natural.accesses.length, 1); assert.ok('ssh' in natural.accesses[0].source)
 })
 
-test('anexar não autoriza executar; pedido explícito permite a ponte', () => {
-  assert.equal(authorizesPrivateExecution('Segue o anexo para contexto.'), false)
-  assert.equal(authorizesPrivateExecution('Não use o acesso do Crachá.'), false)
-  assert.equal(authorizesPrivateExecution('Não quero que use o acesso do Crachá.'), false)
-  assert.equal(authorizesPrivateExecution('Explique como usar a credencial do banco.'), false)
-  assert.equal(authorizesPrivateExecution('Segue apenas para contexto como usar o banco.'), false)
-  assert.equal(authorizesPrivateExecution('Use as credenciais do Crachá para consultar o banco.'), true)
-  assert.equal(authorizesPrivateExecution('Pode executar o necessário para organizar a base de dados.'), true)
+test('contrato valida operação/fonte/autoridade, não decide intenção por palavras', () => {
+  assert.equal(validatePrivateAction(undefined), null)
+  const action = validatePrivateAction({ action:'use',sourceTurnId:'source',operations:['postgres.catalog'],authorizationQuote:'Pode seguir' })!
+  validatePrivateActionContext(action,'Pode seguir; não execute DW.2–DW.6.',['source'])
+  assert.throws(()=>validatePrivateAction({...action,operations:['shell.exec']}))
+  assert.throws(()=>validatePrivateAction({...action,operations:[]}))
+  assert.throws(()=>validatePrivateActionContext(action,'Explique como funciona.',['source']))
+  assert.throws(()=>validatePrivateActionContext(action,'Pode seguir',['another-conversation']))
 })
 
 test('referência isola sessão/tarefa/pasta, expira e chamadas são idempotentes inclusive na falha', async t => {
@@ -58,6 +58,10 @@ test('referência isola sessão/tarefa/pasta, expira e chamadas são idempotente
   assert.equal((await bridge.use(request)).replayed,false)
   assert.equal((await bridge.use(request)).replayed,true); assert.equal(calls,1)
   await assert.rejects(bridge.use({...request,action:{kind:'postgres.catalog',page:1}}))
+  const limited = await bridge.issue(scope,accesses,'C:\\client.mjs',undefined,['postgres.catalog'])
+  await assert.rejects(bridge.use({...request,grant:/--grant ([a-f0-9]{64})/.exec(limited)![1],callId:randomUUID(),action:{kind:'postgres.freshness',schema:'public',table:'facts',column:'at'}}))
+  assert.equal(calls,1, 'operação fora do plano é recusada antes de acessar credenciais')
+  bridge.revokeTask(scope.taskId)
   time += 1001; await assert.rejects(bridge.use({...request,callId:randomUUID()})); assert.equal(calls,1)
   const second = await bridge.issue(scope,accesses,'C:\\client.mjs')
   live = false; await assert.rejects(bridge.use({...request,grant:/--grant ([a-f0-9]{64})/.exec(second)![1]})); assert.equal(bridge.hasGrants,false)
@@ -78,7 +82,7 @@ test('cliente executor real usa named pipe e não recebe senha; revogação ence
   bridge.revokeTask(scope.taskId); await assert.rejects(useCracha(args,workspace))
 })
 
-test('delegação real do coordenador entrega cliente da ponte ao executor e não o documento privado', async t => {
+for (const binding of ['current', 'prior'] as const) test(`delegação com fonte ${binding}: entrega a ponte, não o documento privado`, async t => {
   const directory=await mkdtemp(join(tmpdir(),'omni-delegate-access-'));const store=new Store(directory);await store.load()
   const c=store.get(await store.create(directory,'external'));c.sessionId=randomUUID()
   const intake=new CredentialIntake(async()=>{throw Error('Sem cadastro/teste automático')})
@@ -86,13 +90,22 @@ test('delegação real do coordenador entrega cliente da ponte ao executor e nã
   const bridge=new ExecutorAccessBridge({live:async()=>true,receipt:()=>{},execute:async()=>{operations++;return {outcome:'completed',operation:'postgres.catalog',data:[]}}})
   t.after(async()=>{bridge.close();intake.discard();await store.save();await rm(directory,{recursive:true,force:true})})
   const session={sessionId:c.sessionId,cwd:directory,name:'fixture',pid:1,address:'fixture'}
+  let sourceTurnId = ''
   const agent=(async function*({prompt,options}:{prompt:string;options:Options}){
     prompts.push(prompt)
-    yield {type:'result',subtype:'success',is_error:false,result:'',structured_output:{action:'project',sessionId:c.sessionId,instruction:'Consulte o catálogo pela ponte privada e devolva a evidência.',reply:'Encaminhar a consulta autorizada.'}}
+    yield {type:'result',subtype:'success',is_error:false,result:'',structured_output:{action:'project',sessionId:c.sessionId,instruction:'Consulte o catálogo pela ponte privada e devolva a evidência. Não execute DW.2–DW.6.',reply:'Encaminhar a consulta autorizada.',privateAccess:{action:'use',sourceTurnId:sourceTurnId || c.coordinationTurns![0].id,operations:['postgres.catalog'],authorizationQuote:binding === 'prior' ? 'Pode seguir' : 'Use os acessos do Crachá'}}}
   }) as unknown as typeof query
-  const coordinator=new Coordinator(store,()=>{}, {context:async()=>'',executable:async()=>'',sessions:async()=>[session],open:async()=>c.id,local:async()=>{throw Error()},relay:async(_,text)=>{relayed=text},badgeClaimAttachment:(...args)=>intake.claimAttachment(...args),badgeAttachment:async(id,turn)=>intake.attachmentContext(id,turn),badgeExecutorBrief:async(id,turn,target)=>bridge.issue({conversationId:id,taskId:turn,sessionId:target.sessionId,workspace:target.cwd},(await intake.executorSources(id,turn)).accesses,'C:\\client.mjs'),badgeRevokeTask:id=>bridge.revokeTask(id)},agent,active)
+  const coordinator=new Coordinator(store,()=>{}, {context:async()=>'',executable:async()=>'',sessions:async()=>[session],open:async()=>c.id,local:async()=>{throw Error()},relay:async(_,text)=>{relayed=text},badgeReuseAttachment:(...args)=>intake.reuseAttachment(...args),badgeClaimAttachment:(...args)=>intake.claimAttachment(...args),badgeAttachment:async(id,turn)=>intake.attachmentContext(id,turn),badgeExecutorBrief:async(id,turn,target)=>bridge.issue({conversationId:id,taskId:turn,sessionId:target.sessionId,workspace:target.cwd},(await intake.executorSources(id,turn)).accesses,'C:\\client.mjs',undefined,c.coordinationTurns!.find(t=>t.id===turn)!.plan!.privateAccess!.operations),badgeRevokeTask:id=>bridge.revokeTask(id)},agent,active)
   const attachment=intake.stageAttachment(c.id,raw)
-  await coordinator.enqueue(c,'Use as credenciais do Crachá para consultar o banco.','text',[],'Use as credenciais do Crachá para consultar o banco.',attachment.id)
+  const ownerText = 'Use os acessos do Crachá e delegue à sessão vinculada a execução da T1.1.1, somente leitura. A ponte SSH foi implementada no Omni: forneça ao executor a referência temporária e o cliente de uso, sem colocar senhas no briefing.\nConsulte o catálogo com postgres.catalog e meça a atualização das colunas temporais com postgres.freshness. Confira quais objetos previstos na T1.1.1 essas operações conseguem atender; informe qualquer lacuna sem declarar a etapa completa.\nNão execute DW.2–DW.6 nem altere dados ou permissões. Conduza a execução e me devolva um resumo: o que foi verificado, se os dados estão atualizados e qualquer impedimento concreto.'
+  if (binding === 'prior') {
+    sourceTurnId = randomUUID()
+    intake.claimAttachment(c.id,sourceTurnId,attachment.id)
+    c.messages.push({id:sourceTurnId,role:'user',at:new Date().toISOString(),channel:'text',text:'Segue o acesso para a leitura.',privateAttachment:{...attachment,status:'considered'}})
+    c.messages.push({id:randomUUID(),role:'assistant',at:new Date().toISOString(),channel:'text',text:'A próxima etapa é consultar o catálogo somente leitura.'})
+  }
+  const requestText = binding === 'prior' ? 'Pode seguir; não execute as alterações.' : ownerText
+  await coordinator.enqueue(c,requestText,'text',[],requestText,binding === 'current' ? attachment.id : undefined)
   const end=Date.now()+4000;while(!relayed||active.size){if(Date.now()>end)throw Error('Delegation timeout');await new Promise(r=>setTimeout(r,5))}
   assert.match(relayed,/CRACHÁ — PONTE EXECUTÁVEL PRIVADA/)
   assert.equal(operations,0)

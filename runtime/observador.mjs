@@ -310,6 +310,17 @@ function objetivoDeclarado(prompt) {
   return texto(sentence, 240)
 }
 
+// Sem objetivo declarado, o primeiro pedido de verdade descreve a sessao.
+// Pula saudacao, aceite curto e confirmacao ("ok", "pode fazer", "continua").
+const ACEITE_CURTO = /^(?:ok|okay|blz|beleza|sim|nao|não|vai|pode|pode ir|pode fazer|isso|certo|show|valeu|obrigado|obg|continua|contin[ue]a|segue|prossiga|manda|faz|feito|top|perfeito|otimo|ótimo|entendi|uhum|ta|tá|ta bom|tá bom)\b[\s.!]*$/i
+function resumoDoPedido(prompt) {
+  const sentence = prompt
+    .split(/(?:\r?\n)+|(?<=[.!?])\s+/u)
+    .map((item) => item.trim())
+    .find((item) => item.length >= 12 && /\p{L}/u.test(item) && !ACEITE_CURTO.test(item))
+  return sentence ? texto(sentence, 240) : null
+}
+
 export async function observarPrompt(casa, input) {
   const prompt = texto(input?.prompt, 1000)
   if (!prompt) return { event: null, corrections: [], immediateCorrectionIds: [], personalityFeedback: null }
@@ -335,7 +346,8 @@ export async function observarPrompt(casa, input) {
       evidenceId: `prompt:${input.session_id}:${hash(prompt)}`,
       cwd: input.cwd,
       summary: `Pedido recebido (${prompt.length} caracteres)`,
-      objective: objetivoDeclarado(prompt)
+      objective: objetivoDeclarado(prompt),
+      objectiveFallback: ownerOrigin ? resumoDoPedido(prompt) : null
     })
     for (const signal of personalityFeedback?.candidateSignals ?? []) {
       const route = PERSONALITY_SIGNAL_ROUTES[signal.reasonCode]

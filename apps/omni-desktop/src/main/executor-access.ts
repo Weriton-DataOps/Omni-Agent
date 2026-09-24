@@ -4,10 +4,11 @@ import { realpath } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { credentialExecutionOperation, type CredentialExecutionOperation, type CredentialExecutionSource, type CredentialExecutionResult } from '../../../../src/contracts/credential-execution'
+import { privateOperations, type PrivateOperation } from '../shared/private-action'
 
 export type ExecutorAccess = { source: CredentialExecutionSource; provider: 'postgresql' }
 export type ExecutorScope = { sessionId: string; taskId: string; conversationId: string; workspace: string }
-type Grant = { scope: ExecutorScope; accesses: ExecutorAccess[]; expires: number; busy: boolean; calls: Map<string, { fingerprint: string; result: CredentialExecutionResult }>; timer: ReturnType<typeof setTimeout> }
+type Grant = { scope: ExecutorScope; accesses: ExecutorAccess[]; operations: PrivateOperation[]; expires: number; busy: boolean; calls: Map<string, { fingerprint: string; result: CredentialExecutionResult }>; timer: ReturnType<typeof setTimeout> }
 type Dependencies = {
   execute(source: CredentialExecutionSource, action: CredentialExecutionOperation): Promise<CredentialExecutionResult>;
   live(scope: ExecutorScope): Promise<boolean>;
@@ -52,13 +53,14 @@ export class ExecutorAccessBridge {
       server.listen(this.endpoint, () => { server.unref(); resolve(this.endpoint) })
     })
   }
-  async issue(scope: ExecutorScope, accesses: ExecutorAccess[], clientPath: string, ttlMs = 30 * 60_000): Promise<string> {
+  async issue(scope: ExecutorScope, accesses: ExecutorAccess[], clientPath: string, ttlMs = 30 * 60_000, operations: readonly PrivateOperation[] = privateOperations): Promise<string> {
+    if (!operations.length || operations.some(op => !privateOperations.includes(op))) throw rejected()
     if (this.stopped || !uuid(scope.sessionId) || !uuid(scope.taskId) || !uuid(scope.conversationId) || !accesses.length || accesses.length > 8 || ttlMs < 1000 || ttlMs > 30 * 60_000 || this.grants.size >= 32) throw rejected()
     const endpoint = await this.listen()
     const workspace = await realpath(scope.workspace)
     const id = randomBytes(32).toString('hex')
     const timer = setTimeout(() => this.revoke(id), ttlMs); timer.unref()
-    this.grants.set(id, { scope: { ...scope, workspace }, accesses: structuredClone(accesses), expires: this.clock() + ttlMs, busy: false, calls: new Map(), timer })
+    this.grants.set(id, { scope: { ...scope, workspace }, accesses: structuredClone(accesses), operations: [...operations], expires: this.clock() + ttlMs, busy: false, calls: new Map(), timer })
     const quote = (value: string) => `'${value.replace(/'/g, "''")}'`
     const command = `node ${quote(clientPath)} --pipe ${quote(endpoint)} --grant ${id} --session ${scope.sessionId} --task ${scope.taskId}`
     return `CRACHÁ — PONTE EXECUTÁVEL PRIVADA\nReferência temporária deste pedido, por ${Math.round(ttlMs / 60_000)} minutos. Não é senha e não dá acesso ao cofre. Execute a partir da raiz deste projeto; não transfira a referência a outra sessão. Não há teste/cadastro automático.\nAcessos disponíveis: ${accesses.map((access, i) => `access-${i + 1} (PostgreSQL ${'ssh' in access.source ? 'por canal SSH: psql executado DENTRO do servidor, modo ' + access.source.mode : 'direto'})`).join(', ')}.\nCliente real (PowerShell):\n${command} --access access-1 --operation postgres.catalog --page 0\nCatálogo paginado, 100 colunas por página; incremente --page até página vazia. Para medir atualização de uma coluna temporal real:\n${command} --access access-1 --operation postgres.freshness --schema public --table NOME --column COLUNA\nUse nomes reais do catálogo. O cliente gera um id único por chamada; --call UUID permite recuperar o mesmo resultado sem repetir a operação. Não crie loops de repetição em falha. A ponte SSH já existe e é invocada automaticamente nos acessos marcados SSH; não abra outro túnel nem procure senha. O broker confere a chave do servidor com known_hosts ou fingerprint do Crachá e usa sudo não interativo quando configurado; não altera permissões do servidor. A ponte não aceita SQL livre, escrita, shell arbitrário nem destinos fornecidos pelo executor. Se faltar uma operação, reporte a lacuna específica. Resultado completed é recibo da operação medida; referência emitida não prova conexão. Credenciais permanecem no processo confiável.`
@@ -74,6 +76,7 @@ export class ExecutorAccessBridge {
     // Recheck after the asynchronous liveness probe: expiry/revocation may have occurred meanwhile.
     if (this.grants.get(request.grant) !== grant || grant.expires <= this.clock()) throw rejected()
     const action = credentialExecutionOperation(request.action)
+    if (!grant.operations.includes(action.kind)) throw rejected()
     if (typeof request.access !== 'string' || !/^access-[1-8]$/.test(request.access)) throw rejected()
     const access = grant.accesses[Number(request.access.slice(7)) - 1]; if (!access) throw rejected()
     const fingerprint = createHash('sha256').update(JSON.stringify([request.access, action])).digest('hex')

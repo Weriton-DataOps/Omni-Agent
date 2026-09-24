@@ -50,14 +50,14 @@ test('ordem explícita promove anexo privado pelo ciclo do Crachá sem VS Code',
   const intake = new CredentialIntake(async () => ({
     findLatestCredential: async () => null,
     verifyCredential: async () => { verified++; return { ...authenticated, outcome: 'unsupported' as const, summary: 'Este conector ainda não possui teste seguro.' } },
-    registerCredential: async input => { stored++; tokenAtWrite = input.token; return { ...credential, status: 'unverified' } },
+    registerCredential: async input => { stored++; tokenAtWrite = input.token; return { ...credential, credentialId: input.credentialId, providerRef: input.providerRef, status: 'unverified' } },
     registerVerifiedCredential: async () => { throw new Error('não deve salvar como ativo') }
   }))
   intake.stageAttachment(id, 'serviço: vercel; token: synthetic_private_attachment_123456; conta: pessoal; ambiente: production')
   const result = await intake.commitAttachment(id)
   assert.equal(result.state, 'pending')
-  assert.match(result.message, /guardado no Crachá como pendente/)
-  assert.equal(verified, 1); assert.equal(stored, 1)
+  assert.match(result.message, /guardado\(s\) no Crachá/)
+  assert.equal(verified, 0); assert.equal(stored, 1)
   assert.match(tokenAtWrite, /synthetic_private_attachment/)
   assert.equal(intake.attachmentInfo(id), null)
 })
@@ -235,7 +235,7 @@ test('known legacy provider typo is matched only for the same account and enviro
 test('private lookup returns only bounded safe metadata and never a secret reference', async () => {
   const intake = new CredentialIntake(async () => ({
     findLatestCredential: async () => null,
-    listCredentialMetadata: async query => query === 'conecta' ? [inventory] : [],
+    listCredentialMetadata: async query => { assert.equal(query, undefined); return [inventory] },
     verifyCredential: async () => authenticated,
     registerVerifiedCredential: async () => ({ credential, verification: authenticated, disposition: 'created' as const })
   }))
@@ -243,7 +243,7 @@ test('private lookup returns only bounded safe metadata and never a secret refer
     const result = await intake.lookup('tem acesso para Conecta no Crachá?')
     assert.deepEqual(result, [inventory])
     assert.equal(JSON.stringify(result).includes('secretRef'), false)
-    await assert.rejects(intake.lookup('tem token para conecta?'), /consulta não recebe segredos/)
+    assert.deepEqual(await intake.lookup('tem token para conecta?'), [inventory])
   } finally { intake.discard() }
 })
 

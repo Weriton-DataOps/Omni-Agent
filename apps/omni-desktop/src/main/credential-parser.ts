@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import type { CredentialRegistrationInput } from '../shared/contracts'
 
 export type CredentialKind = 'token' | 'login' | 'database' | 'ssh' | 'active-directory' | 'certificate' | 'service-account'
@@ -78,7 +78,7 @@ function expiry(text: string, now: Date): string | null {
 }
 
 /** Runs exclusively in the trusted main process. Callers must never log this result or its input. */
-export function parseCredential(text: string, now: Date = new Date()): ParsedCredential {
+export function parseCredential(text: string, now: Date = new Date(), options: { autoName?: boolean } = {}): ParsedCredential {
   if (typeof text !== 'string' || !text.trim() || Buffer.byteLength(text, 'utf8') > 16000 || !Number.isFinite(now.getTime())) throw new Error('Envie uma descrição de acesso válida, com até 16 KB.')
   const google = googleServiceAccount(text)
   if (google) {
@@ -178,7 +178,10 @@ export function parseCredential(text: string, now: Date = new Date()): ParsedCre
   const secrets = [secret, password, certificatePem].filter(Boolean)
   const hasSecret = (value: string) => secrets.some(item => item.length >= 8 ? value.includes(item) : value === item)
   const safeService = explicitService && explicitService.length <= 100 && /^[\p{L}\p{N} ._-]+$/u.test(explicitService) && !hasSecret(explicitService) ? explicitService : ''
-  const provider = safeService ? recognized(safeService) ?? { id: ref(safeService, 'unspecified'), label: safeService } : known
+  // Anexo do Crachá: o Omni nomeia sozinho. O nome é único para nunca
+  // sobrescrever outro acesso sem nome; o fluxo de teste ainda pede o serviço.
+  const provider = safeService ? recognized(safeService) ?? { id: ref(safeService, 'unspecified'), label: safeService }
+    : known ?? (options.autoName ? { id: `acesso-${randomUUID().slice(0, 8)}`, label: 'Acesso privado' } : null)
   // A token needs a stable name for later retrieval, but never a project,
   // website or planned action. Those belong to the later Omni conversation.
   if (!provider) missing.push('Como devo chamar este acesso? Ex.: “Vercel”. Não preciso do projeto, site ou ação agora.')
