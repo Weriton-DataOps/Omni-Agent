@@ -614,10 +614,11 @@ const reply = await this.model(c, `Responda diretamente à mensagem atual como O
         try { await this.ports.learnResult?.(target, request.id, request.report!, supervision, request.lastObservedAt || request.at) }
         catch { target.events.push({ at: now(), kind: 'learning-pending', text: 'Resultado preservado; gravação do aprendizado será retomada automaticamente.' }) }
       }
-      const id = `${review.action === 'decision' ? 'editor-decision' : 'editor-report'}:${request.id}`
-      // Retry notices are deliberately short: the new request itself drives the
-      // blue card indicator, while the next completed return drives green.
-      if ((review.action === 'decision' || review.action === 'retry') && !delivery.messages.some(m => m.id === id)) delivery.messages.push({ id, role: 'assistant', text: review.action === 'retry' ? `${request.summary}\n\nCorreção encaminhada para a mesma sessão; acompanhando a execução.` : request.summary, at: now(), channel: 'text', origin: 'omni', requestId: request.id })
+      // 'complete', 'blocked' e 'decision' saem só pela fila de entrega: o retorno aparece
+      // quando o proprietário clica no card, sem duplicar. Só 'retry' publica sozinho — é o
+      // caso "não ficou pronto, reencaminhei", a única exceção que deve aparecer por conta própria.
+      const id = `editor-report:${request.id}`
+      if (review.action === 'retry' && !delivery.messages.some(m => m.id === id)) delivery.messages.push({ id, role: 'assistant', text: `${request.summary}\n\nCorreção encaminhada para a mesma sessão; acompanhando a execução.`, at: now(), channel: 'text', origin: 'omni', requestId: request.id })
     } catch (error) {
       request.status = request.reportOutcome === 'blocked' ? 'blocked' : 'reported'; request.summaryError = String((error as Error).message).slice(0, 500)
       request.deliveryState = 'ready'
