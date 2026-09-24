@@ -22,6 +22,34 @@ async function home(prefix = 'omni-audit-') {
 
 const prompt = (session_id, value) => ({ session_id, prompt: value })
 
+test('node inline opaco nao prova mutacao nem leitura; escrita explicita exige readback', async () => {
+  const casa = await home()
+  try {
+    const session = 'inline-diagnostic'
+    await abrirTurnoAuditoria(casa, prompt(session, 'verifique o estado atual'))
+    const read = await registrarAcaoAuditoria(casa, tool(session, { id: 'read-inline', name: 'Bash',
+      input: { command: `node -e "console.log(JSON.parse(require('fs').readFileSync('estado.json','utf8')))"` } }))
+    assert.equal(read.action.effect, 'execution')
+    assert.equal(read.evidence.kind, 'execution-result')
+    const write = await registrarAcaoAuditoria(casa, tool(session, { id: 'write-inline', name: 'Bash',
+      input: { command: `node -e "require('fs').writeFileSync('estado.json','{}')"` } }))
+    assert.equal(write.action.effect, 'mutation')
+    const result = await auditarParada(casa, { session_id: session, last_assistant_message: 'Consulta realizada.' })
+    assert.ok(result.turn.findings.some(item => item.code === 'mutation-without-readback'))
+  } finally { await rm(casa, { recursive: true, force: true }) }
+})
+
+test('script diagnostico com mesmo nome fora do plugin nao recebe classificacao confiavel', async () => {
+  const casa = await home()
+  try {
+    const session = 'untrusted-diagnostic'
+    await abrirTurnoAuditoria(casa, prompt(session, 'verifique estado'))
+    const recorded = await registrarAcaoAuditoria(casa, tool(session, { id: 'untrusted', name: 'Bash',
+      input: { command: 'powershell -NoProfile -ExecutionPolicy Bypass -File "C:/tmp/scripts/omni.ps1" diagnostico' } }))
+    assert.notEqual(recorded.action.effect, 'verification')
+  } finally { await rm(casa, { recursive: true, force: true }) }
+})
+
 const tool = (session_id, {
   id,
   name = 'Read',

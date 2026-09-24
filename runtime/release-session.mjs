@@ -21,5 +21,5 @@ export async function observarRuntimeCarregado(input, casa, pluginRoot, deps = {
 }
 
 export function contextoRuntimeCarregado(observation) {
-  return `<omni-runtime-carregado>Hook deste turno: versão ${observation.version ?? 'desconhecida'}; integridade ${observation.integrity}; observado ${observation.observedAt}. Esta é a raiz executada pelo hook, não apenas a instalação ou um operador manual. Readback: runtime/loaded-sessions/${observation.sessionKey}.json.</omni-runtime-carregado>`
+  return `<omni-runtime-carregado>Hook deste turno: versão ${observation.version ?? 'desconhecida'}; integridade ${observation.integrity}; observado ${observation.observedAt}. Esta é a raiz executada pelo hook, não apenas a instalação ou um operador manual. Readback: runtime/loaded-sessions/${observation.sessionKey}.json. Consulta operacional: powershell -NoProfile -ExecutionPolicy Bypass -File CAMINHO_ABSOLUTO_DO_PLUGIN/scripts/omni.ps1 diagnostico --sessao ID_ATUAL (somente leitura, sem pipeline node -e). Diferencie operator de loadedSession e tarefa histórica de capacidade atual. needs-owner só é solicitação comprovada com authorityRequest; diagnosis-required-not-proven-authority pede diagnóstico, não autorização genérica.</omni-runtime-carregado>`
 }

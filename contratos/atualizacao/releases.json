@@ -299,6 +299,15 @@
         "Documenta a prova determinística de ausência de alterações na contraparte Overcore, com snapshots e telemetria.",
         "Release isolada: não inclui mudanças concorrentes da agenda, Desktop ou outras sessões."
       ]
+    },
+    {
+      "version": "0.24.4",
+      "changes": [
+        "Consulta diagnostico separa operador, hook carregado e capacidades atuais do Overcore, sem sincronizar filas ou chamar modelos.",
+        "Bloqueios antigos sem justificativa recuperavel voltam para diagnostico local somente leitura, preservando tentativas.",
+        "Solicitacoes reais de autoridade mostram efeito, alvo, limite e evidencia auditada; erros tecnicos recebem retry com intervalo, nao pedido generico de permissao.",
+        "Auditoria distingue execucao inline opaca de mutacao comprovada; consulta diagnostico so conta como leitura na raiz canonica integra."
+      ]
     }
   ]
 }

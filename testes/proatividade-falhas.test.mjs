@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 
-import { abrirTurnoAuditoria } from '../runtime/auditoria-autocorrecao.mjs'
+import { abrirTurnoAuditoria, registrarAcaoAuditoria } from '../runtime/auditoria-autocorrecao.mjs'
 import {
   bloquearAutomacaoFalha,
   caminhoDaAutomacaoFalhas,
@@ -164,6 +164,13 @@ test('erro tecnico reagenda com outra estrategia; somente expansao concreta pede
       /taxonomia de autoridade/i
     )
 
+    const proof = await registrarAcaoAuditoria(casa, { session_id: sessionId,
+      hook_event_name: 'PostToolUse', tool_use_id: 'authority-readback', tool_name: 'Read',
+      tool_input: { file_path: 'authority-envelope.json' } })
+    await assert.rejects(bloquearAutomacaoFalha(casa, dispatch.job.id, 'limite ainda sem prova', {
+      kind: 'owner-authority', effect: 'remote-write', target: 'servico externo',
+      boundary: 'Envelope restrito a leitura local.', evidenceId: 'audit-evidence-inventada'
+    }), /evidência auditada/)
     const owner = await bloquearAutomacaoFalha(
       casa,
       dispatch.job.id,
@@ -171,6 +178,8 @@ test('erro tecnico reagenda com outra estrategia; somente expansao concreta pede
       {
         kind: 'owner-authority',
         effect: 'remote-write',
+        boundary: 'O envelope atual permite leitura local, mas a escrita solicitada seria remota.',
+        evidenceId: proof.evidence.id,
         target: 'servico remoto fora do escopo atual'
       }
     )
@@ -178,6 +187,8 @@ test('erro tecnico reagenda com outra estrategia; somente expansao concreta pede
     assert.equal(owner.job.state, 'needs-owner')
     assert.match(owner.job.requiredEffectFingerprint, /^[a-f0-9]{64}$/)
     assert.match(owner.job.targetFingerprint, /^[a-f0-9]{64}$/)
+    assert.equal((await sincronizarAutomacaoFalhas(casa)).jobs.find(item => item.id === owner.job.id).state, 'needs-owner')
+    assert.ok(!JSON.stringify(owner.job).includes('servico remoto fora do escopo atual'))
   } finally {
     await rm(casa, { recursive: true, force: true })
   }
@@ -203,7 +214,7 @@ test('store v3 reabre bloqueio sem prova e preserva backup', async () => {
     await writeFile(path, raw, 'utf8')
 
     const migrated = await sincronizarAutomacaoFalhas(casa)
-    assert.equal(migrated.schemaVersion, 4)
+    assert.equal(migrated.schemaVersion, 5)
     assert.equal(migrated.jobs[0].state, 'queued')
     assert.equal(migrated.jobs[0].attempts, 0)
     assert.equal(migrated.jobs[0].legacyAttempts, 1)

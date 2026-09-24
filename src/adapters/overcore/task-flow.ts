@@ -55,7 +55,8 @@ export class OvercoreHttpClient implements TaskFlowTransport {
     this.identity = url.origin
   }
   async request(path: string, method: 'POST' | 'GET', body?: JsonObject): Promise<JsonObject> {
-    if (!/^\/v1\/(?:preflight(?:\/[A-Za-z0-9._:-]+\/admit)?|tasks\/[A-Za-z0-9._:-]+(?:\/(?:cancel|resume))?)$/u.test(path)) throw new Error('Rota externa inválida.')
+    if (!/^\/v1\/(?:capabilities|preflight(?:\/[A-Za-z0-9._:-]+\/admit)?|tasks\/[A-Za-z0-9._:-]+(?:\/(?:cancel|resume))?)$/u.test(path)) throw new Error('Rota externa inválida.')
+    if (path === '/v1/capabilities' && (method !== 'GET' || body !== undefined)) throw new Error('Capacidades aceitam somente consulta GET.')
     let response: Response
     try {
       response = await this.transport(`${this.identity}${path}`, {

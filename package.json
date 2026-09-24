@@ -1,6 +1,6 @@
 {
   "name": "omni-agent",
-  "version": "0.24.3",
+  "version": "0.24.4",
   "private": true,
   "type": "module",
   "description": "Nucleo cognitivo e plugin do Omni",

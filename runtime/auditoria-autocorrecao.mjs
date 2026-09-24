@@ -2,6 +2,8 @@ import { createHash, randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { basename, extname, isAbsolute, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { verificarIntegridadeRelease } from './integridade-release.mjs'
 
 import {
   fingerprintObjetivo,
@@ -1232,7 +1234,10 @@ function classifyEffect(input) {
       /\bpython(?:\.exe|\d+(?:\.\d+)?)?\s+(?:--version|-v|-m\s+(?:pytest|unittest))\b/.test(command)
     const interpreterMutation =
       (/\bnode(?:\.exe)?\b/.test(command) || /\bpython(?:\.exe|\d+(?:\.\d+)?)?\b/.test(command)) &&
-      !explicitInterpreterVerification
+      !explicitInterpreterVerification &&
+      !/\bnode(?:\.exe)?\s+(?:--eval|-e)\s/.test(command)
+    // Unknown inline code is execution, never positive proof of a write/read.
+    const inlineWrite = /\b(?:writefile(?:sync)?|appendfile(?:sync)?|unlink(?:sync)?|rm(?:sync)?|rename(?:sync)?|mkdir(?:sync)?|copyfile(?:sync)?|truncate(?:sync)?|chmod(?:sync)?|createwritestream)\s*\(/.test(command)
     const inPlaceSed = /\bsed(?:\.exe)?\b[^\r\n;&|]*\s-[a-z]*i[a-z]*\b/.test(command)
   const gitApply = /\bgit\s+apply\b/.test(command)
     const npmGenerator = /\bnpm(?:\.cmd)?\s+(?:run\s+)?(?:generate|gen|build|compile|bundle|scaffold|migrate|format|fix|write|update)(?:[:\w.-]*)?\b/.test(command)
@@ -1241,6 +1246,7 @@ function classifyEffect(input) {
       /\binvoke-restmethod\b.*\b-method\s+(?:post|put|patch|delete)\b/.test(command)
     if (
       interpreterMutation ||
+      inlineWrite ||
       inPlaceSed ||
       gitApply ||
       npmGenerator ||
@@ -1250,6 +1256,7 @@ function classifyEffect(input) {
     ) {
       return 'mutation'
     }
+    if (/\bnode(?:\.exe)?\s+(?:--eval|-e)\s/.test(command)) return 'execution'
     if (/\b(git status|git diff|git log|git show|git rev-parse|npm(?:\.cmd)? test|npm(?:\.cmd)? run check|node --(?:test|check|version)|node -v|python(?:\.exe|\d+(?:\.\d+)?)? (?:--version|-v|-m (?:pytest|unittest))|pytest|test-path|get-content|get-childitem|select-string|rg|grep|findstr|curl)\b/.test(command)) {
       return 'verification'
     }
@@ -1387,10 +1394,17 @@ function recordAction(turn, input, policy, timestamp, override = {}) {
 
 export async function registrarAcaoAuditoria(casa, input, { at } = {}) {
   const timestamp = now(at)
+  const root = fileURLToPath(new URL('../', import.meta.url))
+  const command = commandFrom(input).trim()
+  const diagnostic = command.match(/^powershell(?:\.exe)?\s+-NoProfile\s+-ExecutionPolicy\s+Bypass\s+-File\s+(?:"([^"\r\n;&|<>`$]+)"|'([^'\r\n;&|<>`$]+)'|([^\s;&|<>`$]+))\s+diagnostico(?:\s+--sessao\s+[a-z0-9_-]+)?\s*$/i)
+  const operator = diagnostic?.slice(1).find(Boolean)
+  const canonical = operator && isAbsolute(operator) &&
+    resolve(operator).toLowerCase() === resolve(root, 'scripts', 'omni.ps1').toLowerCase()
+  const verifiedDiagnostic = canonical && (await verificarIntegridadeRelease(root)).status === 'verified'
   return change(casa, (store, policy) => {
     const { turn } = activeTurn(store, input?.session_id)
     if (!turn || ['verified', 'blocked'].includes(turn.state)) return { result: 'ignored', action: null }
-    const action = recordAction(turn, input, policy, timestamp)
+    const action = recordAction(turn, input, policy, timestamp, verifiedDiagnostic ? { effect: 'verification' } : {})
     turn.state = 'executing'
     turn.updatedAt = timestamp
     const evidence = turn.evidence.find((item) => item.sourceActionId === action.id) ?? null

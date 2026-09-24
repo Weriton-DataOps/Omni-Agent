@@ -7,8 +7,9 @@ import { geracaoPadraoFalha, lerFalhas } from './falhas.mjs'
 import { pareceConterSegredo } from './memoria.mjs'
 import { criarSolicitacaoDelegacao } from './porta-delegacao.mjs'
 import { atualizarDelegacao, lerCicloOperacional } from './ciclo-operacional.mjs'
+import { lerAuditoriaAutocorrecao } from './auditoria-autocorrecao.mjs'
 
-export const FAILURE_AUTOMATION_SCHEMA_VERSION = 4
+export const FAILURE_AUTOMATION_SCHEMA_VERSION = 5
 
 const raiz = dirname(dirname(fileURLToPath(import.meta.url)))
 const POLICY_PATH = new URL('../contratos/aprendizado/falhas.json', import.meta.url)
@@ -263,7 +264,7 @@ function validateStore(store, path) {
     !Number.isFinite(Date.parse(store.store?.updatedAt)) ||
     !Array.isArray(store.jobs) ||
     !store.jobs.every(validJob)
-  ) throw new Error(`Automação de falhas fora do contrato v4: ${path}`)
+  ) throw new Error(`Automação de falhas fora do contrato v5: ${path}`)
 }
 
 async function lock(casa) {
@@ -299,12 +300,68 @@ async function load(casa) {
       await backupBeforeMigration(path, raw, store.schemaVersion)
       store = migrateLegacy(store)
     }
+    if (store.schemaVersion === 4) {
+      // Version boundary prevents an old hook from dispatching a diagnostic job
+      // with the pre-v5 execute envelope. Existing attempts/bindings stay intact.
+      await backupBeforeMigration(path, raw, 4)
+      store = { ...store, schemaVersion: FAILURE_AUTOMATION_SCHEMA_VERSION }
+    }
     validateStore(store, path)
     return store
   } catch (error) {
     if (error?.code === 'ENOENT') return emptyStore()
     throw error
   }
+}
+
+// Status is a projection, never a queue synchronizer or a migration writer.
+export async function lerAutomacaoFalhas(casa) {
+  const path = caminhoDaAutomacaoFalhas(casa)
+  try {
+    let store = JSON.parse(await readFile(path, 'utf8'))
+    if ([1, 2, 3].includes(store.schemaVersion)) store = migrateLegacy(store)
+    if (store.schemaVersion === 4) store = { ...store, schemaVersion: FAILURE_AUTOMATION_SCHEMA_VERSION }
+    validateStore(store, path)
+    return store
+  } catch (error) {
+    if (error?.code === 'ENOENT') return emptyStore()
+    throw error
+  }
+}
+
+function authorityReceiptPath(casa, id) {
+  return join(casa, 'runtime', 'failure-authority', `${hash(id)}.json`)
+}
+
+async function lerPedidoAutoridade(casa, job) {
+  try {
+    const value = JSON.parse(await readFile(authorityReceiptPath(casa, job.id), 'utf8'))
+    const contract = await policy()
+    if (value.jobId !== job.id || value.authorityFingerprint !== job.authorityFingerprint ||
+        !contract.ownerAuthorityEffects.includes(value.effect) ||
+        hash(value.effect) !== job.requiredEffectFingerprint || hash(value.target) !== job.targetFingerprint ||
+        hash(value.reason) !== job.reasonFingerprint ||
+        typeof value.evidenceId !== 'string' || !value.evidenceId.startsWith('audit-evidence-') ||
+        safeText(value.boundary, 'Limite de autoridade', 10, 500) !== value.boundary) return null
+    return value
+  } catch { return null }
+}
+
+export async function diagnosticarAutomacaoFalhas(casa, store) {
+  const current = store ?? await lerAutomacaoFalhas(casa)
+  const pending = []
+  for (const job of current.jobs.filter(item => ['needs-owner', 'queued', 'running'].includes(item.state))) {
+    const request = job.state === 'needs-owner' ? await lerPedidoAutoridade(casa, job) : null
+    pending.push({ jobId: job.id, patternId: job.patternId, state: job.state, attempts: job.attempts,
+      dispatchState: job.dispatchState, nextAttemptAt: job.nextAttemptAt,
+      disposition: job.state === 'needs-owner'
+        ? request ? 'concrete-authority-request' : 'diagnosis-required-not-proven-authority'
+        : job.diagnosisOnly ? 'read-only-diagnosis' : job.state,
+      authorityRequest: request })
+  }
+  return { readOnly: true, needsOwner: pending.filter(item => item.authorityRequest).length,
+    unsubstantiatedOwnerClaims: pending.filter(item => item.disposition === 'diagnosis-required-not-proven-authority').length,
+    pending }
 }
 
 async function save(casa, store) {
@@ -437,6 +494,21 @@ export async function sincronizarAutomacaoFalhas(casa, { at } = {}) {
   try {
     const store = await load(casa)
     for (const job of store.jobs) {
+      if (job.state === 'needs-owner' && !await lerPedidoAutoridade(casa, job)) {
+        // Hash-only legacy records cannot justify a permission request. Reopen only
+        // local diagnosis, never the unknown historical effect. Preserve attempts.
+        job.legacyAuthorityClaim = { authorityFingerprint: job.authorityFingerprint,
+          requiredEffectFingerprint: job.requiredEffectFingerprint, targetFingerprint: job.targetFingerprint,
+          reasonFingerprint: job.reasonFingerprint, updatedAt: job.updatedAt }
+        job.state = 'queued'
+        clearDispatch(job)
+        job.diagnosisOnly = true
+        job.reasonClass = 'legacy-unverified'
+        job.requiredEffectFingerprint = null
+        job.targetFingerprint = null
+        job.nextAttemptAt = timestamp
+        job.updatedAt = timestamp
+      }
       if (job.state === 'running' && Date.parse(job.leaseUntil) <= Date.parse(timestamp)) {
         job.state = 'queued'
         await clearDispatchAfterTerminal(casa, job, {
@@ -555,24 +627,27 @@ function promptFor(job, pattern) {
     `Geração da evidência: ${job.generationFingerprint}`,
     `Tentativa real esperada: ${job.attempts + 1}`,
     `Histórico seguro: ${previousStrategies}.`,
+    job.diagnosisOnly
+      ? 'Modo desta tentativa: diagnóstico local somente leitura. Recupere evidências e tente verificações locais de leitura; não repita o efeito histórico desconhecido. Limite a busca à evidência vinculada. Se faltar autorização real, anexe ação, alvo, limite e evidência. Falta de evidência ou timeout é falha técnica, não autorização. Preserve o histórico de tentativas.'
+      : 'Execute a validação dentro do envelope recebido.',
     `Ação: ${pattern.action}`,
     `Classe: ${pattern.failureClass}`,
     `Ocorrências distintas: ${pattern.occurrences}`,
     `Operador canônico: powershell -NoProfile -ExecutionPolicy Bypass -File "${operator}"`,
     '',
-    'Este trabalho já está vinculado a uma solicitação neutra de delegação. Somente o evento `started` do adaptador confirma o início; não reivindique o trabalho por comando.',
+    'Somente `started` do adaptador confirma início. Nos comandos abaixo, <padrao>, <job> e <geracao> são os IDs acima.',
     'Objetivo obrigatório:',
-    '1. Recupere evidência local suficiente nas sessões JSONL e no projeto relacionado. Sustente a causa raiz em evidência recuperada, nunca apenas no hash.',
+    '1. Recupere evidência nas sessões JSONL e projeto vinculado; hash não comprova causa raiz.',
     '2. Determine causa raiz e hipótese verificável; registre com `falha-analisar <padrao> --geracao <geracao> --causa <texto> --hipotese <texto>`.',
-    `3. Depois da análise, rode \`falha-evidencias ${pattern.id} --job ${job.id}\` e copie o \`bindingMarker\`. Defina um único critério determinístico e acrescente \`# <bindingMarker>\` ao fim de cada comando real de verificação. Execute a mesma estratégia duas vezes de verdade, em execuções independentes; uma ação sem esse marcador não pertence a este trabalho.`,
-    `4. Após cada execução, rode novamente \`falha-evidencias ${pattern.id} --job ${job.id}\` e escolha a ação vinculada. Registre com \`falha-testar ${pattern.id} --job ${job.id} --geracao ${job.generationFingerprint} --acao-auditoria <id> --evidencia-auditoria <id> --criterio <mesmo-criterio>\`. Resultado, sucesso e IDs livres não são aceitos.`,
+    '3. Rode `falha-evidencias <padrao> --job <job>` e copie `bindingMarker`. Acrescente `# <bindingMarker>` aos comandos. Execute a mesma estratégia duas vezes de verdade, em execuções independentes, com critério determinístico; ação sem esse marcador não pertence a este trabalho.',
+    '4. Releia `falha-evidencias` após cada execução. Registre `falha-testar <padrao> --job <job> --geracao <geracao> --acao-auditoria <id> --evidencia-auditoria <id> --criterio <mesmo-criterio>`; use apenas IDs auditados vinculados.',
     '5. Se os dois testes forem bem-sucedidos e consistentes, rode `falha-avaliar <padrao> --geracao <geracao>` para gerar o eval e a proposta avaliável.',
-    `6. Finalize com \`falha-automacao-concluir ${job.id} --execucao <id-da-evidencia>\`. Falha técnica deve usar \`falha-automacao-bloquear ${job.id} --tipo retryable --motivo <motivo-seguro> --evidencia <id> --estrategia <estrategia>\`; somente uma expansão concreta de autoridade usa \`--tipo owner-authority --efeito <codigo> --alvo <alvo-concreto>\`.`,
+    '6. Conclua: `falha-automacao-concluir <job> --execucao <evidencia>`. Falha técnica: `falha-automacao-bloquear <job> --tipo retryable --motivo <texto> --evidencia <id> --estrategia <texto>`. Expansão real: mesmo comando com --tipo owner-authority e campos abaixo.',
     '',
     'Autoridade e controle de efeito:',
     '- O envelope de autoridade é o objetivo, o alvo, o escopo material e os efeitos explicitamente autorizados na tarefa original. Passos instrumentais proporcionais dentro desse envelope já estão autorizados.',
     '- Falha de ferramenta, permissão já concedida que não funcionou ou estratégia insuficiente não pede o proprietário: registre evidência e reagende com outra estratégia.',
-    '- Somente uma nova classe concreta de efeito fora do envelope pode entrar em needs-owner, sempre com efeito e alvo explícitos.',
+    '- Somente uma nova classe concreta de efeito fora do envelope pode entrar em needs-owner: informe --efeito, --alvo, --limite (qual autoridade falta) e --evidencia (audit-evidence real desta tentativa). O diagnóstico apresenta esses detalhes ao proprietário; hashes isolados não são justificativa.',
     '- Antes de alterar estado, registre o estado inicial e um checkpoint verificável; escolha uma via reversível e prepare rollback proporcional ao efeito.',
     '- Depois de cada alteração, verifique o resultado real e anexe evidência da execução e, quando usado, da reversão.',
     '- Registre no store somente resumo seguro e identificadores; a evidência local protegida preserva os detalhes necessários.',
@@ -620,7 +695,7 @@ function solicitacaoDaFalha(job, pattern, sessionId, contract) {
         'eval e proposta rastreaveis ou bloqueio concreto de autoridade'
       ]
     },
-    effectClasses: ['read', 'execute'],
+    effectClasses: job.diagnosisOnly ? ['read'] : ['read', 'execute'],
     risk: {
       reversibility: 'reversible',
       reach: 'local-isolated',
@@ -942,7 +1017,9 @@ export async function bloquearAutomacaoFalha(casa, id, reason, options = {}) {
       job.reasonFingerprint = hash(`${safeReason}|${evidenceId}`)
       job.requiredEffectFingerprint = null
       job.targetFingerprint = null
-      job.nextAttemptAt = timestamp
+      // Backoff limits expensive retry loops; exhaustion never becomes permission.
+      const delayMs = job.attempts < 3 ? 0 : Math.min(86_400_000, 300_000 * 2 ** Math.min(9, job.attempts - 3))
+      job.nextAttemptAt = new Date(Date.parse(timestamp) + delayMs).toISOString()
       job.strategyFingerprints.push(strategyFingerprint)
       job.updatedAt = timestamp
       await save(casa, store)
@@ -953,6 +1030,19 @@ export async function bloquearAutomacaoFalha(casa, id, reason, options = {}) {
     const target = safeText(options.target, 'Alvo concreto da expansão', 3, 500)
     if (!contract.ownerAuthorityEffects.includes(effect)) throw new Error(`Efeito fora da taxonomia de autoridade: ${effect}`)
     if (job.authorityFingerprint === null) throw new Error('Expansão de autoridade sem envelope de origem verificável.')
+    const boundary = safeText(options.boundary, 'Limite concreto de autoridade', 10, 500)
+    const evidenceId = safeText(options.evidenceId, 'Evidência real do limite', 3, 240)
+    const audit = await lerAuditoriaAutocorrecao(casa)
+    const evidence = audit.turns.flatMap(turn => turn.evidence).find(item => item.id === evidenceId)
+    if (!evidence || Date.parse(evidence.recordedAt) < Date.parse(job.startedAt)) {
+      throw new Error('Expansão de autoridade exige evidência auditada desta tentativa.')
+    }
+    const receipt = { jobId: job.id, authorityFingerprint: job.authorityFingerprint,
+      effect, target, boundary, reason: safeReason, evidenceId, recordedAt: timestamp }
+    // Private local details do not enter the portable learning store or Git.
+    const receiptPath = authorityReceiptPath(casa, job.id)
+    await mkdir(dirname(receiptPath), { recursive: true })
+    await writeFile(receiptPath, `${JSON.stringify(receipt, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 })
     job.state = 'needs-owner'
     await clearDispatchAfterTerminal(casa, job, {
       state: 'cancelled',
