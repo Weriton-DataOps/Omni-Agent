@@ -4,15 +4,23 @@ export async function executarFluxoOvercore(home, sessionId, command, requestKey
   if (!sessionId || !command || typeof command !== 'object' || Array.isArray(command)) throw new Error('Fluxo exige conversa e comando estruturado.')
   if (command.operation === 'list') return { flows: await listTaskFlows(home, sessionId), cached: true }
   const flow = new OvercoreTaskFlow(home, await taskFlowClient(env))
+  const previous = command.flowId ? (await listTaskFlows(home, sessionId)).find(item => item.flowId === command.flowId) : null
+  const observed = result => ({ ...result, notification: notificacaoFluxoOvercore(previous, result) })
   switch (command.operation) {
     case 'prepare':
       if (!requestKey) throw new Error('Preparação exige a chave estável do pedido atual.')
-      return flow.start(sessionId, requestKey, command.input)
-    case 'answer': return flow.answer(sessionId, command.flowId, command.input)
-    case 'follow': return flow.follow(sessionId, command.flowId)
-    case 'cancel': return flow.cancel(sessionId, command.flowId)
+      return observed(await flow.start(sessionId, requestKey, command.input))
+    case 'answer': return observed(await flow.answer(sessionId, command.flowId, command.input))
+    case 'follow': return observed(await flow.follow(sessionId, command.flowId))
+    case 'cancel': return observed(await flow.cancel(sessionId, command.flowId))
     default: throw new Error('Operação externa desconhecida.')
   }
+}
+
+export function notificacaoFluxoOvercore(previous, current) {
+  const signature = item => JSON.stringify([item?.taskId, item?.status, item?.result?.resultId, item?.decisions ?? []])
+  const changed = !previous || signature(previous) !== signature(current)
+  return { changed, reason: changed ? 'state-or-result-changed' : 'unchanged', ownerUpdate: changed ? 'report-change' : 'silent' }
 }
 
 export async function contextoFluxosOvercore(home, sessionId, env = process.env, ownerPrompt) {
@@ -31,6 +39,7 @@ export async function contextoFluxosOvercore(home, sessionId, env = process.env,
     'Para consultar ou cancelar: {operation:"follow"|"cancel",flowId}. Não chame work-once; o Overcore executa sua própria fila.',
     'Plugin: ação overcore --sessao <sessão atual> --idempotencia <id estável do pedido> --entrada <JSON absoluto>. Desktop: action=overcore, sessionId=null, taskId=null, instruction=JSON do comando. Apresente todas as decisões juntas; estado/cache não comprova execução. Leia o resultado da porta antes de confirmar.',
     'O índice é resumido; list recupera todos os vínculos desta conversa e follow o pacote integral atualizado.',
+    'Acompanhamento: siga a mesma tarefa até o resultado. notification.ownerUpdate=silent significa consulta sem novidade: mantenha o acompanhamento em silêncio, sem mensagens repetidas de running. Use um único monitor, emitindo eventos somente quando estado/decisão/resultado mudar; checkedAt e número da consulta não são progresso. Pedido explícito de status do proprietário sempre merece resposta.',
     'Entrega: result.report.content contém o relatório completo com hash conferido pelo cliente. Use-o na resposta; resumo e digest isolados não são entrega. Referência workspace indica pasta exata, sem acrescentar contratos. Premissas são objetos {id,statement,impactIfFalse}; confirmação válida não precisa inventar changes.'
   ].join('\n')
 }

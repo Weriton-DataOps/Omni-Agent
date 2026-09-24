@@ -290,6 +290,15 @@
         "Documenta pasta exata e premissas estruturadas; aceita confirmação sem exigir alteração artificial do draft.",
         "A contraparte Overcore precisa da correção de entrega e avaliação por critério; esta release não inclui alterações concorrentes de outras sessões."
       ]
+    },
+    {
+      "version": "0.24.3",
+      "changes": [
+        "Acompanhamento do Overcore distingue consulta sem novidade e orienta silêncio até mudança real ou pedido de status.",
+        "Identifica a versão executada pelo hook por sessão e por turno, separando-a da instalação e do operador manual.",
+        "Documenta a prova determinística de ausência de alterações na contraparte Overcore, com snapshots e telemetria.",
+        "Release isolada: não inclui mudanças concorrentes da agenda, Desktop ou outras sessões."
+      ]
     }
   ]
 }

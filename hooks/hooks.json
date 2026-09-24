@@ -40,6 +40,12 @@
           {
             "type": "command",
             "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/runtime/hook-release-loaded.mjs"],
+            "timeout": 15
+          },
+          {
+            "type": "command",
+            "command": "node",
             "args": ["${CLAUDE_PLUGIN_ROOT}/runtime/hook-contexto.mjs"],
             "timeout": 10
           }
