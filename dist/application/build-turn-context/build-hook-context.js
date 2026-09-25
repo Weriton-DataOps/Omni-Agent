@@ -1,5 +1,5 @@
 import { CRITICAL_COMPACT_ANCHOR, CRITICAL_TURN_CLOSING, CRITICAL_VOICE_RULE, renderCompactPersonalityAnchor, renderCompactPersonalityInstruction, renderFullPersonalityInstruction, renderCompactVoiceExample } from '../../core/personality/personality.js';
-import { assembleContextBlocks, DEFAULT_INLINE_CONTEXT_BUDGET } from '../../core/context/context-block.js';
+import { assembleContextBlocks, DEFAULT_INLINE_CONTEXT_BUDGET, RequiredContextExceedsBudgetError } from '../../core/context/context-block.js';
 import { projectionToContextBlocks } from '../../core/context/projection-blocks.js';
 const TRUNCATION_NOTICE = [
     'CONTEXTO AUXILIAR TRUNCADO POR BLOCOS COMPLETOS: o limite inline de 9.500 caracteres foi aplicado.',
@@ -77,7 +77,30 @@ export function buildHookTurnContext(input) {
             : compactableBlock('turn:automation', input.automation, 99, 16),
         { kind: 'required', id: 'turn:closing', content: CRITICAL_TURN_CLOSING }
     ];
-    return assembleWithNotice(blocks.filter((block) => block !== null), budget);
+    const ready = blocks.filter((block) => block !== null);
+    try {
+        return assembleWithNotice(ready, budget);
+    }
+    catch (error) {
+        if (!(error instanceof RequiredContextExceedsBudgetError))
+            throw error;
+        return assembleWithNotice(ready.map(relaxRecoverableBlock), budget);
+    }
+}
+// Hook que lança entrega zero contexto — e o despacho de automação já foi
+// registrado como entregue antes da montagem. Quando os obrigatórios não cabem,
+// rebaixe só o que a memória recupera no próximo turno (regras da projeção e
+// amostra de voz); personalidade, briefing executável e encerramento seguem inteiros.
+function relaxRecoverableBlock(block) {
+    if (block.kind !== 'required')
+        return block;
+    if (block.id === 'turn:voice-sample') {
+        return { kind: 'optional', id: block.id, content: block.content, priority: 20 };
+    }
+    if (block.id.startsWith('projection:rules:')) {
+        return { kind: 'compactable', id: block.id, content: block.content, compact: completeLineCompact(block.content, 2), priority: 97 };
+    }
+    return block;
 }
 export function buildActivationContext(input) {
     const budget = input.budgetCharacters ?? DEFAULT_INLINE_CONTEXT_BUDGET;
