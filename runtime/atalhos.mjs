@@ -547,12 +547,12 @@ function aplicarDecaimento(store, policy, at) {
   return actions
 }
 
-export async function prepararAtalhos(casa) {
+export async function prepararAtalhos(casa, { now } = {}) {
   const policy = await lerPolitica()
   const release = await adquirirTrava(casa)
   try {
     const loaded = await carregar(casa, policy)
-    const maintenanceAt = new Date().toISOString()
+    const maintenanceAt = now ? new Date(now).toISOString() : new Date().toISOString()
     const maintenance = [
       ...normalizarPassosDoStore(loaded.store),
       ...aplicarDecaimento(loaded.store, policy, maintenanceAt)
@@ -837,7 +837,6 @@ export async function registrarObservacaoAtalho(casa, input, { sourceRequestFing
     throw new Error('O atalho não aceita sucesso, resultado ou evidência autodeclarados.')
   }
   const policy = await lerPolitica()
-  await prepararAtalhos(casa)
   const {
     family,
     goal,
@@ -872,6 +871,9 @@ export async function registrarObservacaoAtalho(casa, input, { sourceRequestFing
     return { result: 'unverified-action', shortcut: null, observation: null, promotion: 'not-performed' }
   }
   const recordedAt = verification.action.recordedAt
+  // Decaimento no tempo da observação: pelo relógio de parede, a varredura
+  // retroativa arquivava como inativo o atalho que ela mesma acabara de criar.
+  await prepararAtalhos(casa, { now: recordedAt })
   const outcomeFingerprint = fingerprint(`${patternFingerprint}:${verification.action.strategyFingerprint}:verified-success`)
 
   const release = await adquirirTrava(casa)
