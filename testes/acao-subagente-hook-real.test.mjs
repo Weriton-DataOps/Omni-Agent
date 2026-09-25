@@ -50,7 +50,8 @@ test('executor despachado pelo job de falha grava suas ferramentas no ledger pel
     const antes = (await acoesDeFerramenta(casa)).length
 
     // SubagentStart como o Claude Code manda: sem delegation_id.
-    await tratarHook({ hook_event_name: 'SubagentStart', session_id, agent_id: 'agente-real-1', agent_type: 'general-purpose', cwd: raiz }, env)
+    const inicio = await tratarHook({ hook_event_name: 'SubagentStart', session_id, agent_id: 'agente-real-1', agent_type: 'general-purpose', cwd: raiz }, env)
+    assert.match(JSON.stringify(inicio), /Escreva em português/)
     const job = (await lerAutomacaoFalhas(casa)).jobs.at(-1)
     assert.equal(job.state, 'running')
 

@@ -288,7 +288,9 @@ export async function tratarHook(input, env = process.env, { contextOnly = false
       'SubagentStart',
       [
         'Execute a tarefa recebida com autonomia e evidencias verificaveis.',
-        'Mantenha o pedido completo visivel nesta sessao e devolva resultado, verificacao e pendencias reais.'
+        'Mantenha o pedido completo visivel nesta sessao e devolva resultado, verificacao e pendencias reais.',
+        // O proprietario acompanha a narracao do executor na tela.
+        'Escreva em português tudo o que o proprietário vê: mensagens de progresso, descrições de comandos, resumos e relatório final.'
       ].join(' ')
     )
   }
