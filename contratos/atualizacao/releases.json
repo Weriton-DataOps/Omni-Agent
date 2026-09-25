@@ -329,6 +329,15 @@
         "Auto-correcao e auditoria de parada tornam-se consultivas: registram aprendizado sem bloquear a sessao do proprietario.",
         "Contrato distingue plataforma de orquestracao (proibida) de registro do trabalho do proprietario (permitido); migration 005 adiciona prazo, agendamento e ultima movimentacao as missoes."
       ]
+    },
+    {
+      "version": "0.25.1",
+      "changes": [
+        "Turno de despacho nao derruba mais o hook quando os blocos obrigatorios passam de 9500 caracteres: regras da memoria e amostra de voz sao rebaixadas e o briefing executavel segue inteiro.",
+        "Regressao de ponta a ponta prova que acoes de executor despachado entram no ledger pelo hook real, com SubagentStart sem delegation_id.",
+        "Executor delegado recebe instrucao de escrever em portugues tudo o que o proprietario ve.",
+        "Decaimento de atalhos na observacao usa a data da propria observacao; a varredura retroativa nao arquiva mais o atalho que acabou de criar."
+      ]
     }
   ]
 }
