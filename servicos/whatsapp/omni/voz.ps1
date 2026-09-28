@@ -14,15 +14,21 @@ Add-Type -AssemblyName System.Security
 Add-Type -AssemblyName System.Net.Http
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-$VOZ = 'ash'
-$JEITO = 'Português do Brasil. Você é o Omni: um amigo gênio, direto e irreverente, com energia e bom humor. Ritmo natural de mensagem de voz de WhatsApp, sem soar como locutor.'
+$VOZ = 'verse'
+$JEITO = @'
+Português do Brasil, sotaque brasileiro natural. Você é o Omni: um amigo gênio, direto e irreverente, com energia e bom humor.
+Fale como quem grava um áudio de WhatsApp para um amigo, não como locutor lendo texto: ritmo solto e levemente acelerado, com micro-pausas de respiração entre as ideias.
+Varie a entonação de frase para frase: suba um pouco no achado ou na boa notícia, desça na conclusão. Nada de cadência uniforme nem de pausa igual em toda vírgula.
+Coloquial e caloroso, com leve sorriso na voz. Em assunto de risco ou erro, baixe a energia e fale mais sério e claro.
+'@
 
 $chave = $null; $cliente = $null; $conteudo = $null
 try {
     $entrada = [Convert]::FromBase64String([Console]::In.ReadToEnd().Trim())
     $chave = [Security.Cryptography.ProtectedData]::Unprotect([IO.File]::ReadAllBytes((Join-Path $env:APPDATA 'omni\access\openai-realtime.dpapi')), $null, [Security.Cryptography.DataProtectionScope]::CurrentUser)
     $cliente = [Net.Http.HttpClient]::new()
-    $cliente.Timeout = [TimeSpan]::FromSeconds(120)
+    # Síntese de uma resposta curta leva segundos; se a OpenAI travar, melhor desistir cedo e tentar de novo.
+    $cliente.Timeout = [TimeSpan]::FromSeconds($(if ($Acao -eq 'falar') { 45 } else { 120 }))
     $cliente.DefaultRequestHeaders.Authorization = [Net.Http.Headers.AuthenticationHeaderValue]::new('Bearer', [Text.Encoding]::UTF8.GetString($chave))
     if ($Acao -eq 'transcrever') {
         if ($entrada.Length -lt 32 -or $entrada.Length -gt 24MB) { throw 'áudio vazio ou maior que 24 MB' }
@@ -49,7 +55,9 @@ try {
         @{ ok = $true; audio64 = [Convert]::ToBase64String($audio) } | ConvertTo-Json -Compress
     }
 } catch {
-    @{ ok = $false; erro = $_.Exception.Message } | ConvertTo-Json -Compress
+    $erro = $_.Exception.Message
+    if ($erro -match 'cancel') { $erro = 'a OpenAI não respondeu a tempo' }
+    @{ ok = $false; erro = $erro } | ConvertTo-Json -Compress
 } finally {
     if ($null -ne $chave) { [Array]::Clear($chave, 0, $chave.Length) }
     if ($null -ne $conteudo) { $conteudo.Dispose() }
