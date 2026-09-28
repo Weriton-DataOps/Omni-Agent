@@ -49,13 +49,13 @@ A proteção vem do escopo, não só do segredo. Provado com testes negativos: l
 - Mensagem do dono ao bot, sem citação → a sessão central do Omni responde (sessão persistente no repositório do Omni).
 - Resposta citando uma mensagem assinada por uma sessão → aquela sessão responde. Sessões do Weriton (ex.: VS Code) respondem numa cópia (`--fork-session`), para não alterar o histórico da janela.
 - Só mensagens recebidas do número do dono acionam sessões; qualquer outro contato é ignorado.
-- As sessões rodam sem ninguém para aprovar permissões: o que pediria aprovação é recusado.
+- Sessões acionadas pelo número do dono rodam com permissões liberadas (`--permission-mode bypassPermissions`), por decisão explícita dele em 28/09/2026, ciente dos riscos (conteúdo de terceiros lido pela sessão; aparelho em mãos erradas). Contrapesos: só o número dele aciona, `/pausa` desliga, conteúdo de terceiros é dado e nunca instrução, e ações sem volta são confirmadas com ele pelo WhatsApp.
 - `/pausa` suspende a ponte; `/volta` retoma. Corte total: desconectar o aparelho no celular do bot.
 - O livro `ponte-ledger.jsonl` registra qual sessão assinou cada mensagem; o log não guarda conteúdo.
 - Toda mensagem recebe na hora um aviso curto ("⏳ Recebi, verificando…") e, se algo falhar, o erro. Ao ligar, a ponte recupera mensagens do dono dos últimos 30 min ainda sem resposta.
 - Áudio do dono é transcrito (OpenAI `gpt-4o-transcribe`); imagem é salva em `%APPDATA%\omni\whatsapp\midia` (apagada após 7 dias) e aberta pela sessão.
 - Escrito ou áudio é decidido pela ponte (`omni/formato.mjs`), não pelo modelo, nesta ordem: pedido explícito ("em áudio" / "por escrito"), espelho (áudio recebido volta em áudio), padrão escrito. Numa resposta em áudio, o que é para copiar ou consultar (código, comando, link, caminho, número, lista, detalhe além de ~1 min de fala) vai escrito logo depois. Avisos e erros são sempre escritos. Voz `verse` a 1,25x (`gpt-4o-mini-tts`, ogg/opus).
-- Sessões abertas pela ponte usam o MCP `whatsapp` sem aprovação (`--allowedTools mcp__whatsapp`); o servidor é a cerca: lê, e só envia ao dono.
+- O MCP `whatsapp` continua sendo a cerca de envio: lê, fala com o dono e só manda para terceiros com a autorização pontual de `terceiros.mjs`, independentemente das permissões da sessão.
 
 - Mensagens seguidas do dono esperam 5 s de silêncio e viram um pedido só (ex.: áudio encaminhado + instrução sobre ele), com um aviso só.
 - "Fala dele" é o que ele digita ou grava (tipo `voice`). Áudio encaminhado ou arquivo (tipo `audio`) é conteúdo de outra pessoa: vai para análise, nunca como pedido, espelho de áudio ou autorização. O serviço não expõe a marca "encaminhada"; a distinção é pelo tipo.
