@@ -53,7 +53,7 @@ A proteção vem do escopo, não só do segredo. Provado com testes negativos: l
 - O livro `ponte-ledger.jsonl` registra qual sessão assinou cada mensagem; o log não guarda conteúdo.
 - Toda mensagem recebe na hora um aviso curto ("⏳ Recebi, verificando…") e, se algo falhar, o erro. Ao ligar, a ponte recupera mensagens do dono dos últimos 30 min ainda sem resposta.
 - Áudio do dono é transcrito (OpenAI `gpt-4o-transcribe`); imagem é salva em `%APPDATA%\omni\whatsapp\midia` (apagada após 7 dias) e aberta pela sessão.
-- Pedido de resposta em áudio ("responde em áudio", "manda um áudio"…) é detectado pela ponte, não pelo modelo; a resposta vira mensagem de voz (`gpt-4o-mini-tts`, ogg/opus).
+- Escrito ou áudio é decidido pela ponte (`omni/formato.mjs`), não pelo modelo, nesta ordem: pedido explícito ("em áudio" / "por escrito"), espelho (áudio recebido volta em áudio), padrão escrito. Numa resposta em áudio, o que é para copiar ou consultar (código, comando, link, caminho, número, lista, detalhe além de ~1 min de fala) vai escrito logo depois. Avisos e erros são sempre escritos. Voz `verse` a 1,25x (`gpt-4o-mini-tts`, ogg/opus).
 - Sessões abertas pela ponte usam o MCP `whatsapp` sem aprovação (`--allowedTools mcp__whatsapp`); o servidor é a cerca: lê, e só envia ao dono.
 
 ## Voz (`omni/voz.ps1`)
@@ -73,6 +73,7 @@ O serviço limita requisições por IP, e tudo aqui vem de `127.0.0.1`: ponte, M
 - `omni/chaves.mjs` — recria as chaves com escopo, grava no cofre e prova cada uma pelos dois lados.
 - `omni/mcp.mjs` — servidor MCP: ferramentas de leitura, `transcrever_audio` e `enviar_para_weriton`, assinada com projeto e id da sessão.
 - `omni/voz.ps1` — transcrição e síntese de voz pela OpenAI.
+- `omni/formato.mjs` — critérios de escrito ou áudio e divisão da resposta em fala e parte escrita.
 - `omni/ponte.mjs` — a ponte; `--simular "texto" [--citar <id>] [--audio <ogg>] [--imagem <arquivo>]` testa sem mensagem real.
 
 ## Alterações nossas
