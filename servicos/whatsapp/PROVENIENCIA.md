@@ -22,13 +22,32 @@ Cópia congelada do projeto **OpenWA**, trazida para dentro do Omni sem vínculo
 - MCP ligado em modo **somente leitura** (`MCP_READONLY` fica verdadeiro).
 - Dados pessoais (sessão do WhatsApp, banco SQLite, mídia) ficam fora do repositório, em `%APPDATA%\omni\whatsapp`.
 - A configuração local (`.env`) e as chaves nunca entram no git.
-- MCP registrado no Claude Code no escopo de usuário, com o nome `whatsapp` (`http://127.0.0.1:2785/mcp`). A chave é de papel `operator`, presa à sessão pareada.
+- MCP registrado no Claude Code no escopo de usuário com o nome `whatsapp`, como servidor **stdio** (`omni/mcp.mjs`). A configuração do Claude Code não guarda chave nenhuma.
+
+## Chaves (todas presas à sessão pareada)
+
+| Chave | Papel | Escopo | Onde fica |
+| --- | --- | --- | --- |
+| admin | admin | tudo | `%APPDATA%\omni\whatsapp\data\.api-key` |
+| leitura | viewer | só leitura; a API recusa envio a este papel | `%APPDATA%\omni\whatsapp\leitura.key` |
+| envio | operator | só a conversa do próprio número do dono | `%APPDATA%\omni\whatsapp\envio.key` |
+
+A proteção vem do escopo, não do segredo: mesmo lida por alguém, a chave de leitura não envia e a de envio só fala com o dono. Provado com testes negativos (HTTP 403).
 
 ## Pasta `omni/` (nossa, não veio do projeto original)
 
 - `omni/iniciar.ps1` — sobe o serviço em segundo plano. Não abre uma segunda instância se já houver uma escutando.
 - `omni/parear.mjs` — vigia do QR para parear de novo, caso o celular desconecte a sessão.
-- Inicialização automática no logon do Windows **não está configurada**. Depende de autorização explícita do proprietário.
+- `omni/chaves.mjs` — recria as chaves de leitura e envio com escopo e as prova, inclusive pelo lado negativo.
+- `omni/mcp.mjs` — servidor MCP: repassa as ferramentas de leitura e oferece `enviar_para_weriton`, que assina com a identidade da sessão (projeto e id). É aviso de mão única.
+
+## Pendente de autorização do proprietário
+
+Bloqueados pelo classificador de segurança do Claude Code; não foram contornados.
+
+- **Inicialização automática no logon** ("persistência não autorizada").
+- **Chave de admin no Gerenciador de Credenciais do Windows** ("persistência não autorizada"). Segue no arquivo acima.
+- **Ponte WhatsApp → sessões** ("agente inseguro"): mensagem do dono acionando uma sessão, e resposta citando uma mensagem voltando para a sessão que a assinou. Na prática é um controle remoto do computador via WhatsApp.
 
 ## Alterações nossas
 
