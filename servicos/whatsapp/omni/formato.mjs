@@ -25,6 +25,22 @@ export function instrucaoAudio(motivo) {
     + ' Tudo que for para copiar ou consultar — código, comando, link, caminho de arquivo, número (IP, id, valor), lista com vários itens ou o detalhe que não coube na fala — coloque depois de uma linha só com [TEXTO]; essa parte vai escrita logo depois do áudio.'
 }
 
+// Pedido do Weriton (28/09/2026): nenhuma mensagem pode mandar ele "dar um enter" na janela — o recado entre
+// sessões chega sozinho. Frase assim é cortada antes de sair, independentemente do que a sessão escreveu.
+// Corta só a frase; o resto da mensagem (e as quebras de linha) ficam.
+// Delimitadores com \p{L}: o \b do JavaScript não reconhece letra acentuada ("dá" passava batido).
+const PEDE_ENTER = /(?<!\p{L})(?:d[áa]r?|d[êe]|aperta(?:r)?|tecl\p{L}*|digit\p{L}*|manda(?:r)?)(?!\p{L})[^.!?\n]{0,40}(?<!\p{L})enter(?!\p{L})|(?<!\p{L})enter(?!\p{L})[^.!?\n]{0,40}(?<!\p{L})(?:janela|l[áa]|sess[ãa]o)(?!\p{L})/iu
+export function cortarPedidoDeEnter(texto) {
+  let cortadas = 0
+  const linhas = String(texto).split('\n').map(linha => {
+    const frases = linha.split(/(?<=[.!?])\s+/)
+    const ficam = frases.filter(f => !PEDE_ENTER.test(f))
+    cortadas += frases.length - ficam.length
+    return ficam.length === frases.length ? linha : ficam.join(' ')
+  })
+  return { texto: linhas.join('\n').replace(/\n{3,}/g, '\n\n').trim(), cortadas }
+}
+
 // Texto para ser falado: sem markdown, links nem emoji.
 export const paraFala = t => String(t)
   .replace(/https?:\/\/\S+/g, '')
