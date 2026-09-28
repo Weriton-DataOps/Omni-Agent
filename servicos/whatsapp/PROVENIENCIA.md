@@ -88,6 +88,7 @@ O serviço limita requisições por IP, e tudo aqui vem de `127.0.0.1`: ponte, M
 - `omni/mcp.mjs` — servidor MCP: ferramentas de leitura, `transcrever_audio` e `enviar_para_weriton`, assinada com projeto e id da sessão.
 - `omni/voz.ps1` — transcrição e síntese de voz pela OpenAI.
 - `omni/formato.mjs` — critérios de escrito ou áudio e divisão da resposta em fala e parte escrita.
+- `omni/delegado.mjs` — delega trabalho a um projeto em segundo plano (sessão na pasta do projeto, permissões liberadas) e entrega o resultado no WhatsApp do dono; substitui o canal entre sessões, que segura recados em janelas de modo de permissão diferente.
 - `omni/relatorio.mjs` — relatórios: HTML vira imagem ou PDF pelo Edge sem janela (perfil isolado) e segue ao dono pela ferramenta MCP `enviar_arquivo_para_weriton`; também manda .png/.jpg/.pdf prontos.
 - `omni/terceiros.mjs` — envio a terceiros com autorização pontual, aviso informativo e repasse de respostas.
 - `omni/ponte.mjs` — a ponte; `--simular "texto" [--citar <id>] [--audio <ogg>] [--imagem <arquivo>]` testa sem mensagem real.
