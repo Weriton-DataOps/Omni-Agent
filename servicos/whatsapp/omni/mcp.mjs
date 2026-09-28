@@ -11,6 +11,7 @@ import { createInterface } from 'node:readline'
 import { readFileSync, existsSync } from 'node:fs'
 import { BASE, chave, anotar, enviarAoDono, arquivo, api, voz, sessaoPessoal } from './config.mjs'
 import { enviarParaContato, Recusa } from './terceiros.mjs'
+import { enviarArquivoAoDono, PASTA as PASTA_RELATORIOS } from './relatorio.mjs'
 
 const sessaoLegivel = nome => (existsSync(arquivo(nome)) ? readFileSync(arquivo(nome), 'utf8').trim() : 'não pareada')
 
@@ -26,6 +27,21 @@ const FERRAMENTA_ENVIO = {
       identidade: { type: 'string', description: 'Opcional. Como a sessão se apresenta; padrão: "Omni · <projeto>".' },
     },
     required: ['texto'],
+  },
+}
+const FERRAMENTA_ARQUIVO = {
+  name: 'enviar_arquivo_para_weriton',
+  description: `Envia um relatório ou arquivo para o WhatsApp do Weriton (só para ele), assinado por esta sessão. Aceita .html (vira imagem ou PDF pelo navegador, ou vai como HTML), .png/.jpg/.webp e .pdf. Para relatório, escreva um HTML autocontido (CSS inline, sem depender de internet) em ${PASTA_RELATORIOS} e chame esta ferramenta. Imagem: bom para resumo curto e visual; desenhe para 540px de largura e ajuste a altura. PDF: relatório longo, várias páginas. HTML: quando ele pedir o arquivo.`,
+  inputSchema: {
+    type: 'object',
+    properties: {
+      arquivo: { type: 'string', description: 'Caminho completo do arquivo (.html, .png, .jpg, .webp ou .pdf).' },
+      formato: { type: 'string', enum: ['imagem', 'pdf', 'html'], description: 'Só para .html: imagem (padrão), pdf ou html.' },
+      legenda: { type: 'string', description: 'Opcional. Texto curto que acompanha o arquivo.' },
+      altura: { type: 'number', description: 'Só para imagem: altura em px CSS (largura fixa de 540). Padrão 960.' },
+      identidade: { type: 'string', description: 'Opcional. Como a sessão se apresenta; padrão: "Omni · <projeto>".' },
+    },
+    required: ['arquivo'],
   },
 }
 const FERRAMENTA_CONTATO = {
@@ -149,9 +165,23 @@ createInterface({ input: process.stdin }).on('line', async linha => {
     if (method === 'ping') return responder({ jsonrpc: '2.0', id, result: {} })
     if (method === 'tools/list') {
       const { tools } = await upstream('tools/list', {})
-      return responder({ jsonrpc: '2.0', id, result: { tools: [...tools.filter(t => !SO_OPERATOR.has(t.name)), FERRAMENTA_ENVIO, FERRAMENTA_CONTATO, FERRAMENTA_TRANSCRICAO] } })
+      return responder({ jsonrpc: '2.0', id, result: { tools: [...tools.filter(t => !SO_OPERATOR.has(t.name)), FERRAMENTA_ENVIO, FERRAMENTA_ARQUIVO, FERRAMENTA_CONTATO, FERRAMENTA_TRANSCRICAO] } })
     }
     if (method === 'tools/call') {
+      if (params?.name === 'enviar_arquivo_para_weriton') {
+        const a = params.arguments || {}
+        try {
+          const projeto = basename(process.cwd())
+          const quem = String(a.identidade ?? '').trim() || `Omni · ${projeto}`
+          const sid = sessaoClaude(String(a.arquivo || ''))
+          const legenda = `🤖 *${quem}*${a.legenda ? `\n\n${a.legenda}` : ''}`
+          const { waId, final, tipo } = await enviarArquivoAoDono(a.arquivo, { formato: a.formato, legenda, altura: a.altura })
+          if (sid) anotar({ waMessageId: waId, sessionId: sid, cwd: process.cwd(), projeto, identidade: quem, origem: 'sessao' })
+          return responder({ jsonrpc: '2.0', id, result: { content: [{ type: 'text', text: `Enviado ao Weriton como ${tipo} (${basename(final)}).` }] } })
+        } catch (e) {
+          return responder({ jsonrpc: '2.0', id, result: { isError: true, content: [{ type: 'text', text: `Não enviado: ${e.message}` }] } })
+        }
+      }
       if (params?.name === 'enviar_para_contato') {
         try {
           const { contato, enviados } = await enviarParaContato(params.arguments || {})
