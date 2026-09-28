@@ -49,7 +49,7 @@ A proteção vem do escopo, não só do segredo. Provado com testes negativos: l
 - Mensagem do dono ao bot, sem citação → a sessão central do Omni responde (sessão persistente no repositório do Omni).
 - Resposta citando uma mensagem assinada por uma sessão → aquela sessão responde. Sessões do Weriton (ex.: VS Code) respondem numa cópia (`--fork-session`), para não alterar o histórico da janela.
 - Só mensagens recebidas do número do dono acionam sessões; qualquer outro contato é ignorado.
-- Sessões acionadas pelo número do dono rodam com permissões liberadas (`--permission-mode bypassPermissions`), por decisão explícita dele em 28/09/2026, ciente dos riscos (conteúdo de terceiros lido pela sessão; aparelho em mãos erradas). Contrapesos: só o número dele aciona, `/pausa` desliga, conteúdo de terceiros é dado e nunca instrução, e ações sem volta são confirmadas com ele pelo WhatsApp.
+- Sessões acionadas pelo número do dono rodam com as ferramentas liberadas por lista (`--allowedTools`), no modo `default`, por decisão explícita dele em 28/09/2026. Em `bypassPermissions` os recados da central para as janelas do VS Code (modos acceptEdits/auto) ficavam segurados esperando aprovação na tela. Comando endereçado a um projeto vai para a janela aberta dele (SendMessage); resposta citada a mensagem de janela também. Sem janela aberta, `delegado.mjs`.
 - `/pausa` suspende a ponte; `/volta` retoma. Corte total: desconectar o aparelho no celular do bot.
 - O livro `ponte-ledger.jsonl` registra qual sessão assinou cada mensagem; o log não guarda conteúdo.
 - Toda mensagem recebe na hora um aviso curto ("⏳ Recebi, verificando…") e, se algo falhar, o erro. Ao ligar, a ponte recupera mensagens do dono dos últimos 30 min ainda sem resposta.
@@ -88,6 +88,7 @@ O serviço limita requisições por IP, e tudo aqui vem de `127.0.0.1`: ponte, M
 - `omni/mcp.mjs` — servidor MCP: ferramentas de leitura, `transcrever_audio` e `enviar_para_weriton`, assinada com projeto e id da sessão.
 - `omni/voz.ps1` — transcrição e síntese de voz pela OpenAI.
 - `omni/formato.mjs` — critérios de escrito ou áudio e divisão da resposta em fala e parte escrita.
+- `omni/avisar.mjs` — qualquer sessão fala com o Weriton pelo terminal (`node avisar.mjs "texto"`), para janelas abertas antes do MCP existir; assina com projeto e sessão.
 - `omni/delegado.mjs` — delega trabalho a um projeto em segundo plano (sessão na pasta do projeto, permissões liberadas) e entrega o resultado no WhatsApp do dono; substitui o canal entre sessões, que segura recados em janelas de modo de permissão diferente.
 - `omni/relatorio.mjs` — relatórios: HTML vira imagem ou PDF pelo Edge sem janela (perfil isolado) e segue ao dono pela ferramenta MCP `enviar_arquivo_para_weriton`; também manda .png/.jpg/.pdf prontos.
 - `omni/terceiros.mjs` — envio a terceiros com autorização pontual, aviso informativo e repasse de respostas.
