@@ -161,7 +161,8 @@ async function tratar(m) {
       }
     }
     if (escrito) {
-      const id = registrar(await enviarAoDono(`${cabecalho}\n\n${escrito.slice(0, 4000)}`, m.waMessageId))
+      // Depois do áudio, o complemento escrito vai sem cabeçalho (pedido do Weriton): só identifica quando é a única mensagem.
+      const id = registrar(await enviarAoDono(`${waId ? '' : cabecalho + '\n\n'}${escrito.slice(0, 4000)}`, m.waMessageId))
       waId = waId || id
       partes.push(`texto ${escrito.length}`)
     }
