@@ -1,22 +1,23 @@
 // Omni — servidor MCP "whatsapp" (stdio), um processo por sessão do Claude Code.
 // - Repassa as ferramentas de LEITURA do serviço local com a chave viewer (não consegue enviar).
-// - Acrescenta `enviar_para_weriton`: fala só com o Weriton (chave presa ao número dele) e assina
-//   com a identidade da sessão que chamou.
-// Nenhuma chave fica na configuração do Claude Code: são lidas de %APPDATA%\omni\whatsapp a cada uso.
-import { readFileSync, readdirSync, statSync, openSync, readSync, closeSync } from 'node:fs'
+// - Acrescenta `enviar_para_weriton`: o bot fala só com o Weriton (chave presa ao número dele), assina
+//   com a identidade da sessão e registra no livro da ponte; se ele responder citando a mensagem, a
+//   ponte leva a resposta de volta a esta sessão.
+// Nenhuma chave fica na configuração do Claude Code: vêm do cofre do Windows (config.mjs / cofre.mjs).
+import { readdirSync, statSync, openSync, readSync, closeSync } from 'node:fs'
 import { join, basename } from 'node:path'
 import { homedir } from 'node:os'
 import { createInterface } from 'node:readline'
+import { readFileSync, existsSync } from 'node:fs'
+import { BASE, chave, anotar, enviarAoDono, arquivo } from './config.mjs'
 
-const base = 'http://127.0.0.1:2785'
-const run = join(process.env.APPDATA, 'omni', 'whatsapp')
-const chave = nome => readFileSync(join(run, nome), 'utf8').trim()
-const sessaoWhatsapp = () => readFileSync(join(run, 'sessao.id'), 'utf8').trim()
+const sessaoLegivel = nome => (existsSync(arquivo(nome)) ? readFileSync(arquivo(nome), 'utf8').trim() : 'não pareada')
+
 // Leituras que a API reserva ao papel operator: ficam fora da lista para não oferecer ferramenta que falha.
 const SO_OPERATOR = new Set(['WebhooksList', 'WebhookFindBySession', 'WebhookFindOne', 'AutomationRuleFindAll', 'AutomationRuleFindOne', 'GroupGetInviteCode'])
 const FERRAMENTA_ENVIO = {
   name: 'enviar_para_weriton',
-  description: 'Envia uma mensagem de WhatsApp para o Weriton, e somente para ele. A mensagem sai assinada com a identidade desta sessão (projeto e id). É um aviso de mão única: a resposta dele no WhatsApp não volta para a sessão. Use para avisos ou resultados que ele precisa ver fora do computador.',
+  description: 'Envia uma mensagem de WhatsApp para o Weriton, e somente para ele. A mensagem sai assinada com a identidade desta sessão (projeto e id). Se ele responder citando a mensagem, a resposta dele volta para esta mesma sessão. Use para avisos, perguntas ou resultados que ele precisa ver fora do computador.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -29,9 +30,9 @@ const FERRAMENTA_ENVIO = {
 
 let rpc = 0
 async function upstream(method, params) {
-  const r = await fetch(`${base}/mcp`, {
+  const r = await fetch(`${BASE}/mcp`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${chave('leitura.key')}`, 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
+    headers: { Authorization: `Bearer ${chave('leitura')}`, 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
     body: JSON.stringify({ jsonrpc: '2.0', id: ++rpc, method, params }),
   })
   const t = await r.text()
@@ -77,19 +78,9 @@ async function enviarParaWeriton(texto, identidade) {
   const sid = sessaoClaude(texto)
   const projeto = basename(process.cwd())
   const quem = String(identidade ?? '').trim() || `Omni · ${projeto}`
-  const corpo = `🤖 *${quem}* · sessão ${sid ? sid.slice(0, 8) : '?'}\n\n${texto}`
-  const sessao = sessaoWhatsapp()
-  const s = await (await fetch(`${base}/api/sessions/${sessao}`, { headers: { 'X-API-Key': chave('leitura.key') } })).json()
-  const fone = (s.data ?? s).phone
-  const r = await fetch(`${base}/api/sessions/${sessao}/messages/send-text`, {
-    method: 'POST',
-    headers: { 'X-API-Key': chave('envio.key'), 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chatId: `${fone}@c.us`, text: corpo }),
-  })
-  const j = await r.json().catch(() => ({}))
-  if (!r.ok) throw new Error(`envio recusado pelo serviço (HTTP ${r.status})`)
-  const m = j.data ?? j
-  return { waId: m.waMessageId || m.messageId || m.id, sid }
+  const waId = await enviarAoDono(`🤖 *${quem}* · sessão ${sid ? sid.slice(0, 8) : '?'}\n\n${texto}`)
+  if (sid) anotar({ waMessageId: waId, sessionId: sid, cwd: process.cwd(), projeto, identidade: quem, origem: 'sessao' })
+  return { waId, sid }
 }
 
 const responder = obj => process.stdout.write(JSON.stringify(obj) + '\n')
@@ -104,8 +95,8 @@ createInterface({ input: process.stdin }).on('line', async linha => {
       return responder({ jsonrpc: '2.0', id, result: {
         protocolVersion: params?.protocolVersion || '2025-06-18',
         capabilities: { tools: {} },
-        serverInfo: { name: 'omni-whatsapp', version: '1.0.0' },
-        instructions: 'WhatsApp do Weriton. Leitura de conversas, mensagens e contatos; envio só para o próprio Weriton, via enviar_para_weriton. A sessão do WhatsApp fica em %APPDATA%\\omni\\whatsapp\\sessao.id.',
+        serverInfo: { name: 'omni-whatsapp', version: '1.1.0' },
+        instructions: `WhatsApp do Weriton, duas sessões. Pessoal (id ${sessaoLegivel('sessao.id')}): o WhatsApp dele, só leitura. Bot (id ${sessaoLegivel('sessao-bot.id')}): o número do Omni, onde ele conversa com as sessões. Envio só para o Weriton e só pelo bot, via enviar_para_weriton.`,
       } })
     }
     if (method === 'ping') return responder({ jsonrpc: '2.0', id, result: {} })
@@ -116,7 +107,8 @@ createInterface({ input: process.stdin }).on('line', async linha => {
     if (method === 'tools/call') {
       if (params?.name === 'enviar_para_weriton') {
         const { waId, sid } = await enviarParaWeriton(params.arguments?.texto, params.arguments?.identidade)
-        return responder({ jsonrpc: '2.0', id, result: { content: [{ type: 'text', text: `Enviado ao Weriton pelo WhatsApp (id ${waId}), assinado como esta sessão (${sid ? sid.slice(0, 8) : 'não identificada'}). A resposta dele não volta automaticamente para cá.` }] } })
+        const volta = sid ? 'Se ele responder citando, a resposta volta para esta sessão.' : 'Sessão não identificada: a resposta dele irá para a sessão central do Omni.'
+        return responder({ jsonrpc: '2.0', id, result: { content: [{ type: 'text', text: `Enviado ao Weriton pelo WhatsApp (id ${waId}), assinado como esta sessão (${sid ? sid.slice(0, 8) : '?'}). ${volta}` }] } })
       }
       if (SO_OPERATOR.has(params?.name)) return responder({ jsonrpc: '2.0', id, result: { isError: true, content: [{ type: 'text', text: 'Ferramenta indisponível: a chave desta integração é somente leitura.' }] } })
       return responder({ jsonrpc: '2.0', id, result: await upstream('tools/call', params) })

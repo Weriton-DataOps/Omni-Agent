@@ -21,33 +21,46 @@ Cópia congelada do projeto **OpenWA**, trazida para dentro do Omni sem vínculo
 - Motor Baileys (WebSocket, sem Chromium), escutando só em `127.0.0.1:2785`.
 - MCP ligado em modo **somente leitura** (`MCP_READONLY` fica verdadeiro).
 - Dados pessoais (sessão do WhatsApp, banco SQLite, mídia) ficam fora do repositório, em `%APPDATA%\omni\whatsapp`.
-- A configuração local (`.env`) e as chaves nunca entram no git.
+- A configuração local (`.env`) nunca entra no git. As chaves ficam no Gerenciador de Credenciais do Windows.
 - MCP registrado no Claude Code no escopo de usuário com o nome `whatsapp`, como servidor **stdio** (`omni/mcp.mjs`). A configuração do Claude Code não guarda chave nenhuma.
 
-## Chaves (todas presas à sessão pareada)
+## Duas sessões, dois papéis
 
-| Chave | Papel | Escopo | Onde fica |
+| Sessão | Número | Papel | Arquivo |
 | --- | --- | --- | --- |
-| admin | admin | tudo | `%APPDATA%\omni\whatsapp\data\.api-key` |
-| leitura | viewer | só leitura; a API recusa envio a este papel | `%APPDATA%\omni\whatsapp\leitura.key` |
-| envio | operator | só a conversa do próprio número do dono | `%APPDATA%\omni\whatsapp\envio.key` |
+| pessoal | o celular do Weriton | o Omni **lê** as mensagens dele; nada é enviado por ela | `%APPDATA%\omni\whatsapp\sessao.id` |
+| bot | segundo número, do Omni | canal de conversa: recebe comandos do Weriton e responde | `%APPDATA%\omni\whatsapp\sessao-bot.id` |
 
-A proteção vem do escopo, não do segredo: mesmo lida por alguém, a chave de leitura não envia e a de envio só fala com o dono. Provado com testes negativos (HTTP 403).
+Fluxo único: **bot → número pessoal do Weriton**, e ele responde dali. Nenhuma mensagem sai pela sessão pessoal, nem para ele mesmo. O número do dono (único contato que o bot escuta e o único com quem ele fala) está em `%APPDATA%\omni\whatsapp\dono.txt`, fora do git.
+
+## Chaves (no cofre do Windows)
+
+| Chave (cofre) | Papel | Escopo |
+| --- | --- | --- |
+| `omni/whatsapp/admin` | admin | tudo; só para scripts de manutenção (`chaves.mjs`, `parear.mjs`) |
+| `omni/whatsapp/leitura` | viewer | as duas sessões, só leitura; a API recusa envio a este papel |
+| `omni/whatsapp/envio` | operator | só a sessão do bot e só a conversa com o dono |
+
+A proteção vem do escopo, não só do segredo. Provado com testes negativos: leitura tentando enviar, envio para outro destino e envio pela sessão pessoal são recusados (HTTP 401/403), e nenhuma mensagem recusada chegou a sair.
+
+## Ponte WhatsApp ↔ sessões (`omni/ponte.mjs`)
+
+- Mensagem do dono ao bot, sem citação → a sessão central do Omni responde (sessão persistente no repositório do Omni).
+- Resposta citando uma mensagem assinada por uma sessão → aquela sessão responde. Sessões do Weriton (ex.: VS Code) respondem numa cópia (`--fork-session`), para não alterar o histórico da janela.
+- Só mensagens recebidas do número do dono acionam sessões; qualquer outro contato é ignorado.
+- As sessões rodam sem ninguém para aprovar permissões: o que pediria aprovação é recusado.
+- `/pausa` suspende a ponte; `/volta` retoma. Corte total: desconectar o aparelho no celular do bot.
+- O livro `ponte-ledger.jsonl` registra qual sessão assinou cada mensagem; o log não guarda conteúdo.
 
 ## Pasta `omni/` (nossa, não veio do projeto original)
 
-- `omni/iniciar.ps1` — sobe o serviço em segundo plano. Não abre uma segunda instância se já houver uma escutando.
-- `omni/parear.mjs` — vigia do QR para parear de novo, caso o celular desconecte a sessão.
-- `omni/chaves.mjs` — recria as chaves de leitura e envio com escopo e as prova, inclusive pelo lado negativo.
-- `omni/mcp.mjs` — servidor MCP: repassa as ferramentas de leitura e oferece `enviar_para_weriton`, que assina com a identidade da sessão (projeto e id). É aviso de mão única.
-
-## Pendente de autorização do proprietário
-
-Bloqueados pelo classificador de segurança do Claude Code; não foram contornados.
-
-- **Inicialização automática no logon** ("persistência não autorizada").
-- **Chave de admin no Gerenciador de Credenciais do Windows** ("persistência não autorizada"). Segue no arquivo acima.
-- **Ponte WhatsApp → sessões** ("agente inseguro"): mensagem do dono acionando uma sessão, e resposta citando uma mensagem voltando para a sessão que a assinou. Na prática é um controle remoto do computador via WhatsApp.
+- `omni/iniciar.ps1` — sobe serviço e ponte em segundo plano, sem duplicar instância. Chamado no logon por um atalho na pasta Inicializar do Windows.
+- `omni/config.mjs` — caminhos, sessões, dono, chaves do cofre e envio ao dono.
+- `omni/cofre.ps1` e `omni/cofre.mjs` — leitura e gravação no Gerenciador de Credenciais; o segredo passa só por stdin/stdout.
+- `omni/parear.mjs` — QR vivo para parear (`--bot` para a sessão do bot).
+- `omni/chaves.mjs` — recria as chaves com escopo, grava no cofre e prova cada uma pelos dois lados.
+- `omni/mcp.mjs` — servidor MCP: ferramentas de leitura e `enviar_para_weriton`, assinada com projeto e id da sessão.
+- `omni/ponte.mjs` — a ponte; `--simular "texto" [--citar <id>]` testa sem mensagem real.
 
 ## Alterações nossas
 

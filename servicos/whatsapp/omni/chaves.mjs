@@ -1,49 +1,52 @@
-// Omni — cria as chaves com escopo do serviço WhatsApp e prova cada uma, inclusive pelo lado negativo.
-//   leitura.key : papel viewer, presa à sessão. A API recusa envio para viewer (envio exige operator).
-//   envio.key   : papel operator, presa à sessão E ao próprio número. Só consegue falar com o dono.
-// Revoga a chave antiga "omni-mcp" (operator sem escopo de conversa). Nunca imprime chave.
-import { readFileSync, writeFileSync, existsSync, unlinkSync } from 'node:fs'
-import { join } from 'node:path'
+// Omni — cria as chaves com escopo do serviço WhatsApp, grava no cofre e prova cada uma pelos dois lados.
+//   leitura : papel viewer, presa às duas sessões (pessoal e bot). A API recusa envio a viewer.
+//   envio   : papel operator, presa à sessão do BOT e à conversa com o dono. O bot só fala com o dono,
+//             e nada sai pela sessão pessoal do Weriton.
+// Revoga as chaves anteriores com os mesmos nomes. Nunca imprime chave. Admin vem do cofre.
+import { gravarSegredo, lerSegredo, NOMES } from './cofre.mjs'
+import { BASE, sessaoPessoal, sessaoBot, donoJid } from './config.mjs'
 
-const base = 'http://127.0.0.1:2785'
-const run = join(process.env.APPDATA, 'omni', 'whatsapp')
-const admin = readFileSync(join(run, 'data', '.api-key'), 'utf8').trim().split(/\s+/).pop().replace(/^.*=/, '')
-const sessao = readFileSync(join(run, 'sessao.id'), 'utf8').trim()
-const desembrulha = j => (j && typeof j === 'object' && 'data' in j && !Array.isArray(j) ? j.data : j)
+const admin = lerSegredo(NOMES.admin)
+const pessoal = sessaoPessoal()
+const bot = sessaoBot()
 const api = async (metodo, caminho, corpo, chave = admin) => {
-  const r = await fetch(base + caminho, { method: metodo, headers: { 'X-API-Key': chave, 'Content-Type': 'application/json' }, body: corpo ? JSON.stringify(corpo) : undefined })
-  const t = await r.text(); let j; try { j = desembrulha(JSON.parse(t)) } catch { j = t }
-  return { status: r.status, j }
+  const r = await fetch(BASE + caminho, { method: metodo, headers: { 'X-API-Key': chave, 'Content-Type': 'application/json' }, body: corpo ? JSON.stringify(corpo) : undefined })
+  const t = await r.text(); let j; try { j = JSON.parse(t) } catch { j = t }
+  return { status: r.status, j: j && typeof j === 'object' && 'data' in j && !Array.isArray(j) ? j.data : j }
 }
 const falha = msg => { console.log(`FALHA: ${msg}`); process.exit(1) }
 
-const { j: sess } = await api('GET', `/api/sessions/${sessao}`)
-if (sess.status !== 'ready') falha(`sessão não está pronta (${sess.status})`)
-const proprio = `${sess.phone}@c.us`
+for (const [nome, id] of [['pessoal', pessoal], ['bot', bot]]) {
+  const { j } = await api('GET', `/api/sessions/${id}`)
+  if (j.status !== 'ready') falha(`sessão ${nome} não está pronta (${j.status})`)
+  console.log(`sessão ${nome}: ready · ${String(j.phone).slice(0, 4)}…${String(j.phone).slice(-2)}`)
+}
+const dono = donoJid()
 
-// Chaves antigas com os mesmos nomes saem antes: nome é único por propósito.
 const { j: existentes } = await api('GET', '/api/auth/api-keys')
-const lista = Array.isArray(existentes) ? existentes : existentes?.items || []
-for (const k of lista.filter(k => ['omni-mcp', 'omni-leitura', 'omni-envio-proprio'].includes(k.name) && k.isActive !== false)) {
-  const r = await api('POST', `/api/auth/api-keys/${k.id}/revoke`)
-  console.log(`revogada: ${k.name} (${k.role}) → HTTP ${r.status}`)
+for (const k of (Array.isArray(existentes) ? existentes : existentes?.items || []).filter(k => ['omni-mcp', 'omni-leitura', 'omni-envio-proprio', 'omni-envio-dono'].includes(k.name) && k.isActive !== false)) {
+  console.log(`revogada: ${k.name} (${k.role}) → HTTP ${(await api('POST', `/api/auth/api-keys/${k.id}/revoke`)).status}`)
 }
 
-const criar = async (corpo) => { const r = await api('POST', '/api/auth/api-keys', corpo); if (r.status >= 300) falha(`criar ${corpo.name}: ${JSON.stringify(r.j).slice(0, 200)}`); return r.j }
-const leitura = await criar({ name: 'omni-leitura', role: 'viewer', allowedSessions: [sessao] })
-const envio = await criar({ name: 'omni-envio-proprio', role: 'operator', allowedSessions: [sessao], allowedChats: [proprio] })
-writeFileSync(join(run, 'leitura.key'), leitura.apiKey, { mode: 0o600 })
-writeFileSync(join(run, 'envio.key'), envio.apiKey, { mode: 0o600 })
-if (existsSync(join(run, 'mcp.key'))) unlinkSync(join(run, 'mcp.key'))
-console.log(`criada: omni-leitura papel=${leitura.role} sessões=${leitura.allowedSessions?.length}`)
-console.log(`criada: omni-envio-proprio papel=${envio.role} conversas=${JSON.stringify(envio.allowedChats)}`)
+const criar = async corpo => { const r = await api('POST', '/api/auth/api-keys', corpo); if (r.status >= 300) falha(`criar ${corpo.name}: ${JSON.stringify(r.j).slice(0, 200)}`); return r.j }
+const leitura = await criar({ name: 'omni-leitura', role: 'viewer', allowedSessions: [pessoal, bot] })
+const envio = await criar({ name: 'omni-envio-dono', role: 'operator', allowedSessions: [bot], allowedChats: [dono] })
+gravarSegredo(NOMES.leitura, leitura.apiKey)
+gravarSegredo(NOMES.envio, envio.apiKey)
+console.log(`criada no cofre: omni-leitura papel=${leitura.role} sessões=2`)
+console.log(`criada no cofre: omni-envio-dono papel=${envio.role} sessões=bot conversas=dono`)
 
-// Provas.
-const ler = await api('GET', `/api/sessions/${sessao}/messages?chatId=${encodeURIComponent(proprio)}&limit=1`, null, leitura.apiKey)
-console.log(`[leitura lê]            HTTP ${ler.status} ${ler.status === 200 ? '✔' : '✘'}`)
-const leituraEnvia = await api('POST', `/api/sessions/${sessao}/messages/send-text`, { chatId: proprio, text: 'isto não deveria sair (chave de leitura)' }, leitura.apiKey)
-console.log(`[leitura tenta enviar]  HTTP ${leituraEnvia.status} ${leituraEnvia.status === 403 ? '✔ recusado' : '✘ NÃO recusou'}`)
-const envioProprio = await api('POST', `/api/sessions/${sessao}/messages/send-text`, { chatId: proprio, text: '🔐 Teste do Omni: chave de envio presa ao seu número funcionando.' }, envio.apiKey)
-console.log(`[envio → você]          HTTP ${envioProprio.status} ${envioProprio.status === 201 ? '✔' : '✘'}`)
-const envioOutro = await api('POST', `/api/sessions/${sessao}/messages/send-text`, { chatId: '0@c.us', text: 'isto não deveria sair (fora do escopo)' }, envio.apiKey)
-console.log(`[envio → outro destino] HTTP ${envioOutro.status} ${envioOutro.status === 403 ? '✔ recusado' : '✘ NÃO recusou'}`)
+// Provas, com as chaves lidas de volta do cofre.
+const k = { leitura: lerSegredo(NOMES.leitura), envio: lerSegredo(NOMES.envio) }
+// Recusa pode vir como 401 (chave não vale para aquela sessão) ou 403 (vale, sem permissão): ambas bastam.
+const RECUSA = [401, 403]
+const linha = (rotulo, status, esperado) => {
+  const ok = Array.isArray(esperado) ? esperado.includes(status) : status === esperado
+  console.log(`${rotulo.padEnd(34)} HTTP ${status} ${ok ? (Array.isArray(esperado) ? '✔ recusado' : '✔') : '✘ esperado ' + esperado}`)
+}
+linha('[leitura lê a sessão pessoal]', (await api('GET', `/api/sessions/${pessoal}/messages?limit=1`, null, k.leitura)).status, 200)
+linha('[leitura lê a sessão do bot]', (await api('GET', `/api/sessions/${bot}/messages?limit=1`, null, k.leitura)).status, 200)
+linha('[leitura tenta enviar]', (await api('POST', `/api/sessions/${bot}/messages/send-text`, { chatId: dono, text: 'isto não deveria sair (chave de leitura)' }, k.leitura)).status, RECUSA)
+linha('[envio: bot → dono]', (await api('POST', `/api/sessions/${bot}/messages/send-text`, { chatId: dono, text: '🔐 Omni: este é o número do bot. É por aqui que a gente conversa.' }, k.envio)).status, 201)
+linha('[envio: bot → outro destino]', (await api('POST', `/api/sessions/${bot}/messages/send-text`, { chatId: '0@c.us', text: 'isto não deveria sair (fora do escopo)' }, k.envio)).status, RECUSA)
+linha('[envio pela sessão pessoal]', (await api('POST', `/api/sessions/${pessoal}/messages/send-text`, { chatId: dono, text: 'isto não deveria sair (sessão pessoal)' }, k.envio)).status, RECUSA)
