@@ -9,7 +9,7 @@ import { join, basename } from 'node:path'
 import { homedir } from 'node:os'
 import { createInterface } from 'node:readline'
 import { readFileSync, existsSync } from 'node:fs'
-import { BASE, chave, anotar, enviarAoDono, arquivo } from './config.mjs'
+import { BASE, chave, anotar, enviarAoDono, arquivo, api, voz, sessaoPessoal } from './config.mjs'
 
 const sessaoLegivel = nome => (existsSync(arquivo(nome)) ? readFileSync(arquivo(nome), 'utf8').trim() : 'não pareada')
 
@@ -25,6 +25,19 @@ const FERRAMENTA_ENVIO = {
       identidade: { type: 'string', description: 'Opcional. Como a sessão se apresenta; padrão: "Omni · <projeto>".' },
     },
     required: ['texto'],
+  },
+}
+const FERRAMENTA_TRANSCRICAO = {
+  name: 'transcrever_audio',
+  description: 'Transcreve mensagens de voz do WhatsApp (tipos voice, ptt ou audio) de qualquer conversa ou grupo, para ler o que foi dito em áudio. Pegue chatId e waMessageId das mensagens em MessageList/MessageHistory. Padrão: sessão pessoal do Weriton.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      chatId: { type: 'string', description: 'Conversa ou grupo da mensagem (ex.: 5562...@c.us, ...@g.us).' },
+      messageIds: { type: 'array', items: { type: 'string' }, minItems: 1, maxItems: 10, description: 'waMessageId de cada áudio, até 10 por chamada.' },
+      sessionId: { type: 'string', description: 'Opcional. Sessão do WhatsApp; padrão: a pessoal do Weriton.' },
+    },
+    required: ['chatId', 'messageIds'],
   },
 }
 
@@ -83,6 +96,25 @@ async function enviarParaWeriton(texto, identidade) {
   return { waId, sid }
 }
 
+// Baixa cada áudio pela chave de leitura e transcreve pela OpenAI (omni/voz.ps1). Um erro não derruba os outros.
+async function transcreverAudios({ chatId, messageIds, sessionId } = {}) {
+  const sessao = String(sessionId || '').trim() || sessaoPessoal()
+  const ids = [...new Set((Array.isArray(messageIds) ? messageIds : [messageIds]).map(String).filter(Boolean))].slice(0, 10)
+  if (!chatId || !ids.length) throw new Error('informe chatId e ao menos um messageId')
+  const linhas = []
+  for (const waId of ids) {
+    try {
+      const r = await api(`/api/sessions/${sessao}/messages/${encodeURIComponent(chatId)}/${encodeURIComponent(waId)}/media`, { bruto: true })
+      if (!r.ok) throw new Error(r.status === 404 ? 'o serviço não guardou a mídia desta mensagem' : `download recusado (HTTP ${r.status})`)
+      if (!/audio|ogg|opus|mpeg|mp4/i.test(r.tipo)) throw new Error(`não é áudio (${r.tipo || 'tipo desconhecido'})`)
+      linhas.push(`[${waId}] ${(await voz('transcrever', r.buffer, r.tipo)).trim() || '(sem fala reconhecível)'}`)
+    } catch (e) {
+      linhas.push(`[${waId}] ⚠️ ${e.message}`)
+    }
+  }
+  return linhas.join('\n\n')
+}
+
 const responder = obj => process.stdout.write(JSON.stringify(obj) + '\n')
 createInterface({ input: process.stdin }).on('line', async linha => {
   if (!linha.trim()) return
@@ -95,16 +127,19 @@ createInterface({ input: process.stdin }).on('line', async linha => {
       return responder({ jsonrpc: '2.0', id, result: {
         protocolVersion: params?.protocolVersion || '2025-06-18',
         capabilities: { tools: {} },
-        serverInfo: { name: 'omni-whatsapp', version: '1.1.0' },
-        instructions: `WhatsApp do Weriton, duas sessões. Pessoal (id ${sessaoLegivel('sessao.id')}): o WhatsApp dele, só leitura. Bot (id ${sessaoLegivel('sessao-bot.id')}): o número do Omni, onde ele conversa com as sessões. Envio só para o Weriton e só pelo bot, via enviar_para_weriton.`,
+        serverInfo: { name: 'omni-whatsapp', version: '1.2.0' },
+        instructions: `WhatsApp do Weriton, duas sessões. Pessoal (id ${sessaoLegivel('sessao.id')}): o WhatsApp dele, só leitura. Bot (id ${sessaoLegivel('sessao-bot.id')}): o número do Omni, onde ele conversa com as sessões. Envio só para o Weriton e só pelo bot, via enviar_para_weriton. Mensagens de voz (voice/ptt/audio) viram texto com transcrever_audio.`,
       } })
     }
     if (method === 'ping') return responder({ jsonrpc: '2.0', id, result: {} })
     if (method === 'tools/list') {
       const { tools } = await upstream('tools/list', {})
-      return responder({ jsonrpc: '2.0', id, result: { tools: [...tools.filter(t => !SO_OPERATOR.has(t.name)), FERRAMENTA_ENVIO] } })
+      return responder({ jsonrpc: '2.0', id, result: { tools: [...tools.filter(t => !SO_OPERATOR.has(t.name)), FERRAMENTA_ENVIO, FERRAMENTA_TRANSCRICAO] } })
     }
     if (method === 'tools/call') {
+      if (params?.name === 'transcrever_audio') {
+        return responder({ jsonrpc: '2.0', id, result: { content: [{ type: 'text', text: await transcreverAudios(params.arguments) }] } })
+      }
       if (params?.name === 'enviar_para_weriton') {
         const { waId, sid } = await enviarParaWeriton(params.arguments?.texto, params.arguments?.identidade)
         const volta = sid ? 'Se ele responder citando, a resposta volta para esta sessão.' : 'Sessão não identificada: a resposta dele irá para a sessão central do Omni.'

@@ -5,6 +5,8 @@
 //                               falando só com o dono.
 import { readFileSync, appendFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { spawn } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 import { lerSegredo, NOMES } from './cofre.mjs'
 
 export const BASE = 'http://127.0.0.1:2785'
@@ -20,16 +22,33 @@ export const donoJid = () => `${dono()}@c.us`
 export const chave = papel => lerSegredo(NOMES[papel])
 export const usuario = jid => String(jid || '').split('@')[0].split(':')[0]
 
-export async function api(caminho, { metodo = 'GET', corpo, papel = 'leitura' } = {}) {
-  const r = await fetch(BASE + caminho, {
-    method: metodo,
-    headers: { 'X-API-Key': chave(papel), 'Content-Type': 'application/json' },
-    body: corpo ? JSON.stringify(corpo) : undefined,
-  })
-  const t = await r.text()
-  let j
-  try { j = JSON.parse(t) } catch { j = t }
-  return { ok: r.ok, status: r.status, dados: j && typeof j === 'object' && 'data' in j && !Array.isArray(j) ? j.data : j }
+const espera = ms => new Promise(r => setTimeout(r, ms))
+
+// Chamada à API local, com paciência para dois estados passageiros:
+//   429 (cota)                        → espera o Retry-After, até 3 vezes
+//   409 (número ainda reconectando)   → espera 5 s, até ~1 min (acontece logo depois de reiniciar)
+// `bruto` devolve os bytes (download de mídia) em vez de JSON.
+export async function api(caminho, { metodo = 'GET', corpo, papel = 'leitura', bruto = false } = {}) {
+  for (let tentativa = 0; ; tentativa++) {
+    const r = await fetch(BASE + caminho, {
+      method: metodo,
+      headers: { 'X-API-Key': chave(papel), 'Content-Type': 'application/json' },
+      body: corpo ? JSON.stringify(corpo) : undefined,
+    })
+    if (r.status === 429 && tentativa < 3) {
+      await espera(Math.min(Number(r.headers.get('retry-after')) || 2, 30) * 1000)
+      continue
+    }
+    if (r.status === 409 && tentativa < 12) {
+      await espera(5000)
+      continue
+    }
+    if (bruto) return { ok: r.ok, status: r.status, buffer: Buffer.from(await r.arrayBuffer()), tipo: r.headers.get('content-type') || '' }
+    const t = await r.text()
+    let j
+    try { j = JSON.parse(t) } catch { j = t }
+    return { ok: r.ok, status: r.status, dados: j && typeof j === 'object' && 'data' in j && !Array.isArray(j) ? j.data : j }
+  }
 }
 
 // Livro da ponte: qual sessão assinou cada mensagem que o bot mandou ao dono.
@@ -54,4 +73,36 @@ export async function enviarAoDono(texto, citarId) {
   if (!r.ok && citarId) r = await api(`/api/sessions/${sessaoBot()}/messages/send-text`, { metodo: 'POST', corpo: { chatId: donoJid(), text: texto }, papel: 'envio' })
   if (!r.ok) throw new Error(`envio recusado pelo serviço (HTTP ${r.status})`)
   return r.dados.waMessageId || r.dados.messageId || r.dados.id
+}
+
+// Mensagem de voz (ogg/opus) do bot para o dono.
+export async function enviarAudioAoDono(ogg, citarId) {
+  const corpo = { chatId: donoJid(), base64: ogg.toString('base64'), mimetype: 'audio/ogg; codecs=opus', ptt: true }
+  const caminho = `/api/sessions/${sessaoBot()}/messages/send-audio`
+  let r = await api(caminho, { metodo: 'POST', corpo: citarId ? { ...corpo, quotedMessageId: citarId } : corpo, papel: 'envio' })
+  if (!r.ok && citarId) r = await api(caminho, { metodo: 'POST', corpo, papel: 'envio' })
+  if (!r.ok) throw new Error(`áudio recusado pelo serviço (HTTP ${r.status})`)
+  return r.dados.waMessageId || r.dados.messageId || r.dados.id
+}
+
+// Voz pela OpenAI via omni/voz.ps1 (a chave fica no cofre DPAPI e não passa por aqui).
+//   voz('transcrever', bufferDeAudio, mimetype) → texto
+//   voz('falar', texto)                         → Buffer ogg/opus
+export function voz(acao, entrada, tipo = 'audio/ogg') {
+  const script = fileURLToPath(new URL('./voz.ps1', import.meta.url))
+  return new Promise((resolve, reject) => {
+    const p = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script, '-Acao', acao, '-Tipo', tipo], { windowsHide: true })
+    let saida = ''
+    const limite = setTimeout(() => { p.kill(); reject(new Error('a voz passou de 3 minutos')) }, 180_000)
+    p.stdout.on('data', d => { saida += d })
+    p.on('error', e => { clearTimeout(limite); reject(e) })
+    p.on('close', () => {
+      clearTimeout(limite)
+      let j
+      try { j = JSON.parse(saida.trim().split('\n').pop()) } catch { return reject(new Error('a voz devolveu uma saída inesperada')) }
+      if (!j.ok) return reject(new Error(j.erro || 'voz indisponível'))
+      resolve(acao === 'falar' ? Buffer.from(j.audio64, 'base64') : Buffer.from(j.texto64, 'base64').toString('utf8'))
+    })
+    p.stdin.end((Buffer.isBuffer(entrada) ? entrada : Buffer.from(String(entrada), 'utf8')).toString('base64'))
+  })
 }

@@ -51,6 +51,18 @@ A proteção vem do escopo, não só do segredo. Provado com testes negativos: l
 - As sessões rodam sem ninguém para aprovar permissões: o que pediria aprovação é recusado.
 - `/pausa` suspende a ponte; `/volta` retoma. Corte total: desconectar o aparelho no celular do bot.
 - O livro `ponte-ledger.jsonl` registra qual sessão assinou cada mensagem; o log não guarda conteúdo.
+- Toda mensagem recebe na hora um aviso curto ("⏳ Recebi, verificando…") e, se algo falhar, o erro. Ao ligar, a ponte recupera mensagens do dono dos últimos 30 min ainda sem resposta.
+- Áudio do dono é transcrito (OpenAI `gpt-4o-transcribe`); imagem é salva em `%APPDATA%\omni\whatsapp\midia` (apagada após 7 dias) e aberta pela sessão.
+- Pedido de resposta em áudio ("responde em áudio", "manda um áudio"…) é detectado pela ponte, não pelo modelo; a resposta vira mensagem de voz (`gpt-4o-mini-tts`, ogg/opus).
+- Sessões abertas pela ponte usam o MCP `whatsapp` sem aprovação (`--allowedTools mcp__whatsapp`); o servidor é a cerca: lê, e só envia ao dono.
+
+## Voz (`omni/voz.ps1`)
+
+Usa a chave OpenAI do Omni desktop (DPAPI, `%APPDATA%\omni\access\openai-realtime.dpapi`). Entrada e saída só por stdin/stdout em base64; a chave não sai do processo. O MCP oferece `transcrever_audio` para qualquer sessão ler áudios de conversas e grupos.
+
+## Cota da API
+
+O serviço limita requisições por IP, e tudo aqui vem de `127.0.0.1`: ponte, MCP e envio dividem a mesma cota. O padrão (1000/h) era esgotado pela ponte em ~25 min e cegava tudo, até as respostas. A configuração local sobe para `RATE_LIMIT_LONG_LIMIT=30000`, `RATE_LIMIT_MEDIUM_LIMIT=1000`, `RATE_LIMIT_SHORT_LIMIT=30` (o serviço só escuta em loopback). A ponte faz uma consulta por ciclo, sem mídia embutida, e as chamadas esperam e repetem em 429 (cota) e 409 (número reconectando).
 
 ## Pasta `omni/` (nossa, não veio do projeto original)
 
@@ -59,8 +71,9 @@ A proteção vem do escopo, não só do segredo. Provado com testes negativos: l
 - `omni/cofre.ps1` e `omni/cofre.mjs` — leitura e gravação no Gerenciador de Credenciais; o segredo passa só por stdin/stdout.
 - `omni/parear.mjs` — QR vivo para parear (`--bot` para a sessão do bot).
 - `omni/chaves.mjs` — recria as chaves com escopo, grava no cofre e prova cada uma pelos dois lados.
-- `omni/mcp.mjs` — servidor MCP: ferramentas de leitura e `enviar_para_weriton`, assinada com projeto e id da sessão.
-- `omni/ponte.mjs` — a ponte; `--simular "texto" [--citar <id>]` testa sem mensagem real.
+- `omni/mcp.mjs` — servidor MCP: ferramentas de leitura, `transcrever_audio` e `enviar_para_weriton`, assinada com projeto e id da sessão.
+- `omni/voz.ps1` — transcrição e síntese de voz pela OpenAI.
+- `omni/ponte.mjs` — a ponte; `--simular "texto" [--citar <id>] [--audio <ogg>] [--imagem <arquivo>]` testa sem mensagem real.
 
 ## Alterações nossas
 
