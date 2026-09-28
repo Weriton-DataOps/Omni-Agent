@@ -11,6 +11,7 @@ export const NOMES = {
   admin: 'omni/whatsapp/admin',
   leitura: 'omni/whatsapp/leitura',
   envio: 'omni/whatsapp/envio',
+  terceiros: 'omni/whatsapp/terceiros', // só a sessão do bot, qualquer destino; usada apenas por terceiros.mjs
 }
 
 function rodar(acao, nome, entrada) {

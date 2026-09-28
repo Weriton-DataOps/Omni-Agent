@@ -6,7 +6,8 @@
 param(
     [Parameter(Mandatory = $true)][ValidateSet('transcrever', 'falar')][string]$Acao,
     [string]$Tipo = 'audio/ogg',
-    [double]$Velocidade = 1.25  # medido: 1,25 encurta ~23% sem distorcer; o Weriton achou 1,0 com cara de leitura
+    [double]$Velocidade = 1.25,  # medido: 1,25 encurta ~23% sem distorcer; o Weriton achou 1,0 com cara de leitura
+    [ValidateSet('omni', 'terceiros')][string]$Tom = 'omni'
 )
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
@@ -48,7 +49,9 @@ try {
     } else {
         $texto = [Text.Encoding]::UTF8.GetString($entrada).Trim()
         if (-not $texto -or $texto.Length -gt 4096) { throw 'texto vazio ou maior que 4096 caracteres' }
-        $pedido = @{ model = 'gpt-4o-mini-tts'; voice = $VOZ; input = $texto; instructions = $JEITO; response_format = 'opus'; speed = $Velocidade } | ConvertTo-Json -Compress
+        # Para terceiros (clientes, colegas do Weriton) o tom é cordial; a irreverência fica só com ele.
+        $instrucoes = if ($Tom -eq 'terceiros') { 'Português do Brasil, sotaque brasileiro natural. Assistente do Weriton gravando um áudio curto de WhatsApp: cordial, animado e profissional, ritmo solto de conversa, sem soar como locutor.' } else { $JEITO }
+        $pedido = @{ model = 'gpt-4o-mini-tts'; voice = $VOZ; input = $texto; instructions = $instrucoes; response_format = 'opus'; speed = $Velocidade } | ConvertTo-Json -Compress
         $conteudo = [Net.Http.StringContent]::new($pedido, [Text.Encoding]::UTF8, 'application/json')
         $r = $cliente.PostAsync('https://api.openai.com/v1/audio/speech', $conteudo).GetAwaiter().GetResult()
         if (-not $r.IsSuccessStatusCode) { throw "síntese recusada pela OpenAI (HTTP $([int]$r.StatusCode))" }

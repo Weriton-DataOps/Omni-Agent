@@ -88,17 +88,18 @@ export async function enviarAudioAoDono(ogg, citarId) {
 // Voz pela OpenAI via omni/voz.ps1 (a chave fica no cofre DPAPI e não passa por aqui).
 //   voz('transcrever', bufferDeAudio, mimetype) → texto
 //   voz('falar', texto)                         → Buffer ogg/opus
+//   voz('falar', texto, undefined, 'terceiros') → idem, com tom cordial para quem não é o Weriton
 // Falha passageira da OpenAI (demora, 429, 5xx) ganha uma segunda tentativa.
-export async function voz(acao, entrada, tipo = 'audio/ogg') {
-  try { return await vozUmaVez(acao, entrada, tipo) } catch (e) {
+export async function voz(acao, entrada, tipo = 'audio/ogg', tom = 'omni') {
+  try { return await vozUmaVez(acao, entrada, tipo, tom) } catch (e) {
     if (!/a tempo|HTTP (429|5\d\d)/.test(e.message)) throw e
-    return vozUmaVez(acao, entrada, tipo)
+    return vozUmaVez(acao, entrada, tipo, tom)
   }
 }
-function vozUmaVez(acao, entrada, tipo) {
+function vozUmaVez(acao, entrada, tipo, tom) {
   const script = fileURLToPath(new URL('./voz.ps1', import.meta.url))
   return new Promise((resolve, reject) => {
-    const p = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script, '-Acao', acao, '-Tipo', tipo], { windowsHide: true })
+    const p = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script, '-Acao', acao, '-Tipo', tipo, '-Tom', tom], { windowsHide: true })
     let saida = ''
     const limite = setTimeout(() => { p.kill(); reject(new Error('a voz passou de 3 minutos')) }, 180_000)
     p.stdout.on('data', d => { saida += d })
