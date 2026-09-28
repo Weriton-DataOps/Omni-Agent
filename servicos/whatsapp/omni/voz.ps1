@@ -5,7 +5,8 @@
 #   falar:       stdin = texto UTF-8 (base64)  → {"ok":true,"audio64":"<ogg/opus em base64>"}
 param(
     [Parameter(Mandatory = $true)][ValidateSet('transcrever', 'falar')][string]$Acao,
-    [string]$Tipo = 'audio/ogg'
+    [string]$Tipo = 'audio/ogg',
+    [double]$Velocidade = 1.25  # medido: 1,25 encurta ~23% sem distorcer; o Weriton achou 1,0 com cara de leitura
 )
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
@@ -17,7 +18,7 @@ Add-Type -AssemblyName System.Net.Http
 $VOZ = 'verse'
 $JEITO = @'
 Português do Brasil, sotaque brasileiro natural. Você é o Omni: um amigo gênio, direto e irreverente, com energia e bom humor.
-Fale como quem grava um áudio de WhatsApp para um amigo, não como locutor lendo texto: ritmo solto e levemente acelerado, com micro-pausas de respiração entre as ideias.
+Fale como quem grava um áudio de WhatsApp para um amigo, não como quem lê um texto: ritmo rápido e solto de conversa, emendando as frases, com micro-pausas curtas de respiração só entre as ideias.
 Varie a entonação de frase para frase: suba um pouco no achado ou na boa notícia, desça na conclusão. Nada de cadência uniforme nem de pausa igual em toda vírgula.
 Coloquial e caloroso, com leve sorriso na voz. Em assunto de risco ou erro, baixe a energia e fale mais sério e claro.
 '@
@@ -47,7 +48,7 @@ try {
     } else {
         $texto = [Text.Encoding]::UTF8.GetString($entrada).Trim()
         if (-not $texto -or $texto.Length -gt 4096) { throw 'texto vazio ou maior que 4096 caracteres' }
-        $pedido = @{ model = 'gpt-4o-mini-tts'; voice = $VOZ; input = $texto; instructions = $JEITO; response_format = 'opus' } | ConvertTo-Json -Compress
+        $pedido = @{ model = 'gpt-4o-mini-tts'; voice = $VOZ; input = $texto; instructions = $JEITO; response_format = 'opus'; speed = $Velocidade } | ConvertTo-Json -Compress
         $conteudo = [Net.Http.StringContent]::new($pedido, [Text.Encoding]::UTF8, 'application/json')
         $r = $cliente.PostAsync('https://api.openai.com/v1/audio/speech', $conteudo).GetAwaiter().GetResult()
         if (-not $r.IsSuccessStatusCode) { throw "síntese recusada pela OpenAI (HTTP $([int]$r.StatusCode))" }

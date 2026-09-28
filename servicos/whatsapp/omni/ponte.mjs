@@ -134,7 +134,7 @@ async function tratar(m) {
   const prompt = `[WhatsApp · Weriton${origem}] ${texto || '(sem texto)'}`
     + (imagem ? `\n\n(Ele mandou uma imagem, salva em ${imagem}. Abra com a ferramenta Read.)` : '')
     + (citada?.body ? `\n\n(Ele está respondendo a esta mensagem: "${String(citada.body).slice(0, 500)}")` : '')
-    + (pedeAudio ? '\n\n(Ele pediu a resposta em ÁUDIO. A ponte já converte o seu texto em mensagem de voz — não diga que não tem voz. Escreva só o que vai ser falado: frases naturais, sem emoji, sem markdown, sem links, até uns 1200 caracteres.)' : '')
+    + (pedeAudio ? '\n\n(Ele pediu a resposta em ÁUDIO. A ponte já converte o seu texto em mensagem de voz — não diga que não tem voz. Escreva como quem fala, não como quem escreve: frases curtas, jeito de conversa ("tá", "pra", "né"), sem listas, sem "primeiro/segundo", sem emoji, markdown ou links, até uns 1200 caracteres.)' : '')
   log(`→ ${m.waMessageId} (${m.type || 'texto'}, ${texto.length} chars) para ${identidade} ${alvo ? 'via citação' : 'central'}`)
   const extras = ['-p', prompt, '--output-format', 'json', '--append-system-prompt', SISTEMA, '--allowedTools', 'mcp__whatsapp', '--add-dir', MIDIA]
   let resultado
