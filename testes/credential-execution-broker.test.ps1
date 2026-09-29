@@ -35,5 +35,6 @@ Assert-Check ($taskResult.ok -and $taskResult.result.outcome -eq 'completed') 'c
 Assert-Check (-not (($taskResult|ConvertTo-Json -Depth 5).Contains('SYNTHETIC'))) 'no raw credential in receipt'
 $taskSql=Get-CredentialExecutionSql ([pscustomobject]@{kind='postgres.freshness';schema='analytics';table='facts';column='updated_at'})
 Assert-Check ($taskSql.Contains('a.atttypid IN (1082,1114,1184)') -and $taskSql.Contains('pg_catalog.max')) 'typed temporal column only'
+Assert-Check ($taskSql.Contains("'timezone',pg_catalog.current_setting('TimeZone')")) 'freshness carries the server time zone'
 Assert-Check ($script:executions -eq 2) 'only authorized operations executed'
 Write-Output "Private execution broker: $script:checks checks passed; synthetic only."

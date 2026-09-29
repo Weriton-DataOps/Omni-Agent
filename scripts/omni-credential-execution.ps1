@@ -68,13 +68,14 @@ SELECT COALESCE(json_agg(t), '[]'::json) FROM (
     $taskSchema = [string]$Operation.schema; $taskTable = [string]$Operation.table; $taskColumn = [string]$Operation.column
     if ($taskSchema -in @('pg_catalog','information_schema') -or $taskSchema.StartsWith('pg_')) { throw 'System relation is outside scope.' }
     # No views/functions/expressions, only a real date/timestamp column in a table.
+    # A timestamp without time zone only means something in the server zone, so the zone travels with it.
     return @"
 DO `$private_check`$ BEGIN
  IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace JOIN pg_catalog.pg_attribute a ON a.attrelid=c.oid
  WHERE n.nspname='$taskSchema' AND c.relname='$taskTable' AND c.relkind IN ('r','p','m') AND a.attname='$taskColumn' AND NOT a.attisdropped AND a.atttypid IN (1082,1114,1184))
  THEN RAISE EXCEPTION 'Unsupported relation or column'; END IF;
 END `$private_check`$;
-SELECT pg_catalog.json_build_object('latest',pg_catalog.max("$taskColumn"),'observedAt',pg_catalog.clock_timestamp()) FROM "$taskSchema"."$taskTable";
+SELECT pg_catalog.json_build_object('latest',pg_catalog.max("$taskColumn"),'observedAt',pg_catalog.clock_timestamp(),'timezone',pg_catalog.current_setting('TimeZone')) FROM "$taskSchema"."$taskTable";
 "@
 }
 
