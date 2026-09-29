@@ -5,6 +5,11 @@ import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const hash = (value) => createHash('sha256').update(value).digest('hex')
+// A committed .env template carries no secret and is ordinary source; the real .env and its variants stay out.
+const ENV_TEMPLATE = /(?:^|\/)\.env\.(?:example|sample|template|minimal)$/u
+const isPrivateState = (name) =>
+  /^(?:\.git|\.claude|\.codex|\.agents|\.runtime|memory|sessions|audio|evidence|out|node_modules)(?:\/|$)/u.test(name) ||
+  (/(?:^|\/)\.env(?:\.|$)/u.test(name) && !ENV_TEMPLATE.test(name))
 
 /** Capture tracked AND untracked candidate files without modifying Git or private stores. */
 export async function createCandidateSnapshot(root, destination) {
@@ -20,7 +25,7 @@ export async function createCandidateSnapshot(root, destination) {
   const files = []
   const inputs = []
   for (const name of paths) {
-    if (/^(?:\.git|\.claude|\.codex|\.agents|\.runtime|memory|sessions|audio|evidence|out|node_modules)(?:\/|$)|(?:^|\/)\.env(?:\.|$)/u.test(name)) {
+    if (isPrivateState(name)) {
       throw new Error(`Private state cannot enter a candidate snapshot: ${name}`)
     }
     const source = resolve(root, name)
