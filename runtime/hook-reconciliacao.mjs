@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 
 import { reconciliarTurnosPendentesAuditoria } from './auditoria-autocorrecao.mjs'
 import { sincronizarAutomacaoFalhas } from './automacao-falhas.mjs'
-import { lerAutomacaoMelhorias } from './automacao-melhorias.mjs'
+import { delegacoesAtivasDasMelhorias, lerAutomacaoMelhorias } from './automacao-melhorias.mjs'
 import { reconciliarDelegacoesOperacionais } from './ciclo-operacional.mjs'
 import { casaDoOmni } from './memoria.mjs'
 import { registrarTelemetriaAutocorrecao } from './telemetria-autocorrecao.mjs'
@@ -31,9 +31,7 @@ function activeDelegationIds(failureAutomation, improvementAutomation) {
     ...(failureAutomation?.jobs ?? [])
       .filter((job) => !['completed', 'superseded'].includes(job.state))
       .map((job) => job.delegationId),
-    ...(improvementAutomation?.jobs ?? [])
-      .filter((job) => job.state !== 'completed')
-      .map((job) => job.delegationId)
+    ...delegacoesAtivasDasMelhorias(improvementAutomation)
   ].filter(Boolean))]
 }
 

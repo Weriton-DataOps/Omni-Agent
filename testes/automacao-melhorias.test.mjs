@@ -17,6 +17,7 @@ import {
 } from '../runtime/adaptador-claude-delegacao.mjs'
 import {
   caminhoDaAutomacaoMelhorias,
+  delegacoesAtivasDasMelhorias,
   exigirInicioDespachoMelhoriaAntesDaParada,
   lerAutomacaoMelhorias,
   materializarMelhoriaComBaselineConfigurada,
@@ -29,8 +30,10 @@ import {
   registrarAcaoAuditoria
 } from '../runtime/auditoria-autocorrecao.mjs'
 import {
+  atualizarDelegacao,
   lerCicloOperacional,
   marcarMelhoriaOperacional,
+  prepararDelegacao,
   proporMelhoriaOperacional,
   reconciliarDelegacoesOperacionais
 } from '../runtime/ciclo-operacional.mjs'
@@ -899,5 +902,39 @@ test('recibo forjado sem mutacao e readback auditados nao promove a candidata', 
   } finally {
     await rm(casa, { recursive: true, force: true })
     await rm(repo, { recursive: true, force: true })
+  }
+})
+
+test('job que so espera despacho nao segura a delegacao alem do lease de orfa', async () => {
+  // 24/09–29/09/2026: a sessao que ia despachar morreu e a delegacao ficou em visible cinco dias.
+  const casa = await mkdtemp(join(tmpdir(), 'omni-melhoria-orfa-'))
+  try {
+    const preparada = await prepararDelegacao(casa, {
+      target: 'executor-melhoria',
+      prompt: 'Implemente a melhoria operacional.',
+      sessionId: 'sessao-que-morreu'
+    }, { at: '2026-09-24T17:11:55.000Z' })
+    await atualizarDelegacao(casa, preparada.delegation.id, 'visible', {
+      evidence: 'visible-melhoria-sem-despacho'
+    }, { at: '2026-09-24T17:11:56.000Z' })
+    const store = { jobs: [
+      { state: 'dispatch-required', delegationId: preparada.delegation.id },
+      { state: 'running', delegationId: 'delegation-rodando' },
+      { state: 'reported-unverified', delegationId: 'delegation-relatada' },
+      { state: 'completed', delegationId: 'delegation-fechada' },
+      { state: 'queued', delegationId: null }
+    ] }
+    const ativas = delegacoesAtivasDasMelhorias(store)
+    assert.deepEqual(ativas, ['delegation-rodando', 'delegation-relatada'])
+
+    const reconciliada = await reconciliarDelegacoesOperacionais(casa, {
+      activeDelegationIds: ativas,
+      at: '2026-09-24T18:13:00.000Z'
+    })
+    assert.equal(reconciliada.cancelled, 1)
+    const ciclo = await lerCicloOperacional(casa)
+    assert.equal(ciclo.delegations.find((item) => item.id === preparada.delegation.id).state, 'cancelled')
+  } finally {
+    await rm(casa, { recursive: true, force: true })
   }
 })

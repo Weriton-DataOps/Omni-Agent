@@ -23,6 +23,7 @@ import {
 import { lerEstadoVarredura } from './varredura-diaria.mjs'
 import { lerTelemetriaAutocorrecao } from './telemetria-autocorrecao.mjs'
 import {
+  delegacoesAtivasDasMelhorias,
   materializarMelhoriaComBaselineConfigurada,
   sincronizarAutomacaoMelhorias
 } from './automacao-melhorias.mjs'
@@ -490,9 +491,7 @@ export async function auditarSaudeSistema(casa, {
       ...(automation.jobs ?? [])
         .filter((job) => !['completed', 'superseded'].includes(job.state) && job.delegationId)
         .map((job) => job.delegationId),
-      ...(improvementAutomation.jobs ?? [])
-        .filter((job) => job.state !== 'completed' && job.delegationId)
-        .map((job) => job.delegationId)
+      ...delegacoesAtivasDasMelhorias(improvementAutomation)
     ])]
     await reconciliarDelegacoesOperacionais(casa, { activeDelegationIds, at: timestamp })
   }

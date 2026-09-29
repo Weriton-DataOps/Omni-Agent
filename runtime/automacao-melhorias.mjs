@@ -154,6 +154,16 @@ function validarStore(store, path) {
   ) throw new Error(`Automacao de melhorias fora do contrato v1: ${path}`)
 }
 
+// Delegação de job que ainda espera despacho não está viva: se a sessão que ia despachar morreu,
+// só o lease de órfã (contratos/operacao/ciclo.json) a encerra, e o job volta para a fila numa
+// nova geração. Contá-la como ativa segurou uma delegação em visible de 24/09 a 29/09/2026.
+export function delegacoesAtivasDasMelhorias(store) {
+  return (store?.jobs ?? [])
+    .filter((job) => !['completed', 'dispatch-required'].includes(job.state))
+    .map((job) => job.delegationId)
+    .filter(Boolean)
+}
+
 export function caminhoDaAutomacaoMelhorias(casa) {
   if (!isAbsolute(casa ?? '')) throw new Error('A casa do Omni precisa usar caminho absoluto.')
   return join(casa, 'runs', 'operational-improvement-automation.json')
