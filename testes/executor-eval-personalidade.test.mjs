@@ -24,8 +24,11 @@ const rootPath = fileURLToPath(pluginRoot)
 const HOUR = 60 * 60 * 1_000
 
 function candidateFixtureFilter(source) {
-  const topLevel = relative(rootPath, source).split(/[\\/]/)[0]
-  return !['.git', 'node_modules', '.npm-cache', '.codex-tmp', 'out', '.test-dist', '.claude', '.codex', '.agents', '.runtime', 'memory', 'sessions', 'audio', 'evidence'].includes(topLevel)
+  const segments = relative(rootPath, source).split(/[\\/]/)
+  // node_modules em qualquer nível: apps/ e servicos/whatsapp têm os seus (~1,6 GB juntos) e,
+  // copiados a cada teste, esgotaram o disco em 29/09/2026 (ENOSPC).
+  if (segments.includes('node_modules')) return false
+  return !['.git', '.npm-cache', '.codex-tmp', 'out', '.test-dist', '.claude', '.codex', '.agents', '.runtime', 'memory', 'sessions', 'audio', 'evidence'].includes(segments[0])
 }
 
 function inicializarGit(repo) {

@@ -40,3 +40,26 @@ test('snapshot captura WIP, arquivo novo e exclusão sem mudar Git; verifica adu
     await assert.rejects(createCandidateSnapshot(root, join(root,'outside-out')), /below workspace/)
   } finally { await rm(root, {recursive:true, force:true}) }
 })
+
+test('modelo de .env versionado entra no snapshot; .env real continua barrado', async () => {
+  // 28/09/2026: o .env.example do serviço WhatsApp travou a fila do eval de personalidade em loop.
+  const root = await mkdtemp(join(tmpdir(), 'omni-snapshot-env-'))
+  const git = (...args) => execFileSync('git', args, { cwd: root, encoding:'utf8', windowsHide:true, stdio:['ignore','pipe','pipe'] })
+  try {
+    git('init')
+    git('config','user.email','snapshot@example.invalid')
+    git('config','user.name','Snapshot test')
+    await writeFile(join(root,'.gitignore'), 'out/\n')
+    await mkdir(join(root,'servico'))
+    await writeFile(join(root,'servico','.env.example'), 'PORT=2785\n')
+    await writeFile(join(root,'servico','.env.minimal'), 'LOG_LEVEL=info\n')
+    git('add','.')
+    git('commit','-m','fixture')
+    await writeFile(join(root,'servico','.env.example'), 'PORT=2786\n')
+    await mkdir(join(root,'out'))
+    const captured = await createCandidateSnapshot(root, join(root,'out','candidate'))
+    assert.equal(await readFile(join(captured.destination,'source','servico','.env.example'),'utf8'), 'PORT=2786\n')
+    await writeFile(join(root,'servico','.env'), 'SEGREDO=nao-deve-sair\n')
+    await assert.rejects(createCandidateSnapshot(root, join(root,'out','candidate-2')), /Private state cannot enter a candidate snapshot: servico\/\.env/)
+  } finally { await rm(root, {recursive:true, force:true}) }
+})
