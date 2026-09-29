@@ -642,7 +642,8 @@ export function lembrarExplicitamente(casa, text, type = 'semantic', scope = { t
     source: 'explicit-plugin-command',
     status: 'confirmed',
     confidence: 1,
-    importance: importanciaPadrao(type),
+    // Pedido explícito do dono não pode pesar menos que a captura automática (0,75–0,8).
+    importance: Math.max(importanciaPadrao(type), 0.8),
     validation: { status: 'confirmed', reasons: ['explicit-owner-request'] },
     evidenceKind: 'explicit-request'
   })

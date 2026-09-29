@@ -21,6 +21,42 @@ test('diretriz atual de comunicação vence hábito antigo frequente sem puxar p
   assert.ok(!result.ranked.some(item => item.memory.id === 'mem-cafe'))
 })
 
+test('diretrizes de comunicação distintas coexistem e a voz do canal fica fora do turno de texto', async () => {
+  // Reprodução sintética da fila de 23–28/09: cada preferência nova expulsava a anterior.
+  const direcao = { type: 'preference', source: 'explicit-plugin-command', confidence: 1 }
+  const memorias = [
+    memory('mem-curtos', 'Prefiro textos curtos e diretos, longos só quando necessário.', { ...direcao, updatedAt: '2026-08-21T00:00:00Z' }),
+    memory('mem-mapas', 'Prefiro mapas antes de textos longos.', { ...direcao, updatedAt: '2026-08-22T00:00:00Z' }),
+    memory('mem-idioma', 'Prefiro que tudo na tela venha em português: respostas e descrições.', { ...direcao, updatedAt: '2026-08-23T00:00:00Z' }),
+    memory('mem-voz', 'Prefiro a voz aguda nos áudios do WhatsApp, jeito de conversa e nunca de quem lê um texto.', { ...direcao, updatedAt: '2026-08-24T00:00:00Z' })
+  ]
+  const texto = await ranquearMemorias(memorias, { intent: 'Qual o resultado da tarefa?', now: NOW })
+  const ids = texto.ranked.map(entry => entry.memory.id)
+  for (const id of ['mem-curtos', 'mem-mapas', 'mem-idioma']) assert.ok(ids.slice(0, 3).includes(id), `${id} perdeu a vaga fixa`)
+  assert.ok(!ids.slice(0, 3).includes('mem-voz'))
+
+  const voz = await ranquearMemorias(memorias, { intent: 'me responde em áudio no WhatsApp', now: NOW })
+  assert.ok(voz.ranked.slice(0, 4).some(entry => entry.memory.id === 'mem-voz'))
+})
+
+test('sigla de duas letras conta como assunto', async () => {
+  // Só a sigla separa as duas; sem ela, o desempate por id poria a do Station na frente.
+  const result = await ranquearMemorias([
+    memory('mem-xy', 'O Postgres do XY só aceita conexão da rede interna.'),
+    memory('mem-station', 'O Postgres do Station só aceita conexão da rede interna.')
+  ], { intent: 'o postgres do xy aceita conexão de fora?', now: NOW })
+  assert.equal(result.ranked[0].memory.id, 'mem-xy')
+})
+
+test('o que o dono mandou gravar pesa pelo menos tanto quanto a captura automática', async () => {
+  const result = await ranquearMemorias([
+    memory('mem-explicita', 'o plugin precisa de teste', { source: 'explicit-plugin-command', importance: 0.5 }),
+    memory('mem-capturada', 'o plugin precisa de teste', { source: 'user-prompt-pipeline-v2', importance: 0.75 })
+  ], { intent: 'teste do plugin', now: NOW })
+  const importancia = Object.fromEntries(result.ranked.map(entry => [entry.memory.id, entry.components.importance]))
+  assert.ok(importancia['mem-explicita'] >= importancia['mem-capturada'])
+})
+
 function memory(id, text, overrides = {}) {
   return {
     id,

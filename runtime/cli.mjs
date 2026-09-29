@@ -93,7 +93,10 @@ const home = casaDoOmni()
 
 function memoryType(value) {
   const normalized = value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
-  if (/\b(prefiro|preferencia|gosto|nao gosto)\b/.test(normalized)) return 'preference'
+  // Prefer\u00eancia \u00e9 o dono falando de si ("prefiro", "gosto de"); um fato que s\u00f3 cita a
+  // palavra "prefer\u00eancia" continua fato. Tipado como preference, ele disputava a vaga fixa
+  // de diretriz em todo turno (visto em 29/09/2026).
+  if (/\b(prefiro|eu gosto|gosto de|gosto que|nao gosto)\b/.test(normalized)) return 'preference'
   if (/\b(objetivo|meta|quero chegar|estou construindo)\b/.test(normalized)) return 'objective'
   if (/\b(sempre que|procedimento|passo a passo|quando eu disser)\b/.test(normalized)) return 'procedural'
   if (/\b(aconteceu|ontem|hoje|na ultima vez)\b/.test(normalized)) return 'episodic'
