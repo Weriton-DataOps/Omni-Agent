@@ -32,6 +32,18 @@ try {
     # Síntese de uma resposta curta leva segundos; se a OpenAI travar, melhor desistir cedo e tentar de novo.
     $cliente.Timeout = [TimeSpan]::FromSeconds($(if ($Acao -eq 'falar') { 45 } else { 120 }))
     $cliente.DefaultRequestHeaders.Authorization = [Net.Http.Headers.AuthenticationHeaderValue]::new('Bearer', [Text.Encoding]::UTF8.GetString($chave))
+    # O 429 da OpenAI tanto é limite de velocidade (passa sozinho) quanto crédito esgotado (não passa);
+    # o código vem no corpo da resposta e é ele que diz qual dos dois.
+    function Recusa($resposta, $oque) {
+        $codigo = try { [string]($resposta.Content.ReadAsStringAsync().GetAwaiter().GetResult() | ConvertFrom-Json).error.code } catch { '' }
+        $motivo = switch ($codigo) {
+            { $_ -in 'insufficient_quota', 'credit_balance_exhausted' } { ': créditos da conta OpenAI esgotados; recarregar em platform.openai.com, Billing' }
+            'rate_limit_exceeded' { ': limite de velocidade da OpenAI, passa em instantes' }
+            '' { '' }
+            default { ': ' + $codigo }
+        }
+        '{0} recusada pela OpenAI (HTTP {1}{2})' -f $oque, [int]$resposta.StatusCode, $motivo
+    }
     if ($Acao -eq 'transcrever') {
         if ($entrada.Length -lt 32 -or $entrada.Length -gt 24MB) { throw 'áudio vazio ou maior que 24 MB' }
         $mime = ($Tipo -split ';')[0].Trim()
@@ -43,7 +55,7 @@ try {
         $parte.Headers.ContentType = [Net.Http.Headers.MediaTypeHeaderValue]::new($mime)
         $conteudo.Add($parte, 'file', "audio.$ext")
         $r = $cliente.PostAsync('https://api.openai.com/v1/audio/transcriptions', $conteudo).GetAwaiter().GetResult()
-        if (-not $r.IsSuccessStatusCode) { throw "transcrição recusada pela OpenAI (HTTP $([int]$r.StatusCode))" }
+        if (-not $r.IsSuccessStatusCode) { throw (Recusa $r 'transcrição') }
         $texto = [string]($r.Content.ReadAsStringAsync().GetAwaiter().GetResult() | ConvertFrom-Json).text
         @{ ok = $true; texto64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($texto)) } | ConvertTo-Json -Compress
     } else {
@@ -54,7 +66,7 @@ try {
         $pedido = @{ model = 'gpt-4o-mini-tts'; voice = $VOZ; input = $texto; instructions = $instrucoes; response_format = 'opus'; speed = $Velocidade } | ConvertTo-Json -Compress
         $conteudo = [Net.Http.StringContent]::new($pedido, [Text.Encoding]::UTF8, 'application/json')
         $r = $cliente.PostAsync('https://api.openai.com/v1/audio/speech', $conteudo).GetAwaiter().GetResult()
-        if (-not $r.IsSuccessStatusCode) { throw "síntese recusada pela OpenAI (HTTP $([int]$r.StatusCode))" }
+        if (-not $r.IsSuccessStatusCode) { throw (Recusa $r 'síntese') }
         $audio = $r.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult()
         @{ ok = $true; audio64 = [Convert]::ToBase64String($audio) } | ConvertTo-Json -Compress
     }
