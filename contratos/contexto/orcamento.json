@@ -10,7 +10,7 @@
     "deep": {
       "totalCharacters": 5200,
       "capabilityLimit": 6,
-      "categories": { "mandatory": 1500, "highPriority": 1500, "relevant": 1900, "optional": 300 }
+      "categories": { "mandatory": 1500, "highPriority": 1500, "relevant": 2600, "optional": 300 }
     }
   },
   "order": ["mandatory", "highPriority", "relevant", "optional"],

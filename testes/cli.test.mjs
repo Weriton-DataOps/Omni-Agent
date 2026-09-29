@@ -290,6 +290,20 @@ test('operador expoe plano e historico da rodada de personalidade', async () => 
   }
 })
 
+test('lembrar tipa como fato o texto que só cita a palavra preferência', async () => {
+  const raiz = await mkdtemp(join(tmpdir(), 'omni-cli-tipo-'))
+  const env = { ...process.env, OMNI_HOME: join(raiz, 'home') }
+  try {
+    const fato = executar(['lembrar', 'A', 'fila', 'guarda', 'só', 'a', 'preferência', 'mais', 'nova', 'de', 'cada', 'tema.'], env)
+    assert.equal(fato.memory.memory.type, 'semantic')
+    assert.ok(fato.memory.memory.importance >= 0.8)
+    const gosto = executar(['lembrar', 'Prefiro', 'relatórios', 'em', 'páginas', 'curtas.'], env)
+    assert.equal(gosto.memory.memory.type, 'preference')
+  } finally {
+    await rm(raiz, { recursive: true, force: true })
+  }
+})
+
 test('operador expõe manutenção, consolidação e arquivo sem apagar histórico', async () => {
   const raiz = await mkdtemp(join(tmpdir(), 'omni-cli-gc-'))
   const env = { ...process.env, OMNI_HOME: join(raiz, 'home') }

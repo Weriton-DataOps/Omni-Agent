@@ -24,6 +24,10 @@
       "terms": ["mapa", "diagrama", "esquema", "fluxograma", "desenho", "visual"]
     },
     {
+      "id": "network-address",
+      "terms": ["ip", "rede", "endereço", "conexão", "host", "porta"]
+    },
+    {
       "id": "concise-expression",
       "terms": ["curto", "conciso", "resumido", "breve", "poucas palavras", "sem texto longo"]
     },

@@ -31,11 +31,19 @@ function radical(token) {
   return suffix ? token.slice(0, -suffix.length) : token
 }
 
+// Palavras de duas letras que não dizem nada do assunto. As demais ficam: siglas como GR, IP,
+// DW e IA carregam o assunto inteiro, e o corte antigo em 3 letras as apagava.
+const CURTAS_VAZIAS = new Set([
+  'de', 'do', 'da', 'di', 'em', 'no', 'na', 'os', 'as', 'um', 'se', 'ou', 'eu', 'me', 'te', 'ao',
+  'ai', 'la', 'ja', 'so', 'ta', 'ne', 'vc', 'pq', 'tb', 'oi', 'ok',
+  'to', 'of', 'in', 'on', 'at', 'is', 'it', 'be', 'by', 'or', 'an', 'we', 'my', 'up', 'if'
+])
+
 function tokens(value) {
   return new Set(
     normalizar(value)
       .split(' ')
-      .filter((token) => token.length >= 3)
+      .filter((token) => token.length >= 3 || (token.length === 2 && !CURTAS_VAZIAS.has(token)))
       .map(radical)
   )
 }
@@ -90,6 +98,14 @@ function similaridadeFuzzy(queryTokens, memoryTokens) {
     if (best >= 0.72) total += best
   }
   return total / queryTokens.size
+}
+
+const CANAL_DE_VOZ = /\b(audios?|voz|whatsapp|tts|ligacao)\b/
+
+// O que o dono mandou gravar pesa pelo menos tanto quanto o que a captura automática
+// promoveu sozinha; antes o lembrar explícito entrava com 0,5 e a captura com 0,75.
+function importanciaEfetiva(memory) {
+  return /^explicit-/.test(memory.source || '') ? Math.max(memory.importance, 0.8) : memory.importance
 }
 
 function tiposDaIntencao(intent) {
@@ -194,12 +210,20 @@ export async function ranquearMemorias(memories, {
   // Stable owner directions are a separate lane from topic similarity. A new
   // style/coordination preference must not lose to an old, frequently injected
   // memory. Keep only the latest explicit direction for each narrow topic.
+  // Os temas são estreitos de propósito: com um tema amplo de "comunicação",
+  // textos curtos (23/09), mapas (24/09), português (25/09) e a voz do WhatsApp
+  // (28/09) se expulsavam em fila, e só a última sobrava em todo turno.
+  const turnoDeVoz = CANAL_DE_VOZ.test(normalizar(intent))
   const directions = new Map()
   for (const memory of memories) {
     if (memory.scope?.type !== 'user' || memory.type !== 'preference' || memory.confidence < 0.9 || !/^(?:explicit-plugin-command|user-prompt-pipeline)/.test(memory.source || '') || (memory.expiresAt && Date.parse(memory.expiresAt) <= now)) continue
     const text = normalizar(memory.text)
-    const topic = /\b(memoria|memorias|aprendizado\w*|autoaprimoramento)\b/.test(text) ? 'learning'
-      : /\b(textos?|respostas?|resumos?|concisao|detalh\w*)\b/.test(text) ? 'communication'
+    // Preferência de um canal (voz, áudio, WhatsApp) só tem vaga fixa num turno desse canal.
+    const topic = CANAL_DE_VOZ.test(text) ? (turnoDeVoz ? 'channel:voice' : null)
+      : /\b(memoria|memorias|aprendizado\w*|autoaprimoramento)\b/.test(text) ? 'learning'
+      : /\b(portugues|ingles|idioma)\b/.test(text) ? 'communication:language'
+      : /\b(mapas?|diagramas?)\b/.test(text) ? 'communication:visual'
+      : /\b(textos?|respostas?|resumos?|concisao|detalh\w*)\b/.test(text) ? 'communication:length'
       : /\bomni\b/.test(text) && /\b(conduz\w*|deleg\w*|autonomia|evidencias|decisoes)\b/.test(text) ? 'coordination' : null
     if (topic && (!directions.has(topic) || Date.parse(memory.updatedAt) > Date.parse(directions.get(topic).updatedAt))) directions.set(topic, memory)
   }
@@ -234,7 +258,7 @@ export async function ranquearMemorias(memories, {
       recency: recenciaScore(memory, now, config.recencyHalfLifeDays),
       frequency: frequenciaScore(memory, config.frequencySaturation),
       confidence: limitar(memory.confidence),
-      importance: limitar(memory.importance),
+      importance: limitar(importanciaEfetiva(memory)),
       context
     }
     const score = Object.entries(config.weights).reduce(
