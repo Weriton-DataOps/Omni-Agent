@@ -338,6 +338,17 @@
         "Executor delegado recebe instrucao de escrever em portugues tudo o que o proprietario ve.",
         "Decaimento de atalhos na observacao usa a data da propria observacao; a varredura retroativa nao arquiva mais o atalho que acabou de criar."
       ]
+    },
+    {
+      "version": "0.25.2",
+      "changes": [
+        "Memoria: a vaga fixa de diretriz deixa de ser danca das cadeiras. Temas estreitos (tamanho, idioma, visual) nao se expulsam; preferencia de canal (voz/audio/WhatsApp) so entra no turno daquele canal; siglas de duas letras (GR, IP) contam; conceito local de endereco de rede; o que o dono manda gravar pesa pelo menos 0,8; tipo preference so com fala em primeira pessoa; memoria do contexto profundo 1900 -> 2600 caracteres no mesmo teto. Bancada com a memoria real: 5/7 -> 7/7 perguntas com a memoria certa, 5 -> 8-10 memorias por turno.",
+        "Eval de personalidade: modelo de .env versionado (.example/.sample/.template/.minimal) deixa de travar o snapshot da fonte; a fila saia em source-unverifiable a cada tentativa desde 28/09. O .env real continua barrado.",
+        "Delegacao: job de melhoria que so espera despacho nao segura mais a delegacao; o lease de orfa cancela a que ficou sem sessao e o job volta para a fila numa nova geracao (uma ficou em visible de 24/09 a 29/09).",
+        "Cracha: leitura de freshness leva o fuso do servidor junto da data.",
+        "Testes do eval copiam o repositorio sem node_modules aninhados (apps/ e servicos/ levavam ~1,6 GB por copia e esgotaram o disco).",
+        "WhatsApp (servicos/whatsapp, fora do payload do plugin): servico local com ponte para as sessoes, audio, imagem, relatorios paginados na tela do celular, envio a terceiros com autorizacao pontual e comandos chegando nas janelas abertas do VS Code."
+      ]
     }
   ]
 }
