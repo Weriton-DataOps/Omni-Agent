@@ -31,14 +31,14 @@ const FERRAMENTA_ENVIO = {
 }
 const FERRAMENTA_ARQUIVO = {
   name: 'enviar_arquivo_para_weriton',
-  description: `Envia um relatório ou arquivo para o WhatsApp do Weriton (só para ele), assinado por esta sessão. Aceita .html (vira imagem ou PDF pelo navegador, ou vai como HTML), .png/.jpg/.webp e .pdf. Para relatório, escreva um HTML autocontido (CSS inline, sem depender de internet) em ${PASTA_RELATORIOS} e chame esta ferramenta. Imagem: bom para resumo curto e visual; desenhe para 540px de largura e ajuste a altura. PDF: relatório longo, várias páginas. HTML: quando ele pedir o arquivo.`,
+  description: `Envia um relatório ou arquivo para o WhatsApp do Weriton (só para ele), assinado por esta sessão. Aceita .html (vira imagem ou PDF pelo navegador, ou vai como HTML), .png/.jpg/.webp e .pdf. Para relatório, escreva um HTML autocontido (CSS inline, sem depender de internet) em ${PASTA_RELATORIOS} e chame esta ferramenta. Imagem (padrão): desenhe para 540px de largura, em seções (blocos diretos do <body>); relatório comprido sai sozinho em várias imagens do tamanho da tela do celular, cortadas entre as seções — uma imagem só, comprida, fica ilegível no celular. PDF: quando ele pedir PDF. HTML: quando ele pedir o arquivo.`,
   inputSchema: {
     type: 'object',
     properties: {
       arquivo: { type: 'string', description: 'Caminho completo do arquivo (.html, .png, .jpg, .webp ou .pdf).' },
       formato: { type: 'string', enum: ['imagem', 'pdf', 'html'], description: 'Só para .html: imagem (padrão), pdf ou html.' },
       legenda: { type: 'string', description: 'Opcional. Texto curto que acompanha o arquivo.' },
-      altura: { type: 'number', description: 'Só para imagem: altura em px CSS (largura fixa de 540). Padrão 960.' },
+      altura: { type: 'number', description: 'Só para imagem: altura máxima de cada página em px CSS (largura fixa de 540). Padrão 1100, a tela do celular.' },
       identidade: { type: 'string', description: 'Opcional. Como a sessão se apresenta; padrão: "Omni · <projeto>".' },
     },
     required: ['arquivo'],
@@ -175,8 +175,9 @@ createInterface({ input: process.stdin }).on('line', async linha => {
           const quem = String(a.identidade ?? '').trim() || `Omni · ${projeto}`
           const sid = sessaoClaude(String(a.arquivo || ''))
           const legenda = `🤖 *${quem}*${a.legenda ? `\n\n${a.legenda}` : ''}`
-          const { waId, final, tipo } = await enviarArquivoAoDono(a.arquivo, { formato: a.formato, legenda, altura: a.altura })
-          if (sid) anotar({ waMessageId: waId, sessionId: sid, cwd: process.cwd(), projeto, identidade: quem, origem: 'sessao' })
+          const { waIds, final, tipo } = await enviarArquivoAoDono(a.arquivo, { formato: a.formato, legenda, altura: a.altura })
+          // Resposta citando qualquer página volta para esta sessão.
+          if (sid) for (const waId of waIds) anotar({ waMessageId: waId, sessionId: sid, cwd: process.cwd(), projeto, identidade: quem, origem: 'sessao' })
           return responder({ jsonrpc: '2.0', id, result: { content: [{ type: 'text', text: `Enviado ao Weriton como ${tipo} (${basename(final)}).` }] } })
         } catch (e) {
           return responder({ jsonrpc: '2.0', id, result: { isError: true, content: [{ type: 'text', text: `Não enviado: ${e.message}` }] } })
