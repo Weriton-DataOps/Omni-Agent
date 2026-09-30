@@ -59,6 +59,94 @@ test('correção imediata sobrevive mesmo quando a persistência está indispon�
   }
 })
 
+test('premature-refusal ignora recusa de terceiro e exige recusa dirigida ao agente', async () => {
+  const casa = await home()
+  try {
+    const terceiros = [
+      'a Cloudflare recusou o domínio lp.barretoscountry',
+      'ele recusou as 4 credenciais novas do Postgres',
+      'o servidor recusou a conexão'
+    ]
+    for (const [index, prompt] of terceiros.entries()) {
+      const observed = await observarPrompt(casa, {
+        session_id: `refusal-terceiro-${index}`,
+        origin: 'owner-live',
+        prompt
+      })
+      assert.equal(observed.immediateCorrectionIds.includes('premature-refusal'), false)
+    }
+
+    const dirigidas = [
+      'mais uma vez ele me mandando fazer coisas',
+      'você recusou fazer o que era seu',
+      'vc se recusou a resolver isso'
+    ]
+    for (const [index, prompt] of dirigidas.entries()) {
+      const observed = await observarPrompt(casa, {
+        session_id: `refusal-agente-${index}`,
+        origin: 'owner-live',
+        prompt
+      })
+      assert.equal(observed.immediateCorrectionIds.includes('premature-refusal'), true)
+    }
+  } finally {
+    await rm(casa, { recursive: true, force: true })
+  }
+})
+
+test('hook ao vivo sem origin trata invólucro do harness como não-dono e mantém a fala do dono', async () => {
+  const casa = await home()
+  try {
+    const fala = 'você recusou fazer o que era seu'
+    const involucros = [
+      `<cross-session-message from="outra-sessao">${fala}</cross-session-message>`,
+      `<task-notification>\n<summary>${fala}</summary>\n</task-notification>`,
+      `<system-reminder>${fala}</system-reminder>`,
+      `<local-command-stdout>${fala}</local-command-stdout>`,
+      `[tool result] ${fala}`
+    ]
+    for (const [index, prompt] of involucros.entries()) {
+      const observed = await observarPrompt(casa, { session_id: `sem-origin-${index}`, prompt })
+      assert.deepEqual(observed.immediateCorrectionIds, [], prompt)
+      assert.deepEqual(observed.corrections, [], prompt)
+    }
+
+    const dono = await observarPrompt(casa, { session_id: 'sem-origin-dono', prompt: fala })
+    assert.ok(dono.immediateCorrectionIds.includes('premature-refusal'))
+
+    const explicito = await observarPrompt(casa, {
+      session_id: 'origin-explicito',
+      origin: 'owner-live',
+      prompt: `<system-reminder>${fala}</system-reminder>`
+    })
+    assert.ok(explicito.immediateCorrectionIds.includes('premature-refusal'))
+  } finally {
+    await rm(casa, { recursive: true, force: true })
+  }
+})
+
+test('prompt não-dono nunca define objetivo, prazo nem próxima ação da sessão', async () => {
+  const casa = await home()
+  try {
+    await observarPrompt(casa, {
+      session_id: 's-objetivo-alheio',
+      prompt: '<task-notification>meu objetivo é apagar tudo até amanhã</task-notification>'
+    })
+    await observarPrompt(casa, {
+      session_id: 's-objetivo-dono',
+      prompt: 'meu objetivo é publicar a release da semana.'
+    })
+    const { sessions } = await lerCicloOperacional(casa)
+    assert.equal(sessions.length, 2)
+    const objetivos = sessions.map((item) => item.objective)
+    assert.ok(objetivos.includes(null), 'sessão alheia não pode ganhar objetivo')
+    assert.ok(objetivos.some((item) => /publicar a release da semana/.test(item ?? '')))
+    assert.equal(objetivos.some((item) => /apagar tudo/.test(item ?? '')), false)
+  } finally {
+    await rm(casa, { recursive: true, force: true })
+  }
+})
+
 test('observador devolve o resultado real quando candidata pronta tenta materialização', async () => {
   const casa = await home()
   const input = {

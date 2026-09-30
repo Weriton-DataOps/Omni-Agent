@@ -59,7 +59,7 @@ const CORRECOES = [
   },
   {
     id: 'premature-refusal',
-    pattern: /\b(j[aá] deu como n[aã]o consegue|me mandando fazer|recusou|nem deu bola)\b/i,
+    pattern: /\b(j[aá] deu como n[aã]o consegue|me mandando fazer|(voc[eê]|vc|se) recus\w+|recus\w+ (a |em )?(faz|ajud|execut|resolv)\w*|nem deu bola)\b/i,
     action: 'tentar caminhos executaveis antes de devolver trabalho',
     destination: 'operational-rule',
     statement: 'Diante de uma ordem executavel, investigar capacidades disponiveis, agir e somente pedir ajuda quando faltar autoridade real.'
@@ -322,11 +322,17 @@ function resumoDoPedido(prompt) {
   return sentence ? texto(sentence, 240) : null
 }
 
+const INVOLUCRO_NAO_DONO = /^(?:<\/?(?:system-reminder|teammate-message|cross-session-message|task-notification|tool-result|command-message|command-name|local-command-stdout|local-command-caveat)\b|\[tool result\])/i
+
+export function textoEhNaoDono(valor) {
+  return INVOLUCRO_NAO_DONO.test(String(valor ?? '').trim())
+}
+
 export async function observarPrompt(casa, input) {
   const prompt = texto(input?.prompt, 1000)
   if (!prompt) return { event: null, corrections: [], immediateCorrectionIds: [], personalityFeedback: null }
   const corrections = []
-  const origin = input?.origin ?? 'owner-live'
+  const origin = input?.origin ?? (textoEhNaoDono(input?.prompt) ? 'non-owner' : 'owner-live')
   const ownerOrigin = origin === 'owner-live' || origin === 'owner-transcript'
   const detectedCorrections = ownerOrigin
     ? CORRECOES.filter((item) => item.matches ? item.matches(prompt) : item.pattern.test(prompt))
@@ -347,7 +353,7 @@ export async function observarPrompt(casa, input) {
       evidenceId: `prompt:${input.session_id}:${hash(prompt)}`,
       cwd: input.cwd,
       summary: `Pedido recebido (${prompt.length} caracteres)`,
-      objective: objetivoDeclarado(prompt),
+      objective: ownerOrigin ? objetivoDeclarado(prompt) : null,
       objectiveFallback: ownerOrigin ? resumoDoPedido(prompt) : null,
       dueAt: ownerOrigin ? extrairPrazo(prompt) : null,
       nextAction: ownerOrigin ? extrairProximaAcao(prompt) : null

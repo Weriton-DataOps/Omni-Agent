@@ -8,7 +8,7 @@ import { lerAtalhos, registrarObservacaoAtalho } from './atalhos.mjs'
 import { lerCicloOperacional, proporMelhoriaOperacional } from './ciclo-operacional.mjs'
 import { lerFalhas } from './falhas.mjs'
 import { lerMemoria, pareceConterSegredo, registrarMemoriaAnalisada } from './memoria.mjs'
-import { assinaturaDiagnosticaFalha, observarFerramenta, observarPrompt } from './observador.mjs'
+import { assinaturaDiagnosticaFalha, observarFerramenta, observarPrompt, textoEhNaoDono } from './observador.mjs'
 import { analisarExperiencias } from './pipeline-memoria.mjs'
 import { materializarMelhoriaComBaselineConfigurada } from './automacao-melhorias.mjs'
 import { fingerprintObjetivo } from './passe.mjs'
@@ -463,7 +463,7 @@ function origemDoPrompt(record, content, file) {
     registroEhSubagente(record, file) ||
     record?.isMeta === true ||
     record?.message?.isMeta === true ||
-    /^(?:<\/?(?:system-reminder|teammate-message|task-notification|tool-result|command-message|command-name)\b|\[tool result\])/i.test(value)
+    textoEhNaoDono(value)
   ) return 'non-owner'
   return 'owner-transcript'
 }
