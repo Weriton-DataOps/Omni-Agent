@@ -814,11 +814,23 @@ export async function processarFilaEvalPersonalidade(options = {}) {
       return { result: 'idle', triggerFingerprint }
     }
     const scheduledAt = currentState.last?.retryAt ? Date.parse(currentState.last.retryAt) : 0
-    if (currentState.last?.triggerFingerprint === triggerFingerprint && scheduledAt > now) {
+    const sameTrigger = currentState.last?.triggerFingerprint === triggerFingerprint
+    // O releaseFingerprint cobre todo o payload (contratos/dist/runtime/...), entao qualquer
+    // aprendizado operacional gravado por outro pipeline muda o trigger inteiro e apagaria um
+    // ciclo de correcao de personalidade em andamento antes dele rodar a unica tentativa automatica.
+    // Uma correcao pendente so precisa de persona, suite, ajustes e candidatos de feedback estaveis.
+    const pendingCorrectionCycle = !sameTrigger &&
+      currentState.last?.phase === 'correction-retry' &&
+      currentState.last?.correction?.attempts === 0 &&
+      currentState.last?.candidateSetFingerprint === trigger.candidateSetFingerprint &&
+      currentState.last?.payloadFingerprints?.personaFingerprint === trigger.payloadFingerprints.personaFingerprint &&
+      currentState.last?.payloadFingerprints?.suiteFingerprint === trigger.payloadFingerprints.suiteFingerprint &&
+      currentState.last?.payloadFingerprints?.adjustmentsFingerprint === trigger.payloadFingerprints.adjustmentsFingerprint
+    if ((sameTrigger || pendingCorrectionCycle) && scheduledAt > now) {
       return { result: 'backoff', triggerFingerprint, retryAt: currentState.last.retryAt }
     }
 
-    const previous = currentState.last?.triggerFingerprint === triggerFingerprint
+    const previous = sameTrigger || pendingCorrectionCycle
       ? currentState.last
       : null
     if (previous?.phase === 'correction-exhausted') {

@@ -279,18 +279,29 @@ export async function tratarHook(input, env = process.env, { contextOnly = false
   // ativacao, pois eventos de subagente nunca herdam a personalidade do pai.
   if (input.hook_event_name === 'SubagentStart') {
     const falhas = []
-    await tentarComponente(
+    const inicio = await tentarComponente(
       'adaptador-claude-delegacao-inicio',
       () => adaptarInicioSubagenteClaude(casa, input),
       falhas
     )
+    // adaptarInicioSubagenteClaude nao lanca excecao quando o inicio nao correlaciona
+    // (delegacao expirada, binding ausente); sem isto, o job de automacao de falha/
+    // melhoria fica preso em "queued" para sempre, sem nenhum sinal de degradacao.
+    if (inicio && ['ignored', 'uncorrelated', 'ignored-stale'].includes(inicio.result)) {
+      falhas.push({
+        nome: 'adaptador-claude-delegacao-inicio',
+        mensagem: `inicio nao correlacionado a uma delegacao viva (${inicio.result}); a automacao de falha ou melhoria pendente pode nunca confirmar execucao real.`
+      })
+    }
+    const degradation = avisoDegradacao(falhas)
     return saidaComContexto(
       'SubagentStart',
       [
         'Execute a tarefa recebida com autonomia e evidencias verificaveis.',
         'Mantenha o pedido completo visivel nesta sessao e devolva resultado, verificacao e pendencias reais.',
         // O proprietario acompanha a narracao do executor na tela.
-        'Escreva em português tudo o que o proprietário vê: mensagens de progresso, descrições de comandos, resumos e relatório final.'
+        'Escreva em português tudo o que o proprietário vê: mensagens de progresso, descrições de comandos, resumos e relatório final.',
+        ...(degradation ? [degradation] : [])
       ].join(' ')
     )
   }
