@@ -349,6 +349,13 @@
         "Testes do eval copiam o repositorio sem node_modules aninhados (apps/ e servicos/ levavam ~1,6 GB por copia e esgotaram o disco).",
         "WhatsApp (servicos/whatsapp, fora do payload do plugin): servico local com ponte para as sessoes, audio, imagem, relatorios paginados na tela do celular, envio a terceiros com autorizacao pontual e comandos chegando nas janelas abertas do VS Code."
       ]
+    },
+    {
+      "version": "0.25.3",
+      "changes": [
+        "Eval automatico de personalidade: o ciclo de correcao pendente deixa de reiniciar do zero quando qualquer outro pipeline de aprendizado grava algo no payload do repositorio; o fingerprint do gatilho agora so reabre o ciclo quando persona, suite, ajustes ou candidatos de feedback realmente mudam. Causa raiz confirmada de 257 tentativas presas sem nunca testar a correcao.",
+        "Hook SubagentStart passa a sinalizar degradacao quando o inicio de uma delegacao nao correlaciona (janela de despacho expirada ou binding ausente); antes o retorno era descartado em silencio e o job de automacao de falha/melhoria ficava preso em queued sem nenhum aviso."
+      ]
     }
   ]
 }
