@@ -85,6 +85,14 @@ import { lerEstadoVarredura, varrerAtividadesDoDia } from './varredura-diaria.mj
 import { auditarSaudeSistema, lerAuditoriaSistema } from './auditoria-sistema.mjs'
 import { resumirFeedbackPersonalidade } from './feedback-personalidade.mjs'
 import { abrirProjetoNoVscode } from './workspace-vscode.mjs'
+import {
+  lerRecibos,
+  marcarRevertido,
+  recibosAtivos,
+  resumoParaRadar,
+  vetarRecibo
+} from './recibos-evolucao.mjs'
+import { reverterRecibo } from './reversao-recibos.mjs'
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
 const [action = 'estado', ...parts] = process.argv.slice(2)
@@ -976,6 +984,37 @@ async function main() {
       failure: evaluation.pattern ? resumirFalha(evaluation.pattern) : evaluation,
       selfImprovement: improvement?.proposal ? resumirMelhoria(improvement.proposal) : improvement
     }
+  }
+  if (action === 'recibo-listar') {
+    const store = await lerRecibos(home)
+    return {
+      ok: true,
+      receipts: store.receipts,
+      active: store.receipts.filter((item) => item.status === 'active').length
+    }
+  }
+  if (action === 'recibos-radar') {
+    const ativos = await recibosAtivos(home)
+    return { ok: true, radar: resumoParaRadar(ativos), active: ativos.length }
+  }
+  if (action === 'recibo-vetar') {
+    const { options, positionals } = lerOpcoes(parts)
+    const id = positionals[0]
+    if (!id) throw new Error('Use: recibo-vetar <id> [--repo <caminho absoluto>].')
+    const veto = await vetarRecibo(home, id)
+    if (veto.result === 'not-found') return { ok: false, result: 'not-found', id }
+    // Despacha a reversão própria da estratégia do recibo. git/contrato não rodam git aqui:
+    // o veto fica registrado e a publicação do revert aguarda o portão humano (gate 1).
+    const reversal = await reverterRecibo(home, veto.recibo, {
+      pluginRoot: root,
+      repoRoot: options.repo ?? root
+    })
+    let receipt = veto.recibo
+    if (reversal.reverted) {
+      const closed = await marcarRevertido(home, id)
+      if (closed.recibo) receipt = closed.recibo
+    }
+    return { ok: true, result: veto.result, reversal, receipt }
   }
   if (action === 'contexto') return { ok: true, context: await montarContexto(home, { intent: text }) }
   if (action === 'experiencia') {

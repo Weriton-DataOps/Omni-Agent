@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { readFile } from 'node:fs/promises'
+import { readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -312,6 +312,46 @@ async function carregar(pluginRoot, verificarEvidenciaConfiavel) {
     learnedAdjustments,
     learnedAdjustmentText: formatarAjustesAprendidos(learnedAdjustments)
   }
+}
+
+// Reversão de personalidade do recibo-com-veto (personality-supersede, 10/10/2026): devolve o
+// manifesto ativo a uma candidata anterior quando o dono veta a promoção. Nunca roda git; apenas
+// reescreve o manifesto local e só se o contrato Markdown da candidata existir e corresponder ao
+// núcleo. Se faltar, devolve uma reversão manual em vez de corromper a personalidade ativa.
+export async function reverterManifestoParaCandidata(pluginRoot = raiz, candidateId) {
+  if (typeof candidateId !== 'string' || !/^omni-persona-v\d+-candidate$/.test(candidateId)) {
+    throw new Error('A reversão de personalidade exige um identificador de candidata válido.')
+  }
+  const diretorio = join(pluginRoot, 'contratos', 'personalidade')
+  const manifestPath = join(diretorio, 'manifest.json')
+  const manifesto = JSON.parse(await readFile(manifestPath, 'utf8'))
+  if (manifesto?.id === candidateId) return { result: 'already-active', id: candidateId }
+  const contract = `./${candidateId.replace(/-candidate$/, '')}.md`
+  let contractPath
+  try {
+    contractPath = caminhoInterno(diretorio, contract)
+  } catch {
+    return { result: 'manual-revert-required', id: candidateId, reason: 'contrato-da-candidata-invalido' }
+  }
+  let markdown
+  try {
+    markdown = await readFile(contractPath, 'utf8')
+  } catch (error) {
+    if (error?.code === 'ENOENT') {
+      return { result: 'manual-revert-required', id: candidateId, reason: 'contrato-da-candidata-ausente' }
+    }
+    throw error
+  }
+  if (!extrairNucleo(markdown).includes(`PERSONALIDADE ${candidateId}.`)) {
+    return { result: 'manual-revert-required', id: candidateId, reason: 'nucleo-nao-corresponde' }
+  }
+  const revertido = { ...manifesto, id: candidateId, status: STATUS_CANDIDATA, contract, promotion: null }
+  validarPromocao(revertido)
+  const temp = `${manifestPath}.${process.pid}.novo`
+  await writeFile(temp, `${JSON.stringify(revertido, null, 2)}\n`, 'utf8')
+  await rename(temp, manifestPath)
+  cache.delete(pluginRoot)
+  return { result: 'reverted', id: candidateId, previousId: manifesto.id, contract }
 }
 
 export async function lerPersonalidadeAtiva({

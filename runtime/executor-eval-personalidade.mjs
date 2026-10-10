@@ -25,6 +25,7 @@ import {
   criarAdaptadorRepositorioGit,
   prepararReleaseAutonomaPersonalidade
 } from './release-autonoma.mjs'
+import { registrarRecibo } from './recibos-evolucao.mjs'
 
 const raiz = dirname(dirname(fileURLToPath(import.meta.url)))
 const STORE_SCHEMA_VERSION = 1
@@ -768,6 +769,35 @@ async function promoverRodada({ casa, run, prepareRelease }) {
   return prepareRelease({ casa, run })
 }
 
+// Recibo-com-veto da personalidade (10/10/2026): quando a DECISÃO de promoção conclui (release
+// publicada e carregada), registramos a evolução no ledger para o dono ver no radar e, se quiser,
+// reverter à candidata anterior (personality-supersede). Nunca roda git; apenas grava o recibo e,
+// como retrovisor opcional, uma falha de gravação jamais invalida a promoção já concluída.
+async function registrarReciboPromocaoPersonalidade(casa, run, pluginRoot = raiz) {
+  try {
+    let previous = typeof run?.candidate === 'string' && run.candidate.trim() ? run.candidate : 'personalidade-anterior'
+    try {
+      const manifesto = JSON.parse(
+        await readFile(join(pluginRoot, 'contratos', 'personalidade', 'manifest.json'), 'utf8')
+      )
+      if (typeof manifesto?.supersedes === 'string' && manifesto.supersedes.trim()) {
+        previous = manifesto.supersedes
+      }
+    } catch {
+      // Manifesto é só para descobrir a candidata anterior; sem ele, usamos a candidata da rodada.
+    }
+    await registrarRecibo(casa, {
+      kind: 'personality',
+      summary: `Promovi a personalidade ${run?.candidate ?? 'candidata'} após todos os gates verdes.`.slice(0, 600),
+      reason: `Rodada ${run?.id ?? 'desconhecida'} passou nos gates da suíte controlada e foi publicada; o dono pode reverter à candidata anterior.`.slice(0, 600),
+      subjectId: typeof run?.id === 'string' ? run.id : null,
+      revert: { strategy: 'personality-supersede', ref: previous }
+    })
+  } catch {
+    // Promoção já concluída: o recibo é retrovisor e nunca a desfaz.
+  }
+}
+
 export async function processarFilaEvalPersonalidade(options = {}) {
   const {
     casa,
@@ -900,6 +930,7 @@ export async function processarFilaEvalPersonalidade(options = {}) {
             rawResponsesStored: false
           }
         })
+        if (completed) await registrarReciboPromocaoPersonalidade(casa, passedRun, evaluationRoot)
         return completed
           ? { result: 'passed', triggerFingerprint, run: passedRun, promotion }
           : { result: 'retry-scheduled', triggerFingerprint, retryAt: nextRetryAt, promotion }
@@ -1088,6 +1119,7 @@ export async function processarFilaEvalPersonalidade(options = {}) {
           rawResponsesStored: false
         }
       })
+      if (completed) await registrarReciboPromocaoPersonalidade(casa, recorded.run, evaluationRoot)
       return completed
         ? { result: 'passed', triggerFingerprint, run: recorded.run, promotion }
         : { result: 'retry-scheduled', triggerFingerprint, retryAt: nextRetryAt, run: recorded.run, promotion }

@@ -68,7 +68,8 @@ test('plano aponta a v3 ativa, a baseline controlada e cobre os candidatos apren
   assert.equal(plan.candidate, 'omni-persona-v3-candidate')
   assert.equal(plan.baseline, 'controle-mesmo-modelo-sem-omni')
   assert.equal(plan.baselineProtocol.kind, 'same-model-without-omni-context')
-  assert.equal(plan.cases.length, 28)
+  assert.equal(plan.cases.length, 29)
+  assert.ok(plan.cases.some((item) => item.id === 'concisao-com-presenca-e-imagem'))
   assert.ok(plan.cases.some((item) => item.id === 'identidade-nao-apaga-sob-carga'))
   assert.ok(plan.cases.some((item) => item.id === 'relatorio-fecha-com-estado-e-evidencia'))
   assert.ok(plan.cases.some((item) => item.id === 'didatica-com-modelo-mental-e-analogia'))
@@ -89,6 +90,11 @@ test('plano aponta a v3 ativa, a baseline controlada e cobre os candidatos apren
   )
   assert.equal(initiative.state, 'covered-by-canonical-case')
   assert.equal(initiative.canonicalCaseId, 'acao-segura-evidente-sem-oferta-generica')
+  const concisao = plan.learnedCandidates.find(
+    (item) => item.id === 'improvement-b5cc79fb-701b-4bd8-8f48-9ba7c8a72ce9'
+  )
+  assert.equal(concisao.state, 'covered-by-canonical-case')
+  assert.equal(concisao.canonicalCaseId, 'concisao-com-presenca-e-imagem')
   assert.equal(plan.performsModelCalls, false)
 })
 
@@ -116,7 +122,7 @@ test('rodada registra resultados e autoavaliacao como alegacao nao autenticada',
     }
     const evaluated = await avaliarRodadaPersonalidade(input)
     assert.equal(evaluated.status, 'unverified-claim')
-    assert.equal(evaluated.metrics.cases, 28)
+    assert.equal(evaluated.metrics.cases, 29)
     assert.equal(evaluated.metrics.candidateScore, 1)
     assert.equal(evaluated.rawResponsesStored, false)
     assert.notEqual(evaluated.responseSets.baselineSha256, evaluated.responseSets.candidateSha256)

@@ -274,7 +274,7 @@ test('operador expoe plano e historico da rodada de personalidade', async () => 
   try {
     const plan = executar(['eval-personalidade-plano'], env)
     assert.equal(plan.evaluation.candidate, 'omni-persona-v3-candidate')
-    assert.equal(plan.evaluation.cases.length, 28)
+    assert.equal(plan.evaluation.cases.length, 29)
     assert.deepEqual(plan.evaluation.pendingLearnedCandidates, [])
 
     const history = executar(['eval-personalidade-historico'], env)

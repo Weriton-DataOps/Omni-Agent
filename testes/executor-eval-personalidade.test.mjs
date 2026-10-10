@@ -88,7 +88,7 @@ test('executor controlado cobre baseline, candidata e juiz sem persistir respost
       result.run.provenance.evaluatedPayloadFingerprint,
       (await calcularFingerprintPayload(rootPath)).fingerprint
     )
-    assert.equal(result.run.judgeDiagnostics.length, 28)
+    assert.equal(result.run.judgeDiagnostics.length, 29)
     assert.ok(result.run.judgeDiagnostics.every((item) => item.reasonCode === 'criteria-met'))
     assert.ok(result.run.judgeDiagnostics.every((item) => /^[a-f0-9]{64}$/.test(item.reasonCodeHash)))
     const raw = await readFile(join(casa, 'evals', 'personality-history.json'), 'utf8')

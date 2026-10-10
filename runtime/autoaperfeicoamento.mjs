@@ -7,6 +7,7 @@ import { lerAtalhos } from './atalhos.mjs'
 import { lerFalhas } from './falhas.mjs'
 import { pareceConterSegredo } from './memoria.mjs'
 import { verificarIntegridadeRelease } from './integridade-release.mjs'
+import { recibosAtivos, registrarRecibo } from './recibos-evolucao.mjs'
 
 export const SELF_IMPROVEMENT_SCHEMA_VERSION = 1
 export const SELF_IMPROVEMENT_PIPELINE_VERSION = 1
@@ -524,6 +525,32 @@ function avaliar(source, proposal, policy, evaluatedAt) {
   }
 }
 
+// Canal de proposta de capacidade (recibo-com-veto, 10/10/2026). A ADMISSÃO de uma capacidade nova
+// continua exigindo aprovação explícita do dono: nada aqui toca `requiresOwnerApproval`,
+// `automaticPromotion` ou o validador da política. O que muda é o surfacing — em vez de reter a
+// proposta em silêncio, o pipeline emite um recibo descrevendo o que a capacidade faz, a evidência
+// acumulada e o ganho, para o dono ver no radar e decidir. O recibo é opcional e idempotente por
+// proposta; sua falha nunca altera a avaliação nem o portão de admissão.
+async function surfacingDeCapacidade(casa, proposal) {
+  if (proposal?.evaluation?.passed !== true || proposal.destination !== 'capability') return
+  try {
+    const ativos = await recibosAtivos(casa)
+    if (ativos.some((item) => item.kind === 'capability' && item.subjectId === proposal.id)) return
+    const name = proposal.draft?.capability?.name ?? proposal.id
+    const evidencia = proposal.source?.successCount ?? proposal.source?.occurrences ?? 'repetida'
+    const ganho = String(proposal.draft?.capability?.description ?? 'procedimento validado reutilizável').slice(0, 220)
+    await registrarRecibo(casa, {
+      kind: 'capability',
+      summary: `Proposta de capacidade nova para o dono aprovar: ${name}`.slice(0, 600),
+      reason: `Evidência: ${evidencia}. Ganho: ${ganho}. A admissão continua exigindo aprovação do dono.`.slice(0, 600),
+      subjectId: proposal.id,
+      revert: { strategy: 'capability-remove', ref: name }
+    })
+  } catch {
+    // Surfacing é um retrovisor: se o recibo não grava, a avaliação e o portão seguem intactos.
+  }
+}
+
 export async function avaliarMelhoria(casa, id, { now } = {}) {
   const policy = await lerPolitica()
   const [shortcuts, failures] = await Promise.all([lerAtalhos(casa), lerFalhas(casa)])
@@ -544,6 +571,7 @@ export async function avaliarMelhoria(casa, id, { now } = {}) {
     proposal.approval = null
     proposal.updatedAt = evaluatedAt
     await gravar(casa, loaded.store, policy)
+    await surfacingDeCapacidade(casa, proposal)
     return { result: proposal.evaluation.passed ? 'passed' : 'failed', proposal }
   } finally {
     await release()
