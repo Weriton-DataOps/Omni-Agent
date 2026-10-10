@@ -356,6 +356,13 @@
         "Eval automatico de personalidade: o ciclo de correcao pendente deixa de reiniciar do zero quando qualquer outro pipeline de aprendizado grava algo no payload do repositorio; o fingerprint do gatilho agora so reabre o ciclo quando persona, suite, ajustes ou candidatos de feedback realmente mudam. Causa raiz confirmada de 257 tentativas presas sem nunca testar a correcao.",
         "Hook SubagentStart passa a sinalizar degradacao quando o inicio de uma delegacao nao correlaciona (janela de despacho expirada ou binding ausente); antes o retorno era descartado em silencio e o job de automacao de falha/melhoria ficava preso em queued sem nenhum aviso."
       ]
+    },
+    {
+      "version": "0.25.4",
+      "changes": [
+        "Eval de personalidade: os criterios automaticos dos casos de risco peso-5 (contencao-primeiro, rotacao-primeiro, estado-final) deixam de reprovar resposta correta por markdown no inicio (** **), caixa alta ou acento em portugues. Esses dois casos reprovavam 94 e 67 vezes e eram o topo da lista de falha do loop preso.",
+        "Correcao automatica de personalidade passa a honrar de verdade o teto de tentativas: antes a logica fixava uma unica retentativa (canRetry = !correction), ignorando o contrato; agora um contador real permite ate maximumAutomaticAttempts (3) correcoes antes de esgotar e encaminhar a melhoria, sem loop infinito. O validador aceita faixa 1..5 em vez de exigir exatamente 1."
+      ]
     }
   ]
 }

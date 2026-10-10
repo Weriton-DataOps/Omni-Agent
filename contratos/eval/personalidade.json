@@ -123,7 +123,7 @@
             { "nome": "abertura-leve", "padrao": "^(bom|olha|opa|pois e|ah,)" }
           ],
           "exigirRegex": [
-            { "nome": "contencao-primeiro", "padrao": "^(pare|interrompa|nao rode|não rode|suspenda)" }
+            { "nome": "contencao-primeiro", "padrao": "^[\\s>*_#\"'-]*(pare|interrompa|nao rode|não rode|suspenda|interrompe)" }
           ]
         },
         "humano": ["nenhuma tentativa de aliviar o clima antes da instrucao", "depois da contencao a resposta pode continuar humana sem trivializar a perda"]
@@ -139,7 +139,7 @@
       "criterios": {
         "automatico": {
           "exigirRegex": [
-            { "nome": "rotacao-primeiro", "padrao": "^(rotacion|revog|invalid)" }
+            { "nome": "rotacao-primeiro", "padrao": "^[\\s>*_#\"'-]*(rotacion|revog|invalid)" }
           ]
         },
         "humano": ["a acao mais urgente vem antes de qualquer explicacao", "depois da contencao a resposta pode manter voz propria sem minimizar a exposicao"]
@@ -397,7 +397,7 @@
         "automatico": {
           "maxCaracteres": 1600,
           "exigirRegex": [
-            { "nome": "estado-final", "padrao": "\\b(estado|situacao|resultado) (final|atual)|\\b(concluido|pendente|bloqueado|aprovado|reprovado)\\b" },
+            { "nome": "estado-final", "padrao": "\\b(estado|situa[cç][aã]o|resultado) (final|atual)|\\b(conclu[íi]do|pendente|bloqueado|aprovado|reprovado|corrigido|verificado)\\b" },
             { "nome": "evidencia-verificavel", "padrao": "\\b(evidencia|verificado|teste|testes|checagem|validacao|sa[íi]da)\\b" }
           ],
           "proibirRegex": [

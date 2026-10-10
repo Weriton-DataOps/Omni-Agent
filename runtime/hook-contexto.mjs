@@ -28,6 +28,7 @@ import { sincronizarMissoesDuraveis } from './sincronizacao-missoes-duraveis.mjs
 import { sincronizarAprendizadoOperacional } from './sincronizacao-aprendizado-operacional.mjs'
 import { lerPersonalidadeAtiva } from './personalidade.mjs'
 import { resumirFeedbackPersonalidade } from './feedback-personalidade.mjs'
+import { recibosAtivos, resumoParaRadar } from './recibos-evolucao.mjs'
 import {
   observarFerramenta,
   observarParada,
@@ -234,17 +235,22 @@ export async function tratarHook(input, env = process.env, { contextOnly = false
         falhas
       )
     ])
-    return saidaComContexto(
-      'SessionStart',
-      buildActivationContext({
-        persona,
-        mode: ativadaPeloEscopo
-          ? 'activate'
-          : input.source === 'compact' ? 'compact' : 'resume',
-        degradation: avisoDegradacao(falhas),
-        persistentDirection: renderPersistentPersonalityDirection(feedback)
-      }).text
-    )
+    const recibos = await tentarComponente('recibos-evolucao', () => recibosAtivos(casa), falhas)
+    const baseText = buildActivationContext({
+      persona,
+      mode: ativadaPeloEscopo
+        ? 'activate'
+        : input.source === 'compact' ? 'compact' : 'resume',
+      degradation: avisoDegradacao(falhas),
+      persistentDirection: renderPersistentPersonalityDirection(feedback)
+    }).text
+    // Retrovisor de autoevolução (recibo-com-veto): o radar entra no SessionStart, mas nunca
+    // derruba a personalidade — se não couber no orçamento do hook, fica de fora silenciosamente.
+    const radar = resumoParaRadar(recibos ?? [])
+    const comRadar = radar && (baseText.length + radar.length + 2) <= 9400
+      ? `${baseText}\n\n${radar}`
+      : baseText
+    return saidaComContexto('SessionStart', comRadar)
   }
 
   if (isOmniActivationCommand(input)) {

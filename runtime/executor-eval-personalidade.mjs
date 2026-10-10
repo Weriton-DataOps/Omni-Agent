@@ -297,7 +297,9 @@ async function lerContrato(pluginRoot) {
   if (!Number.isInteger(config?.chunkSize) || config.chunkSize < 1 || config.chunkSize > 30 ||
     !Number.isInteger(config?.timeoutMs) || config.timeoutMs < 10_000 ||
     typeof config?.model !== 'string' || typeof config?.effort !== 'string' ||
-    contract.correction?.maximumAutomaticAttempts !== 1 ||
+    !Number.isInteger(contract.correction?.maximumAutomaticAttempts) ||
+    contract.correction.maximumAutomaticAttempts < 1 ||
+    contract.correction.maximumAutomaticAttempts > 5 ||
     contract.correction?.strategy !== 'canonical-directives-only') {
     throw new Error('Configuracao do executor automatico e invalida.')
   }
@@ -904,7 +906,8 @@ export async function processarFilaEvalPersonalidade(options = {}) {
       }
     }
 
-    const correction = previous?.phase === 'correction-retry' && previous.correction?.attempts === 0
+    const maxCorrectionAttempts = contract.correction.maximumAutomaticAttempts
+    const correction = previous?.phase === 'correction-retry'
       ? previous.correction
       : null
     const persistentDirectives = (feedback.persistentAdjustment?.directives ?? [])
@@ -988,11 +991,12 @@ export async function processarFilaEvalPersonalidade(options = {}) {
       })
       if (recorded.run.status !== 'passed') {
         const plan = planoCorrecao(recorded.run)
-        const canRetry = !correction && plan.directiveIds.length > 0
+        const attemptsUsed = correction?.attempts ?? 0
+        const canRetry = plan.directiveIds.length > 0 && attemptsUsed < maxCorrectionAttempts
         const nextRetryAt = canRetry ? retryAt(now, contract.retry.backoffMinutes) : null
         const correctionState = canRetry
-          ? { attempts: 0, plan }
-          : correction ? { ...correction, attempts: 1 } : { attempts: 0, plan }
+          ? { attempts: attemptsUsed + 1, plan: correction?.plan ?? plan }
+          : correction ?? { attempts: attemptsUsed, plan }
         const exhaustedState = {
           schemaVersion: STORE_SCHEMA_VERSION,
           status: canRetry ? 'retry-scheduled' : 'needs-improvement',

@@ -196,7 +196,7 @@ test('falha gera correcao canonica, respeita backoff e promove somente o ajuste 
   }
 })
 
-test('uma correcao falha esgota a unica tentativa automatica sem loop', async () => {
+test('ate tres correcoes falhas esgotam as tentativas automaticas sem loop', async () => {
   const casa = await mkdtemp(join(tmpdir(), 'omni-auto-personality-exhausted-'))
   const repo = await mkdtemp(join(tmpdir(), 'omni-auto-personality-exhausted-repo-'))
   const t0 = Date.parse('2026-08-29T12:00:00.000Z')
@@ -219,38 +219,38 @@ test('uma correcao falha esgota a unica tentativa automatica sem loop', async ()
     await writeFile(join(repo, 'package.json'), '{"name":"omni-agent","version":"0.0.0"}\n', 'utf8')
     inicializarGit(repo)
     await configurarRepositorioCanonico(casa, repo)
+    // Tentativa inicial + 3 correcoes automaticas (maximumAutomaticAttempts=3),
+    // depois esgota e encaminha a melhoria, sem loop infinito.
     const first = await processarFilaEvalPersonalidade({
-      casa,
-      pluginRoot: rootPath,
-      invoke,
-      now: t0,
-      prepareRelease: releasePreparada()
+      casa, pluginRoot: rootPath, invoke, now: t0, prepareRelease: releasePreparada()
     })
     assert.equal(first.result, 'retry-scheduled')
 
     const second = await processarFilaEvalPersonalidade({
-      casa,
-      pluginRoot: rootPath,
-      invoke,
-      now: t0 + HOUR + 1,
-      prepareRelease: releasePreparada()
+      casa, pluginRoot: rootPath, invoke, now: t0 + HOUR + 1, prepareRelease: releasePreparada()
     })
-    assert.equal(second.result, 'improvement-routed')
-    assert.equal(judgeCalls, 2)
-    assert.equal(second.operationalBridge.result, 'routed')
+    assert.equal(second.result, 'retry-scheduled')
 
     const third = await processarFilaEvalPersonalidade({
-      casa,
-      pluginRoot: rootPath,
-      invoke,
-      now: t0 + 24 * HOUR,
-      prepareRelease: releasePreparada()
+      casa, pluginRoot: rootPath, invoke, now: t0 + 2 * HOUR + 2, prepareRelease: releasePreparada()
     })
-    assert.equal(third.result, 'improvement-routed')
-    assert.equal(judgeCalls, 2)
+    assert.equal(third.result, 'retry-scheduled')
+
+    const fourth = await processarFilaEvalPersonalidade({
+      casa, pluginRoot: rootPath, invoke, now: t0 + 3 * HOUR + 3, prepareRelease: releasePreparada()
+    })
+    assert.equal(fourth.result, 'improvement-routed')
+    assert.equal(judgeCalls, 4)
+    assert.equal(fourth.operationalBridge.result, 'routed')
+
+    const fifth = await processarFilaEvalPersonalidade({
+      casa, pluginRoot: rootPath, invoke, now: t0 + 24 * HOUR, prepareRelease: releasePreparada()
+    })
+    assert.equal(fifth.result, 'improvement-routed')
+    assert.equal(judgeCalls, 4)
     const state = JSON.parse(await readFile(join(casa, 'evals', 'personality-automation.json'), 'utf8'))
     assert.equal(state.last.phase, 'correction-exhausted')
-    assert.equal(state.last.correction.attempts, 1)
+    assert.equal(state.last.correction.attempts, 3)
     assert.equal(state.last.operationalBridge.result, 'routed')
     assert.equal(state.last.operationalBridge.proposals.length, 1)
     assert.equal(state.last.operationalBridge.proposals[0].caseId, 'voz-perceptivel-sem-piada')

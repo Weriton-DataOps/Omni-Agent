@@ -23,7 +23,7 @@
     "staleLeaseMinutes": 30
   },
   "correction": {
-    "maximumAutomaticAttempts": 1,
+    "maximumAutomaticAttempts": 3,
     "strategy": "canonical-directives-only"
   },
   "privacy": {
