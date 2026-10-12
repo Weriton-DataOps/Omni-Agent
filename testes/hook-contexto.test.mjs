@@ -558,7 +558,7 @@ test('contexto deep permanece inline e preserva personalidade e ajuste explícit
   }
 })
 
-test('ferramenta reforça âncora compacta sem reinjetar o núcleo inteiro', async () => {
+test('ferramenta tranquila não reinjeta a âncora (economia de contexto)', async () => {
   const { raiz, env } = await ambiente()
   const session_id = 'sessao-ancora-pos-ferramenta'
   try {
@@ -575,14 +575,11 @@ test('ferramenta reforça âncora compacta sem reinjetar o núcleo inteiro', asy
       tool_response: 'conteúdo lido',
       cwd: raiz
     }, env)
-    const contexto = result.hookSpecificOutput?.additionalContext
-    assert.equal(result.hookSpecificOutput?.hookEventName, 'PostToolUse')
-    assert.match(contexto, /<omni-ancora-compacta>/)
-    assert.match(contexto, /Inventor Cúmplice/)
-    assert.match(contexto, /(?:analogia|imagem) científica (?:\/|ou )geek/i)
-    assert.doesNotMatch(contexto, /PERSONALIDADE CANÔNICA:/)
-    assert.match(contexto, /AMOSTRA DE VOZ/)
-    assert.ok(contexto.length < 1_650)
+    // Contrato novo: sem sinal (automação pendente ou degradação), o PostToolUse não emite
+    // nada. A âncora de personalidade vive no SessionStart + recompactação, não em cada
+    // tool call — o eco por chamada era o maior imposto de token controlável.
+    assert.deepEqual(result, { suppressOutput: true })
+    assert.equal(result.hookSpecificOutput, undefined)
   } finally {
     await rm(raiz, { recursive: true, force: true })
   }

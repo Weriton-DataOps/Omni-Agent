@@ -100,6 +100,7 @@ test('hook ao vivo sem origin trata invólucro do harness como não-dono e mant�
     const fala = 'você recusou fazer o que era seu'
     const involucros = [
       `<cross-session-message from="outra-sessao">${fala}</cross-session-message>`,
+      `<agent-message from="a30beac3dd8d4f265">${fala}</agent-message>`,
       `<task-notification>\n<summary>${fala}</summary>\n</task-notification>`,
       `<system-reminder>${fala}</system-reminder>`,
       `<local-command-stdout>${fala}</local-command-stdout>`,
