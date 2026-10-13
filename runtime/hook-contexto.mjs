@@ -387,6 +387,12 @@ export async function tratarHook(input, env = process.env, { contextOnly = false
       )
       automacao = arbitration?.context ?? null
     }
+    // Economia de contexto (token): o eco da âncora saía em TODA tool call e ficava gravado
+    // na transcrição para sempre (~1,6 KB por chamada). A âncora fixa já reancora no
+    // SessionStart, inclusive após compactação, então aqui o PostToolUse só fala quando há
+    // sinal NOVO — uma automação pendente (ex.: failure-dispatch) ou um componente degradado.
+    // Os efeitos colaterais (observar ferramenta, auditoria, cobertura) já rodaram acima.
+    if (!automacao && falhas.length === 0) return saidaVazia()
     return saidaComContexto(
       input.hook_event_name,
       buildCompactEventContext({

@@ -322,7 +322,7 @@ function resumoDoPedido(prompt) {
   return sentence ? texto(sentence, 240) : null
 }
 
-const INVOLUCRO_NAO_DONO = /^(?:<\/?(?:system-reminder|teammate-message|cross-session-message|task-notification|tool-result|command-message|command-name|local-command-stdout|local-command-caveat)\b|\[tool result\])/i
+const INVOLUCRO_NAO_DONO = /^(?:<\/?(?:system-reminder|teammate-message|agent-message|cross-session-message|task-notification|tool-result|command-message|command-name|local-command-stdout|local-command-caveat)\b|\[tool result\])/i
 
 export function textoEhNaoDono(valor) {
   return INVOLUCRO_NAO_DONO.test(String(valor ?? '').trim())
