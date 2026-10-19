@@ -45,7 +45,10 @@ test('executor despachado pelo job de falha grava suas ferramentas no ledger pel
   try {
     await padraoCandidato(casa)
     await tratarHook({ hook_event_name: 'UserPromptSubmit', session_id, prompt: '/omni:omni', cwd: raiz }, env)
-    const turno = await tratarHook({ hook_event_name: 'UserPromptSubmit', session_id, prompt: 'Teste o token antes de substituir.', cwd: raiz }, env)
+    // O pedido de despacho chega como turno NÃO-interativo (campos de agente), que é como a
+    // automação de fundo requisita a fase pesada na vida real. Um candidato queued cru não nasce
+    // no turno vivo do dono — adiá-lo ali é o que evita o flood de processos no turno interativo.
+    const turno = await tratarHook({ hook_event_name: 'UserPromptSubmit', session_id, prompt: 'Teste o token antes de substituir.', cwd: raiz, agent_id: 'automacao-ociosa', agent_type: 'background-subagent' }, env)
     assert.match(JSON.stringify(turno), /failure-dispatch-required/)
     const antes = (await acoesDeFerramenta(casa)).length
 

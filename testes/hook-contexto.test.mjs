@@ -66,7 +66,8 @@ function executarCli(input, env) {
   const execucao = spawnSync(process.execPath, [hookCli], {
     input: JSON.stringify(input),
     encoding: 'utf8',
-    env
+    env,
+    windowsHide: true
   })
   assert.equal(execucao.status, 0, execucao.stderr)
   return JSON.parse(execucao.stdout)
@@ -854,7 +855,7 @@ test('hook aplica a rota fast ou deep escolhida pelo contexto', async () => {
   }
 })
 
-test('candidata exige despacho ate SubagentStart confirmar o inicio real', async () => {
+test('candidata adia no turno do dono e despacha em contexto nao-interativo ate SubagentStart confirmar', async () => {
   const { raiz, env } = await ambiente()
   const session_id = 'sessao-automacao-falhas'
   try {
@@ -871,8 +872,18 @@ test('candidata exige despacho ate SubagentStart confirmar o inicio real', async
     for (let index = 1; index <= 3; index += 1) {
       await registrarFalha(env.OMNI_HOME, { ...failure, evidenceId: `hook-failure-${index}` })
     }
-    const turn = await tratarHook(
+    // Portão de sessão viva: no turno interativo do dono o despacho é ADIADO —
+    // nenhum executor nasce no meio do trabalho ao vivo (regressão da apresentação 13/10).
+    const adiado = await tratarHook(
       { hook_event_name: 'UserPromptSubmit', session_id, prompt: 'continue o trabalho' },
+      env
+    )
+    assert.doesNotMatch(adiado.hookSpecificOutput?.additionalContext ?? '', /AUTOMAÇÃO DE FALHAS|failure-dispatch-required/)
+    assert.equal((await lerCicloOperacional(env.OMNI_HOME)).delegations.length, 0)
+
+    // Contexto não-interativo (automação/ocioso): o mesmo estado despacha e o ciclo segue.
+    const turn = await tratarHook(
+      { hook_event_name: 'UserPromptSubmit', session_id, prompt: 'continue o trabalho', agent_id: 'automacao-ociosa', agent_type: 'background-subagent' },
       env
     )
     const context = turn.hookSpecificOutput.additionalContext
@@ -952,7 +963,7 @@ test('candidata exige despacho ate SubagentStart confirmar o inicio real', async
   }
 })
 
-test('terceira falha de ferramenta dispara o despacho sem esperar outro pedido', async () => {
+test('terceira falha de ferramenta no turno vivo do dono é adiada e não faz nascer executor', async () => {
   const { raiz, env } = await ambiente()
   const session_id = 'sessao-falha-imediata'
   try {
@@ -975,18 +986,12 @@ test('terceira falha de ferramenta dispara o despacho sem esperar outro pedido',
         cwd: raiz
       }, env)
     }
-    assert.equal(result.hookSpecificOutput.hookEventName, 'PostToolUseFailure')
-    assert.match(result.hookSpecificOutput.additionalContext, /<omni-ancora-compacta>/)
-    assert.match(result.hookSpecificOutput.additionalContext, /Inventor Cúmplice/)
-    assert.match(result.hookSpecificOutput.additionalContext, /AUTOMAÇÃO DE FALHAS/)
-    assert.match(result.hookSpecificOutput.additionalContext, /failure-dispatch-required/i)
-    assert.match(result.hookSpecificOutput.additionalContext, /delegação .* está visível/i)
-    assert.match(result.hookSpecificOutput.additionalContext, /attempts continua em zero.*não alega execução/i)
-    assert.match(result.hookSpecificOutput.additionalContext, /<\/failure-dispatch-briefing>/)
-    const cycle = await lerCicloOperacional(env.OMNI_HOME)
-    assert.equal(cycle.delegations.length, 1)
-    assert.equal(cycle.delegations[0].state, 'visible')
-    assert.equal(cycle.delegations[0].agentFingerprint, null)
+    // Portão de sessão viva: PostToolUse só arbitra no turno do dono, e ali o despacho
+    // é sempre ADIADO. A terceira falha NÃO faz nascer executor no meio do trabalho vivo —
+    // era isso que abria janelas de console na apresentação (13/10). A observação da falha
+    // já rodou acima do portão; só o despacho (spawn) espera contexto ocioso/não-interativo.
+    assert.doesNotMatch(JSON.stringify(result ?? {}), /AUTOMAÇÃO DE FALHAS|failure-dispatch-required/)
+    assert.equal((await lerCicloOperacional(env.OMNI_HOME)).delegations.length, 0)
   } finally {
     await rm(raiz, { recursive: true, force: true })
   }

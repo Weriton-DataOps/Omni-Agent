@@ -29,7 +29,7 @@ import {
 const cli = fileURLToPath(new URL('../runtime/cli.mjs', import.meta.url))
 
 function executar(args, env) {
-  const run = spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8', env })
+  const run = spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8', env, windowsHide: true })
   assert.equal(run.status, 0, run.stderr)
   return JSON.parse(run.stdout)
 }
@@ -636,7 +636,7 @@ test('operador recusa owner-intent sem turno ativo da sessao informada', async (
       '--destino', 'executor',
       '--prompt', 'Execute a tarefa.',
       '--sessao', 'sessao-inventada'
-    ], { encoding: 'utf8', env })
+    ], { encoding: 'utf8', env, windowsHide: true })
     assert.notEqual(run.status, 0)
     assert.match(JSON.parse(run.stdout).error, /turno auditado ativo/)
   } finally {

@@ -7,6 +7,8 @@ import { processarReleasePendenteMelhoria } from './automacao-melhorias.mjs'
 import { processarFilaEvalPersonalidade } from './executor-eval-personalidade.mjs'
 import { casaDoOmni } from './memoria.mjs'
 import { registrarTelemetriaAutocorrecao } from './telemetria-autocorrecao.mjs'
+import { sincronizarAprendizadoOperacional } from './sincronizacao-aprendizado-operacional.mjs'
+import { sincronizarMissoesDuraveis } from './sincronizacao-missoes-duraveis.mjs'
 import { varrerAtividadesDoDia } from './varredura-diaria.mjs'
 import { acquireLocalFileLock } from '../dist/adapters/local-json/node-local-file-lock.js'
 
@@ -78,6 +80,16 @@ export async function tratarHookVarredura(input, env = process.env, deps = {}) {
         {
           id: 'operational-release',
           run: () => (deps.processarReleasePendenteMelhoria ?? processarReleasePendenteMelhoria)(casa)
+        },
+        {
+          // Saíram do caminho quente do UserPromptSubmit (N+1 ao broker/PG, ~23s somados); aqui
+          // rodam off-turn e sob o lock de manutenção, que coalesce o enxame de sessões.
+          id: 'durable-missions',
+          run: () => (deps.sincronizarMissoesDuraveis ?? sincronizarMissoesDuraveis)(casa)
+        },
+        {
+          id: 'operational-learning',
+          run: () => (deps.sincronizarAprendizadoOperacional ?? sincronizarAprendizadoOperacional)(casa)
         }
       ]
       for (const stage of stages) {

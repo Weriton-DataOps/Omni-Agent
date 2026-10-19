@@ -23,15 +23,15 @@ test('successful primary tool continues queue after completed job, without dupli
     const child = await tratarHook({ ...tool('child'), agent_id: 'child-agent', agent_type: 'executor' }, env)
     assert.doesNotMatch(child.hookSpecificOutput?.additionalContext ?? '', /failure-dispatch-required/)
     const first = await tratarHook(tool('primary-one'), env)
-    assert.match(first.hookSpecificOutput.additionalContext, /failure-dispatch-required/)
+    assert.match(first.hookSpecificOutput?.additionalContext ?? '', /failure-dispatch-required/)
     const pending = await tratarHook(tool('primary-two'), env)
-    assert.doesNotMatch(pending.hookSpecificOutput.additionalContext, /failure-dispatch-required/)
+    assert.doesNotMatch(pending.hookSpecificOutput?.additionalContext ?? '', /failure-dispatch-required/)
     let jobs = (await lerAutomacaoFalhas(env.OMNI_HOME)).jobs
     const job = jobs.find(j => j.dispatchState === 'requested')
     assert.equal(jobs.filter(j => j.dispatchState === 'requested').length, 1)
     await tratarHook({ hook_event_name: 'SubagentStart', session_id, agent_id: 'actual-executor', delegation_id: job.delegationId }, env)
     const busy = await tratarHook(tool('primary-busy'), env)
-    assert.doesNotMatch(busy.hookSpecificOutput.additionalContext, /failure-dispatch-required/)
+    assert.doesNotMatch(busy.hookSpecificOutput?.additionalContext ?? '', /failure-dispatch-required/)
     const analysis = await analisarPadraoFalha(env.OMNI_HOME, job.patternId, { rootCause: 'test fixture dependency unavailable', hypothesis: 'verify dependency readiness first' })
     const binding = vinculoVerificacaoFalha(analysis.pattern, job.id)
     for (let i = 0; i < 2; i++) {
@@ -43,7 +43,7 @@ test('successful primary tool continues queue after completed job, without dupli
     assert.equal((await avaliarPadraoFalha(env.OMNI_HOME, job.patternId)).result, 'passed')
     assert.equal((await concluirAutomacaoFalha(env.OMNI_HOME, job.id, 'test-fixture-proof')).result, 'completed')
     const next = await tratarHook(tool('completion-readback'), env)
-    assert.match(next.hookSpecificOutput.additionalContext, /failure-dispatch-required/)
+    assert.match(next.hookSpecificOutput?.additionalContext ?? '', /failure-dispatch-required/)
     jobs = (await lerAutomacaoFalhas(env.OMNI_HOME)).jobs
     assert.equal(jobs.filter(j => j.state === 'completed').length, 1)
     assert.equal(jobs.filter(j => j.dispatchState === 'requested').length, 1)

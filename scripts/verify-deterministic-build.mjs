@@ -34,7 +34,8 @@ async function build() {
   await cleanBuildTargets(['--dist'])
   const result = spawnSync(process.execPath, [tscPath, '-p', 'tsconfig.build.json'], {
     cwd: workspaceRoot,
-    encoding: 'utf8'
+    encoding: 'utf8',
+    windowsHide: true
   })
   if (result.status !== 0) {
     process.stderr.write(result.stdout)

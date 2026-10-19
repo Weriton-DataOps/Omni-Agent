@@ -24,8 +24,6 @@ import { contextoFluxosOvercore } from './overcore-task-flow.mjs'
 import { casaDoOmni } from './memoria.mjs'
 import { processarExperiencia } from './pipeline-memoria.mjs'
 import { sincronizarMemoriaDuravel } from './sincronizacao-memoria-duravel.mjs'
-import { sincronizarMissoesDuraveis } from './sincronizacao-missoes-duraveis.mjs'
-import { sincronizarAprendizadoOperacional } from './sincronizacao-aprendizado-operacional.mjs'
 import { lerPersonalidadeAtiva } from './personalidade.mjs'
 import { resumirFeedbackPersonalidade } from './feedback-personalidade.mjs'
 import { recibosAtivos, resumoParaRadar } from './recibos-evolucao.mjs'
@@ -337,7 +335,25 @@ export async function tratarHook(input, env = process.env, { contextOnly = false
     return saidaVazia()
   }
 
-  let estadoSessao = await activationStore.isSessionActive(input)
+  // Uma automação não-interativa chega como UserPromptSubmit marcado com agent_id/agent_type para
+  // pedir despacho FORA do turno do dono — o árbitro lá embaixo lê exatamente esses campos como
+  // interactiveOwnerSession=false. Ela roda DENTRO da sessão que o dono já ativou (mesmo session_id);
+  // não é subagente de verdade, que já foi tratado e retornou acima (284-336). isPrimaryClaudeScope()
+  // zera o marcador de sessão quando há campo de agente, então a VIVACIDADE é resolvida pela visão
+  // primária do MESMO session_id — só na LEITURA (isSessionActive). As escritas ficam em `input`: um
+  // turno etiquetado NUNCA persiste escopo de cwd (invariante "ativação por cwd é só de sessão
+  // principal"). E lá no fim o portão de emissão garante que esse turno só devolve contexto quando há
+  // despacho; senão saidaVazia, pra não herdar a personalidade do dono (mesma regra do subagente, 282).
+  // Sidechain fica DE FORA: é conversa lateral exploratória, não a automação, e segue abortando antes.
+  const turnoNaoInterativo = input.hook_event_name === 'UserPromptSubmit'
+    && input.isSidechain !== true && input.is_sidechain !== true
+    && ['agent_id', 'agent_type', 'subagent_id', 'delegation_id'].some(
+      (campo) => typeof input[campo] === 'string' && input[campo].trim()
+    )
+  const entradaDaSessao = turnoNaoInterativo
+    ? { ...input, agent_id: undefined, agent_type: undefined, subagent_id: undefined, delegation_id: undefined }
+    : input
+  let estadoSessao = await activationStore.isSessionActive(entradaDaSessao)
   if (!estadoSessao.ativa && input.hook_event_name === 'UserPromptSubmit') {
     const escopo = await activationStore.isScopeActive(input)
     if (escopo.ativa) {
@@ -381,7 +397,8 @@ export async function tratarHook(input, env = process.env, { contextOnly = false
         () => contextoProximaAutomacaoClaude(casa, {
           sessionId: input.session_id,
           hookEventName: input.hook_event_name,
-          onlyIfIdle: input.hook_event_name === 'PostToolUse'
+          onlyIfIdle: input.hook_event_name === 'PostToolUse',
+          interactiveOwnerSession: true
         }),
         falhas
       )
@@ -447,10 +464,9 @@ export async function tratarHook(input, env = process.env, { contextOnly = false
   ])
   if (!contextOnly) await tentarComponente('aprendizado-operacional', () => ativarAprendizadosOperacionais(casa), falhas)
   const memorySync = contextOnly ? null : await tentarComponente('sincronizacao-memoria-duravel', () => sincronizarMemoriaDuravel(casa), falhas)
-  if (!contextOnly) {
-    await tentarComponente('sincronizacao-missoes-duraveis', () => sincronizarMissoesDuraveis(casa), falhas)
-    await tentarComponente('sincronizacao-aprendizado-operacional', () => sincronizarAprendizadoOperacional(casa), falhas)
-  }
+  // Replicação durável de missões e aprendizado operacional saiu daqui: eram ~23s de N+1 ao
+  // broker/PG no caminho quente de cada UserPromptSubmit (decapitados pelo timeout de 10s do hook).
+  // Agora rodam na hook-varredura (async, SessionStart/Stop), sob lock que coalesce o enxame.
   if (observacaoPrompt?.observationFailure?.result === 'failed') {
     falhas.push({
       nome: 'observador-prompt-operacional',
@@ -484,7 +500,8 @@ export async function tratarHook(input, env = process.env, { contextOnly = false
       'arbitro-automacoes',
       () => contextoProximaAutomacaoClaude(casa, {
         sessionId: input.session_id,
-        hookEventName: input.hook_event_name
+        hookEventName: input.hook_event_name,
+        interactiveOwnerSession: !input.agent_id && !input.subagent_id && !input.agent_type
       }),
       falhas
     ),
@@ -495,6 +512,12 @@ export async function tratarHook(input, env = process.env, { contextOnly = false
     ),
     tentarComponente('tarefas-externas', () => contextoFluxosOvercore(casa, input.session_id, env, input.prompt), falhas)
   ])
+  // Portão de emissão: o turno etiquetado só chegou até aqui para que o árbitro pudesse despachar uma
+  // automação pendente. Sem despacho (`automacao.context` vazio) ele não é o loop do Omni e sim um
+  // executor/delegação reutilizando a sessão — e esse não herda personalidade nem projeção do dono.
+  if (turnoNaoInterativo && !automacao?.context) {
+    return saidaVazia()
+  }
   let projecao = null
   const rota = contexto?.routing?.selected
   const rotaDaProjecao = automacao?.context ? 'fast' : rota
