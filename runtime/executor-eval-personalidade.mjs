@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdir, open, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises'
+import { mkdir, open, readFile, rename, rm, stat, unlink, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createCandidateSnapshot, verifyCandidateSnapshot } from '../scripts/create-candidate-snapshot.mjs'
@@ -483,6 +483,8 @@ async function capturarFonteCanonica(root, repository, { allowSnapshot = false }
   if (initialChanges.length > 0) {
     if (allowSnapshot) {
       const parent = join(root, 'out', 'eval-candidates')
+      // Quem chama segura o lock da fila: o que estiver aqui sobrou de rodada que morreu no meio.
+      await rm(parent, { recursive: true, force: true })
       await mkdir(parent, { recursive: true })
       const captured = await createCandidateSnapshot(root, join(parent, randomUUID()))
       await verifyCandidateSnapshot(captured.destination)
@@ -1144,6 +1146,12 @@ export async function processarFilaEvalPersonalidade(options = {}) {
         }
       })
       return { result: 'retry-scheduled', triggerFingerprint, retryAt: retryAtIso }
+    } finally {
+      // O snapshot so serve a esta rodada (o estado guarda o fingerprint, nao a copia); 38 deles
+      // esquecidos encheram o C: em 22/10/2026. Se a remocao falhar, a varredura da proxima rodada pega.
+      if (evaluatedSource?.snapshotDestination) {
+        await rm(evaluatedSource.snapshotDestination, { recursive: true, force: true }).catch(() => {})
+      }
     }
   } finally {
     await release()
