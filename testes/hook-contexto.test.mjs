@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 
+import { NodeAccessBrokerClient } from '../dist/adapters/windows/node-access-broker-client.js'
 import { caminhoDaAutomacaoFalhas } from '../runtime/automacao-falhas.mjs'
 import {
   contextoAdicional,
@@ -510,6 +511,19 @@ test('chamada implícita da Skill Omni ativa a sessão sem autoaprovar a ferrame
 test('contexto deep permanece inline e preserva personalidade e ajuste explícito', async () => {
   const { raiz, env } = await ambiente()
   const session_id = 'sessao-contexto-inline'
+  // Broker de mentira: com o pipe real o teste gravava memória e missão de teste
+  // no broker da máquina; sem ele (CI) o aviso de degradação estourava o orçamento.
+  const broker = NodeAccessBrokerClient.prototype
+  const originais = {
+    importMemoryBatch: broker.importMemoryBatch,
+    upsertMission: broker.upsertMission,
+    recordOperationalLearningFinding: broker.recordOperationalLearningFinding,
+    listActiveMissions: broker.listActiveMissions
+  }
+  broker.importMemoryBatch = async () => 'applied'
+  broker.upsertMission = async () => 'applied'
+  broker.recordOperationalLearningFinding = async () => 'recorded'
+  broker.listActiveMissions = async () => []
   try {
     for (let index = 0; index < 14; index += 1) {
       await lembrarExplicitamente(
@@ -554,6 +568,7 @@ test('contexto deep permanece inline e preserva personalidade e ajuste explícit
     assert.match(contexto, /Responda ao pedido atual como Omni/)
     assert.ok(contexto.trimEnd().endsWith('</omni-contexto-interno>'))
   } finally {
+    Object.assign(broker, originais)
     await rm(raiz, { recursive: true, force: true })
   }
 })
