@@ -13,6 +13,11 @@ $registro = Join-Path $logs 'iniciar.log'
 function Anotar([string]$texto) { Add-Content -Encoding utf8 $registro ((Get-Date -Format s) + ' ' + $texto) }
 $node = (Get-Command node).Source
 
+# Logon, vigia-servico.mjs e sessão podem chamar juntos: dois olhando a porta vazia ao mesmo tempo subiriam dois
+# serviços no mesmo creds. Um espera o outro; a trava cai sozinha quando o processo sai (abandonada = liberada).
+$fila = New-Object System.Threading.Mutex($false, 'Local\omni-whatsapp-iniciar')
+try { [void]$fila.WaitOne(300000) } catch { }
+
 # 1) Serviço
 $ouvindo = Get-NetTCPConnection -LocalAddress 127.0.0.1 -LocalPort 2785 -State Listen -ErrorAction SilentlyContinue
 if ($ouvindo) {

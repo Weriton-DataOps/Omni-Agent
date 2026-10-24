@@ -17,3 +17,14 @@ out/
 /sessions/
 /audio/
 /evidence/
+
+# Bancada da ilha: arte gerada (frames, videos, malhas) fica fora do git e, por tabela, do snapshot de
+# cada rodada de eval (1,3 GB por copia encheu o C: em 22/10/2026). Codigo e paginas da bancada seguem.
+/apps/omni-ilha/bancada/**/*.png
+/apps/omni-ilha/bancada/**/*.mp4
+/apps/omni-ilha/bancada/**/*.gif
+/apps/omni-ilha/bancada/**/*.webp
+/apps/omni-ilha/bancada/**/*.glb
+/apps/omni-ilha/bancada/**/*.npy
+/apps/omni-ilha/bancada/**/*.bin
+/apps/omni-ilha/bancada/**/*.pyc

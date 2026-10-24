@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { appendFile, cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { appendFile, cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -28,7 +28,8 @@ function candidateFixtureFilter(source) {
   // node_modules em qualquer nível: apps/ e servicos/whatsapp têm os seus (~1,6 GB juntos) e,
   // copiados a cada teste, esgotaram o disco em 29/09/2026 (ENOSPC).
   if (segments.includes('node_modules')) return false
-  return !['.git', '.npm-cache', '.codex-tmp', 'out', '.test-dist', '.claude', '.codex', '.agents', '.runtime', 'memory', 'sessions', 'audio', 'evidence'].includes(segments[0])
+  // apps/ fora do payload: a bancada da ilha (~1,3 GB de arte) ia junto em cada fixture.
+  return !['.git', '.npm-cache', '.codex-tmp', 'out', '.test-dist', '.claude', '.codex', '.agents', '.runtime', 'memory', 'sessions', 'audio', 'evidence', 'apps'].includes(segments[0])
 }
 
 function inicializarGit(repo) {
@@ -592,10 +593,48 @@ test('fonte canônica suja é avaliada em snapshot sem publicar ou limpar trabal
     assert.equal(state.last.phase, 'promotion-retry')
     assert.match(state.last.snapshotFingerprint, /^[a-f0-9]{64}$/)
     assert.equal(state.last.rawResponsesStored, false)
+    assert.deepEqual(await readdir(join(canonicalRoot, 'out', 'eval-candidates')).catch(() => []), [])
     const callsAfterMeasurement = calls
     const resumed = await processarFilaEvalPersonalidade({ casa, policyRoot: rootPath, now: Date.now() + 2 * HOUR, invoke: async () => { throw new Error('must reuse measurement') }, prepareRelease: async () => { throw new Error('must not publish dirty source') } })
     assert.equal(resumed.result, 'awaiting-reviewed-source')
     assert.equal(calls, callsAfterMeasurement)
+    assert.match(await readFile(join(canonicalRoot, 'runtime', 'personalidade.mjs'), 'utf8'), /alteracao ainda nao estabilizada/)
+  } finally {
+    await rm(casa, { recursive: true, force: true })
+    await rm(fixtureRoot, { recursive: true, force: true })
+  }
+})
+
+test('rodada que quebra não deixa snapshot e varre o que um crash anterior largou', async () => {
+  // 38 snapshots esquecidos em out/eval-candidates encheram o C: em 22/10/2026 e derrubaram o WhatsApp.
+  const casa = await mkdtemp(join(tmpdir(), 'omni-auto-personality-snapshot-leak-home-'))
+  const fixtureRoot = await mkdtemp(join(tmpdir(), 'omni-auto-personality-snapshot-leak-repo-'))
+  const canonicalRoot = join(fixtureRoot, 'plugin')
+  try {
+    await cp(rootPath, canonicalRoot, {
+      recursive: true,
+      filter: candidateFixtureFilter
+    })
+    const payload = await calcularFingerprintPayload(canonicalRoot)
+    const integrityPath = join(canonicalRoot, 'contratos', 'atualizacao', 'integridade.json')
+    const integrity = JSON.parse(await readFile(integrityPath, 'utf8'))
+    integrity.identity.releaseFingerprint = payload.fingerprint
+    await writeFile(integrityPath, `${JSON.stringify(integrity, null, 2)}\n`, 'utf8')
+    inicializarGit(canonicalRoot)
+    await configurarRepositorioCanonico(casa, canonicalRoot)
+    await appendFile(join(canonicalRoot, 'runtime', 'personalidade.mjs'), '\n// alteracao ainda nao estabilizada\n', 'utf8')
+    const orphan = join(canonicalRoot, 'out', 'eval-candidates', 'rodada-que-morreu-no-meio', 'source')
+    await mkdir(orphan, { recursive: true })
+    await writeFile(join(orphan, 'restos.txt'), 'snapshot de uma rodada que nunca terminou\n', 'utf8')
+
+    const result = await processarFilaEvalPersonalidade({
+      casa,
+      policyRoot: rootPath,
+      invoke: async () => { throw new Error('claude fora do ar') },
+      prepareRelease: async () => { throw new Error('must not publish dirty source') }
+    })
+    assert.equal(result.result, 'retry-scheduled')
+    assert.deepEqual(await readdir(join(canonicalRoot, 'out', 'eval-candidates')), [])
     assert.match(await readFile(join(canonicalRoot, 'runtime', 'personalidade.mjs'), 'utf8'), /alteracao ainda nao estabilizada/)
   } finally {
     await rm(casa, { recursive: true, force: true })
