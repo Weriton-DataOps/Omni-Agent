@@ -369,6 +369,14 @@
         "Veto pelo dono: novos comandos de CLI recibo-listar, recibos-radar e recibo-vetar <id>. O veto despacha a reversao propria de cada estrategia (des-confirma memoria, supersede de personalidade, remove capacidade); git-revert/contract-revert nao rodam git e devolvem o commit e a instrucao para o dono confirmar a publicacao.",
         "Personalidade: caso canonico novo concisao-com-presenca-e-imagem cobre o candidato aprendido de respostas concisas com presenca e imagem mental, destravando o gate learned-candidates-resolved; a promocao concluida grava um recibo personality (reversivel por personality-supersede). chunkSize do runner ajustado de 28 para 29 para a suite caber em um unico chunk."
       ]
+    },
+    {
+      "version": "0.25.5",
+      "changes": [
+        "Eval de personalidade: o snapshot da fonte canonica suja (out/eval-candidates) passa a ser apagado ao fim de cada rodada, inclusive quando ela quebra, e a rodada seguinte varre o que um crash anterior largou. Antes cada rodada deixava ~113 MB para tras; 38 snapshots esquecidos encheram o disco C: em 22/10/2026 e zeraram o creds.json do bot do WhatsApp.",
+        "Hook PostToolUse so emite contexto quando ha sinal novo (automacao pendente ou degradacao); a ancora de personalidade fica no SessionStart e na recompactacao, em vez de ~1,6 KB gravados na transcricao a cada chamada de ferramenta.",
+        "Observador reconhece agent-message como involucro nao-dono: relato de subagente deixa de virar correcao do dono e de realimentar a automacao de falhas (padrao 99c6, ~25 geracoes de ~100k tokens cada)."
+      ]
     }
   ]
 }
