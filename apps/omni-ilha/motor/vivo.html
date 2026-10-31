@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'">
+<title>Omni vivo</title>
+<style>
+  :root { --fundo: #080a10; --texto: #8a93a6; }
+  html, body { margin: 0; height: 100%; background: var(--fundo); overflow: hidden; }
+  body { display: grid; place-items: center; }
+  canvas { display: block; }
+  #erro { position: fixed; left: 16px; bottom: 16px; color: #f88; font: 13px/1.4 system-ui, sans-serif; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<!-- O Omni vivo: idle sempre ligado (ruído lento em yaw/pitch/roll, sacadas de atenção, respiração).
+     O mouse puxa o olhar: a posição soma na camada manual e as molas suavizam. Abre por file://. -->
+<canvas id="c"></canvas>
+<div id="erro"></div>
+<script src="modelo/texturas/pacote-modelo.js"></script>
+<script src="modelo/texturas/pacote.js"></script>
+<script src="nucleo/gl.js"></script>
+<script src="nucleo/relogio.js"></script>
+<script src="rig/parametros.js"></script>
+<script src="rig/fisica.js"></script>
+<script src="rig/idle.js"></script>
+<script src="render/shaders.js"></script>
+<script src="omni.js"></script>
+<script>
+  (async function () {
+    'use strict';
+    const FUNDO = [8 / 255, 10 / 255, 16 / 255, 1];
+    const canvas = document.getElementById('c');
+    function ajusta() {
+      const lado = Math.floor(Math.min(innerWidth, innerHeight));
+      const dpr = window.devicePixelRatio || 1;
+      canvas.style.width = canvas.style.height = lado + 'px';
+      canvas.width = canvas.height = Math.round(lado * dpr);
+    }
+    ajusta();
+    addEventListener('resize', ajusta);
+    try {
+      const omni = await OMNI.criar({ canvas });
+      omni.cena({ idle: { periodo: 120 } });
+      // olhar do mouse: centro da janela = 0; borda = 0,7 do alcance (o idle continua por cima)
+      const olhar = { x: 0, y: 0 };
+      addEventListener('pointermove', (e) => {
+        olhar.x = Math.max(-1, Math.min(1, (e.clientX / innerWidth - 0.5) * 2)) * 0.7;
+        olhar.y = Math.max(-1, Math.min(1, (e.clientY / innerHeight - 0.5) * 2)) * 0.7;
+        omni.definir('AnguloX', olhar.x);
+        omni.definir('AnguloY', olhar.y);
+      });
+      document.documentElement.addEventListener('pointerleave', () => { omni.definir('AnguloX', 0); omni.definir('AnguloY', 0); });
+      let quadros = 0;
+      omni.rodar({
+        fundo: FUNDO,
+        aoQuadro(t) {
+          quadros++;
+          {
+            const e = omni.estado(t);
+            window.OMNI_VIVO_ESTADO = { t: +t.toFixed(3), quadros, valores: e.valores, cabecaGraus: e.cabeca.map((a) => +(a * 180 / Math.PI).toFixed(2)) };
+          }
+        },
+      });
+    } catch (e) {
+      document.getElementById('erro').textContent = String((e && e.stack) || e);
+      console.error(e);
+    }
+  })();
+</script>
+</body>
+</html>

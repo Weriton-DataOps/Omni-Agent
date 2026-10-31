@@ -1,0 +1,38 @@
+{
+  "pixelsComAlfa": 873471,
+  "fracaoComAlfa": 0.5555,
+  "sobrePreto": {
+    "fracaoAte3": 1,
+    "difMax": 1,
+    "difMedia": 0.01606,
+    "pixelsIguais": 832335,
+    "pixelsDif1": 41136,
+    "pixelsDif2": 0,
+    "pixelsDif3": 0,
+    "pixelsDifMaior3": 0,
+    "psnrDb": 66.072,
+    "mse": 0.01606464324516784,
+    "alfaDifMax": 0
+  },
+  "sobreBranco": {
+    "fracaoAte3": 1,
+    "difMax": 1,
+    "difMedia": 0.01606,
+    "pixelsIguais": 832335,
+    "pixelsDif1": 41136,
+    "pixelsDif2": 0,
+    "pixelsDif3": 0,
+    "pixelsDifMaior3": 0,
+    "psnrDb": 66.072,
+    "mse": 0.01606464324516784
+  },
+  "criterio": "dif <= 3/255 em >= 99,9% dos pixels com alfa > 0 e PSNR >= 45 dB, sobre preto e sobre branco",
+  "passou": true,
+  "renderPoseIgualRenderT": true,
+  "placa": "ANGLE (NVIDIA, NVIDIA GeForce GTX 1650 (0x00001F9D) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+  "resolucao": [
+    1254,
+    1254
+  ],
+  "medidoEm": "2026-10-19T16:37:53.318Z"
+}

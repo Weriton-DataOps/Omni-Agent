@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'">
+
+<title>Palco das provas</title>
+<style>html, body { margin: 0; background: #000; }</style>
+</head>
+<body>
+<!-- Página escondida que o gravar.js abre: carrega o motor e roda uma prova (?tarefa=nome). -->
+<canvas id="c" width="16" height="16"></canvas>
+<script src="../modelo/texturas/pacote-modelo.js"></script>
+<script src="../modelo/texturas/pacote.js"></script>
+<script src="../nucleo/gl.js"></script>
+<script src="../nucleo/relogio.js"></script>
+<script src="../rig/parametros.js"></script>
+<script src="../rig/fisica.js"></script>
+<script src="../rig/idle.js"></script>
+<script src="../render/shaders.js"></script>
+<script src="../omni.js"></script>
+<script src="comum.js"></script>
+<script>
+  (function () {
+    const { ipcRenderer } = require('electron');
+    const tarefa = PROVAS.consulta.get('tarefa');
+    const s = document.createElement('script');
+    s.src = tarefa + '.js';
+    s.onerror = () => ipcRenderer.send('fim', { ok: false, erro: 'prova inexistente: ' + tarefa });
+    s.onload = async () => {
+      try {
+        const modelo = JSON.parse(JSON.stringify(window.OMNI_MODELO));
+        const graus = PROVAS.consulta.get('graus');
+        if (graus) for (const p of modelo.parametros) if (p.id === 'AnguloX') p.graus = Number(graus);
+        const omni = await OMNI.criar({ canvas: document.getElementById('c'), modelo });
+        const r = await window.PROVA(omni, PROVAS);
+        ipcRenderer.send('fim', { ok: true, r });
+      } catch (e) {
+        ipcRenderer.send('fim', { ok: false, erro: String((e && e.stack) || e) });
+      }
+    };
+    document.body.appendChild(s);
+  })();
+</script>
+</body>
+</html>

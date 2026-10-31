@@ -1,0 +1,51 @@
+{
+  "criterio": "duas gravações da cena do giro idênticas byte a byte (quadros RGBA e mp4) e laço fechado: quadro em t = 8 s igual ao quadro 0",
+  "cena": {
+    "duracaoS": 8,
+    "fps": 30,
+    "quadros": 240,
+    "resolucao": [
+      1254,
+      1254
+    ],
+    "codificador": "libx264 crf 16, 1 thread, bitexact"
+  },
+  "gravacoes": {
+    "quadrosIguais": 240,
+    "de": 240,
+    "mp4": {
+      "a": "296be01b7b53f267fc10ae80ceeb5ae8716499e62d3b05d8d3c83ad1e7877ff1",
+      "b": "296be01b7b53f267fc10ae80ceeb5ae8716499e62d3b05d8d3c83ad1e7877ff1",
+      "iguais": true
+    },
+    "primeiroQuadro": "28f8f71e393d3f4de08e6d8a311afefdd235311446040b26f1a45ca69713a610",
+    "ultimoQuadro": "012c5ac1a015f913960c0dca2896148755a67cd93c61d0459cf14600b53fa369"
+  },
+  "execucaoAnterior": {
+    "gravadoEm": "2026-10-19T16:33:30.347Z",
+    "quadrosIguais": 240,
+    "mp4Igual": true
+  },
+  "laco": {
+    "quadro240VsQuadro0": {
+      "difMax": 0,
+      "difMedia": 0,
+      "pixelsDiferentes": 0,
+      "iguais": true
+    },
+    "estadoRigDifMax_t0_t8": 1.6653345369377348e-16,
+    "saltoUltimoParaPrimeiro": 2.4251,
+    "saltoEntreVizinhos": {
+      "mediana": 2.1907,
+      "p95": 6.6241,
+      "max": 9.7337
+    },
+    "idle10sVsQuadro0": {
+      "difMax": 0,
+      "pixelsDiferentes": 0,
+      "iguais": true
+    }
+  },
+  "passou": true,
+  "medidoEm": "2026-10-19T16:38:39.908Z"
+}

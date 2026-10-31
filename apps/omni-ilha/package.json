@@ -1,0 +1,10 @@
+{
+  "name": "omni-ilha",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Demo descartável: faixa no topo da tela com as sessões do Claude Code (ponto Omni Desktop, Actions).",
+  "main": "main.js",
+  "scripts": {
+    "start": "..\\omni-desktop\\node_modules\\electron\\dist\\electron.exe ."
+  }
+}

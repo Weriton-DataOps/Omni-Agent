@@ -1,0 +1,14 @@
+{
+  "ren": "ANGLE (NVIDIA, NVIDIA GeForce GTX 1650 (0x00001F9D) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+  "px": [
+    51,
+    102,
+    153,
+    255
+  ],
+  "timer": true,
+  "maxTextura": 16384,
+  "vtf": 16,
+  "gtx1650": true,
+  "passou": true
+}
