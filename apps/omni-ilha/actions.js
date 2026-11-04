@@ -16,7 +16,8 @@
   const abaProjetos = document.getElementById('aba-projetos');
   const abaExecucoes = document.getElementById('aba-execucoes');
   const execsEl = document.getElementById('tela-execucoes');
-  let execProjeto = null; // card de projeto com a caixa de executar aberta  let mesa = null;
+  let execProjeto = null; // card de projeto com a caixa de executar aberta
+  let mesa = null;
   let ativo = null;
   let aba = 'ideias';
   let aberto = null; // formulário de veredito aberto: `${lugar}:${slug}:${tipo}`
