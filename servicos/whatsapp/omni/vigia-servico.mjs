@@ -11,10 +11,11 @@
 //     e calado não é morto aqui: pode estar subindo, e a subida leva até ~3 min;
 //   · bot: sessão fora de 'ready' é coisa que o WhatsApp não consegue contar, então vira aviso na tela do PC.
 // Problema só vira aviso na tela depois de duas rodadas seguidas, e uma vez por queda.
+// De carona (04/11): de 15 em 15 min roda a vigia-pedidos.mjs (pedido parado, trava de sessão morta).
 //
 //   node vigia-servico.mjs          → confere e age (uso do agendador)
 //   node vigia-servico.mjs --teste  → diz o que faria, sem religar, avisar ou gravar estado
-import { appendFileSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statfsSync, statSync, writeFileSync } from 'node:fs'
+import { appendFileSync, closeSync, copyFileSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, rmSync, statfsSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
@@ -29,6 +30,8 @@ const ESTADO = arquivo('vigia-servico.json')
 const LOGS = join(RUN, 'logs')
 const QUEDAS = join(LOGS, 'quedas')
 const INICIAR = fileURLToPath(new URL('./iniciar.ps1', import.meta.url))
+const VIGIA_PEDIDOS = fileURLToPath(new URL('./vigia-pedidos.mjs', import.meta.url))
+const PEDIDOS_MS = 15 * 60_000
 const powershell = join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
 const teste = process.argv.includes('--teste')
 
@@ -165,8 +168,25 @@ if (problema && problema.chave === estado.problema) estado.rodadas = (estado.rod
 else { estado.problema = problema?.chave ?? null; estado.rodadas = problema ? 1 : 0; estado.avisadoNaTela = false }
 if (problema && estado.rodadas >= 2 && !estado.avisadoNaTela) { avisarNaTela(problema.texto); estado.avisadoNaTela = true }
 
+// 4) Vigia de pedidos (04/11): pega carona nesta rodada de 15 em 15 min em vez de ter tarefa própria no
+// Agendador. Só com o WhatsApp de pé, que é por onde ela avisa; a folga de 30 s absorve o atraso do relógio.
+let pedidos = 'aguardando'
+if (vivo && !religado && Date.now() - (estado.vigiaPedidosEm || 0) >= PEDIDOS_MS - 30_000) {
+  if (teste) pedidos = 'rodaria'
+  else {
+    estado.vigiaPedidosEm = Date.now()
+    const log = openSync(join(LOGS, 'vigia-pedidos.log'), 'a')
+    try {
+      const r = spawnSync(process.execPath, [VIGIA_PEDIDOS], { stdio: ['ignore', log, log], windowsHide: true, timeout: 5 * 60_000 })
+      pedidos = r.status === 0 ? 'rodou' : `falhou (${r.status ?? r.error?.message})`
+    } finally { closeSync(log) }
+    if (pedidos !== 'rodou') anotar(`vigia de pedidos ${pedidos} (detalhe em vigia-pedidos.log)`)
+  }
+}
+
 if (!teste) writeFileSync(ESTADO, JSON.stringify(estado, null, 2))
 console.log(JSON.stringify({
+  pedidos,
   livreGB: Number(livre.toFixed(1)),
   servico: vivo ? 'responde' : p.servico ? 'calado' : 'fora',
   ponte: p.ponte ? 'viva' : 'fora',
