@@ -95,6 +95,15 @@ function posicionar() {
   registrarLimites();
 }
 
+// Vigia do topo (04/11): o Windows rebaixou a ilha pra baixo do VS Code/Teams/Chrome com a marca TOPMOST ainda
+// acesa (pilha medida: ilha na 24ª, abaixo de janelas normais). O setAlwaysOnTop só rodava ao nascer e ao trocar
+// de tela, então nada a puxava de volta. A cada 2 s reafirma (SetWindowPos HWND_TOPMOST, sem ativar nem mover).
+const TOPO_MS = 2000;
+function reafirmarTopo() {
+  if (!janela || janela.isDestroyed() || !janela.isVisible()) return;
+  janela.setAlwaysOnTop(true, 'screen-saver');
+}
+
 function definirIgnorar(valor) {
   ignorando = valor;
   if (janela && !janela.isDestroyed()) janela.setIgnoreMouseEvents(valor);
@@ -229,7 +238,8 @@ if (trava) app.whenReady().then(() => {
     });
   }
 
-  janela.on('closed', () => { clearTimeout(sonda); janela = null; });
+  const vigiaTopo = ESCONDIDA ? null : setInterval(reafirmarTopo, TOPO_MS);
+  janela.on('closed', () => { clearTimeout(sonda); clearInterval(vigiaTopo); janela = null; });
   janela.webContents.on('render-process-gone', aoCair);
 
   const query = { faixa: String(FAIXA), folga: String(FOLGA), largura: String(LARGURA_ABERTA) };
