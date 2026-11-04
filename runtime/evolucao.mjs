@@ -12,6 +12,15 @@ import { verificarIntegridadeRelease } from './integridade-release.mjs'
 import { pareceConterSegredo } from './memoria.mjs'
 import { resolverImplementacaoOperacionalAuditoria } from './auditoria-autocorrecao.mjs'
 import { validarSuite } from './eval-personalidade.mjs'
+import { registrarRecibo } from './recibos-evolucao.mjs'
+
+// Materializações que viram conhecimento ativo local (regra, procedimento, caso de eval) entram
+// no ledger recibo-com-veto. Personalidade fica de fora aqui: ela tem o próprio fluxo revisado.
+const RECIBO_POR_DESTINO_OPERACIONAL = Object.freeze({
+  'operational-rule': 'operational-rule',
+  procedure: 'procedure',
+  eval: 'eval'
+})
 
 const CONFIG_SCHEMA_VERSION = 1
 
@@ -288,6 +297,21 @@ export async function materializarMelhoriaOperacional(casa, id, repoRoot) {
       status: 'materialized-pending-release',
       artifactRef: reference
     })
+    const reciboKind = RECIBO_POR_DESTINO_OPERACIONAL[candidate.destination]
+    if (reciboKind) {
+      try {
+        // contract-revert não roda git aqui: a reversão concreta do contrato fica no portão humano.
+        await registrarRecibo(casa, {
+          kind: reciboKind,
+          summary: `Incorporei localmente ${candidate.destination}: "${String(candidate.statement ?? '').slice(0, 180)}"`,
+          reason: `Melhoria operacional ${id} materializada em ${portablePath} após evidência repetida.`,
+          subjectId: id,
+          revert: { strategy: 'contract-revert', ref: `${portablePath}#${id}` }
+        })
+      } catch {
+        // Retrovisor opcional: um recibo que não grava não pode desfazer a materialização.
+      }
+    }
     return {
       result: 'materialized-pending-release',
       candidateId: id,

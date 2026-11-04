@@ -52,6 +52,22 @@
         "caseId": "acao-segura-evidente-sem-oferta-generica"
       },
       "learnedAt": "2026-08-28T17:45:24.804Z"
+    },
+    {
+      "id": "improvement-b5cc79fb-701b-4bd8-8f48-9ba7c8a72ce9",
+      "category": "conversation-eval",
+      "destination": "personality",
+      "text": "Dar respostas concisas com presença, contexto e uma imagem mental natural quando isso ajudar.",
+      "evidence": {
+        "occurrences": 16,
+        "fingerprint": "cf8789e63a4a0fa733ecc2e4d7605ad257da0546ce5a50a7781161fb534954e3"
+      },
+      "status": "candidate",
+      "readiness": "covered-by-canonical-case",
+      "scenario": {
+        "caseId": "concisao-com-presenca-e-imagem"
+      },
+      "learnedAt": "2026-09-12T00:00:00.000Z"
     }
   ]
 }

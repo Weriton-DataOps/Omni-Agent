@@ -1,4 +1,5 @@
 import { pareceConterSegredo, registrarMemoriaAnalisada } from './memoria.mjs'
+import { registrarRecibo } from './recibos-evolucao.mjs'
 import { ownerStatement } from '../dist/core/personality/owner-feedback.js'
 import { declaredProjectFact, isTransientMemory } from '../dist/core/memory/extraction-signals.js'
 
@@ -139,8 +140,28 @@ export async function processarExperiencia(casa, texto, options = {}) {
 
   const stored = []
   for (const analysis of valid) stored.push(await registrarMemoriaAnalisada(casa, analysis))
+  // Recibo-com-veto (10/10/2026): toda confirmação feita pelo pipeline — seja na primeira captura
+  // de uma declaração persistente, seja por evidência repetida de um candidato — entra no ledger de
+  // autoevolução para o dono ver no radar e vetar. O filtro de segredo já rodou antes; aqui nada
+  // reavalia o texto. A gravação do recibo é opcional: sua falha jamais invalida a memória gravada.
+  for (const item of stored) {
+    if (!['confirmed', 'auto-confirmed'].includes(item.result) || !item.memory?.id) continue
+    try {
+      await registrarRecibo(casa, {
+        kind: 'memory-confirm',
+        summary: `Confirmei sozinho uma memória: "${String(item.memory.text ?? '').slice(0, 180)}"`,
+        reason: item.result === 'auto-confirmed'
+          ? `Candidato reapareceu (${item.memory.occurrences} ocorrências) sem contraevidência.`
+          : 'Declaração persistente capturada e confirmada sem comando explícito do dono.',
+        subjectId: item.memory.id,
+        revert: { strategy: 'memory-unconfirm', ref: item.memory.id }
+      })
+    } catch {
+      // Retrovisor opcional: um recibo que não grava não pode derrubar a memória já persistida.
+    }
+  }
   return {
-    result: stored.some((item) => item.result === 'confirmed') ? 'confirmed' : stored[0].result,
+    result: stored.some((item) => ['confirmed', 'auto-confirmed'].includes(item.result)) ? 'confirmed' : stored[0].result,
     reason: null,
     score: valid[0].score,
     classification: valid[0].type,

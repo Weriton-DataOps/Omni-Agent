@@ -551,6 +551,19 @@ function abrirEspacoParaCandidata(memoria, agora) {
   return selected.id
 }
 
+// Contraevidência (recibo-com-veto, 10/10/2026): uma memória que o dono já descartou ou marcou
+// obsoleta no passado não deve voltar a se autoconfirmar sozinha só porque reapareceu. Comparar
+// por escopo+texto normalizado contra o arquivo garante que o veto do dono continua pesando.
+function temContraevidencia(memoria, item) {
+  const chave = `${item.scope.type}:${item.scope.id ?? ''}:${normalizar(item.text)}`
+  return memoria.archive.some((registro) => {
+    if (registro.action !== 'discarded' && registro.action !== 'obsolete') return false
+    const snapshot = registro.snapshot
+    if (!snapshot || typeof snapshot.text !== 'string') return false
+    return `${snapshot.scope?.type}:${snapshot.scope?.id ?? ''}:${normalizar(snapshot.text)}` === chave
+  })
+}
+
 async function registrar(casa, entrada) {
   const text = entrada.text.trim()
   if (!text) return { result: 'ignored', memory: null }
@@ -592,6 +605,29 @@ async function registrar(casa, entrada) {
         memoria.confirmed = [...memoria.confirmed, existente]
         await gravar(casa, memoria)
         return { result: 'confirmed', memory: existente }
+      }
+
+      // Autoconfirmação por evidência repetida (recibo-com-veto, 10/10/2026): um candidato do
+      // pipeline que reaparece (>= 2 ocorrências) sem contraevidência passa a confirmado e, assim,
+      // a ser injetado no modelo. Antes só o comando explícito do dono confirmava um candidato;
+      // agora o pipeline confirma sozinho e o chamador registra um recibo que o dono vê e pode vetar.
+      if (
+        entrada.autoConfirmOnReinforce === true &&
+        existente.status === 'candidate' &&
+        existente.occurrences >= 2 &&
+        !temContraevidencia(memoria, existente)
+      ) {
+        memoria.candidates = memoria.candidates.filter((item) => item.id !== existente.id)
+        existente.status = 'confirmed'
+        existente.confidence = Math.max(0.9, existente.confidence)
+        existente.lastValidatedAt = agora
+        existente.validation = {
+          status: 'confirmed',
+          reasons: [...existente.validation.reasons, 'auto-confirmed-sufficient-evidence']
+        }
+        memoria.confirmed = [...memoria.confirmed, existente]
+        await gravar(casa, memoria)
+        return { result: 'auto-confirmed', memory: existente }
       }
 
       await gravar(casa, memoria)
@@ -720,7 +756,10 @@ export function registrarMemoriaAnalisada(casa, analise) {
       status: confirmada ? 'confirmed' : 'validated',
       reasons: analise.validationReasons
     },
-    evidenceKind: analise.evidenceKind
+    evidenceKind: analise.evidenceKind,
+    // Candidato do pipeline pode se autoconfirmar ao reaparecer (>= 2 ocorrências) sem
+    // contraevidência; o recibo-com-veto deixa isso visível e reversível para o dono.
+    autoConfirmOnReinforce: true
   })
 }
 
