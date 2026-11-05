@@ -106,6 +106,20 @@ CREATE TABLE documentos (
   ${VIVO}
 );
 ${gatilhosDeDiario('documentos')}`
+  },
+  // v2 (plano 2 da F1): base comum do merge de três vias dos .md, por máquina — o hash que banco
+  // e disco tinham em comum na última reconciliação. Tabela interna, sem diário: é estado local
+  // de cada máquina, não dado a sincronizar.
+  {
+    versao: 2,
+    nome: 'documentos no disco por maquina',
+    sql: `CREATE TABLE _documentos_no_disco (
+  maquina TEXT NOT NULL,
+  id TEXT NOT NULL REFERENCES documentos (id),
+  sha256 TEXT NOT NULL,
+  em TEXT NOT NULL,
+  PRIMARY KEY (maquina, id)
+);`
   }
 ]
 

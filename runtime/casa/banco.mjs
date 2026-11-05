@@ -67,7 +67,8 @@ export function sqliteDisponivel(env = process.env) {
   }
 }
 
-function mesmoCaminho(a, b) {
+// Caminhos absolutos já resolvidos; no Windows, maiúscula e minúscula são o mesmo caminho.
+export function mesmoCaminho(a, b) {
   return process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b
 }
 

@@ -21,7 +21,7 @@ import {
   transacao,
   uuidv7
 } from '../runtime/casa/banco.mjs'
-import { BANCOS } from '../runtime/casa/esquemas.mjs'
+import { BANCOS, MIGRACOES_OMNI } from '../runtime/casa/esquemas.mjs'
 import {
   escreverAtomico,
   lerSeExistir,
@@ -279,7 +279,7 @@ test('cada banco da casa abre com as tabelas do desenho', () => {
   const casa = casaTemporaria()
   const esperadas = {
     nucleo: ['_diario', '_migracoes', 'agentes', 'maquinas', 'sqlite_sequence'],
-    omni: ['_diario', '_importacoes', '_migracoes', '_projecoes', 'documentos', 'memoria_meta', 'memorias', 'sqlite_sequence'],
+    omni: ['_diario', '_documentos_no_disco', '_importacoes', '_migracoes', '_projecoes', 'documentos', 'memoria_meta', 'memorias', 'sqlite_sequence'],
     cofre: ['_diario', '_importacoes', '_migracoes', '_projecoes', 'credenciais', 'sqlite_sequence', 'usos']
   }
   try {
@@ -289,6 +289,25 @@ test('cada banco da casa abre com as tabelas do desenho', () => {
       assert.equal(arquivoDoBanco(casa, nome), join(casa, 'casa', BANCOS[nome].arquivo))
     }
     assert.throws(() => arquivoDoBanco(casa, 'oraculo'), /Banco desconhecido na casa: oraculo/)
+  } finally {
+    apagar(casa)
+  }
+})
+
+test('omni.db da v1 sobe para a v2 sem perder documento e a base por maquina exige documento existente', () => {
+  const casa = casaTemporaria()
+  try {
+    comBanco(arquivoDoBanco(casa, 'omni'), [MIGRACOES_OMNI[0]], (db) => {
+      db.exec(`INSERT INTO documentos (id, formato, conteudo, sha256, bytes, origem_maquina, criado_em, atualizado_em)
+        VALUES ('claude-projects/p/memory/a.md', 'md', 'a', 'sha-a', 1, 'pc', 't0', 't0')`)
+    })
+    comBancoDaCasa(casa, 'omni', (db) => {
+      assert.deepEqual(db.prepare('SELECT versao FROM _migracoes ORDER BY versao').all().map((linha) => linha.versao), [1, 2])
+      assert.equal(db.prepare('SELECT conteudo FROM documentos WHERE id = ?').get('claude-projects/p/memory/a.md').conteudo, 'a')
+      const inserir = db.prepare('INSERT INTO _documentos_no_disco (maquina, id, sha256, em) VALUES (?, ?, ?, ?)')
+      inserir.run('pc', 'claude-projects/p/memory/a.md', 'sha-a', 't1')
+      assert.throws(() => inserir.run('pc', 'claude-projects/p/memory/nada.md', 'x', 't1'), /FOREIGN KEY/)
+    })
   } finally {
     apagar(casa)
   }

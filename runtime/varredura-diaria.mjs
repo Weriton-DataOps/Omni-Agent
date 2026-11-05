@@ -13,6 +13,8 @@ import { analisarExperiencias } from './pipeline-memoria.mjs'
 import { materializarMelhoriaComBaselineConfigurada } from './automacao-melhorias.mjs'
 import { fingerprintObjetivo } from './passe.mjs'
 import { auditarDesktop } from './auditoria-desktop.mjs'
+import { registrarDegradacao } from './casa/banco.mjs'
+import { reconciliarDocumentosMd } from './documentos-md.mjs'
 
 export const DAILY_SCAN_SCHEMA_VERSION = 2
 const CONTRACT_PATH = new URL('../contratos/aprendizado/varredura-diaria.json', import.meta.url)
@@ -904,7 +906,18 @@ export async function varrerAtividadesDoDia(casa, {
     }
     store.scans = [...store.scans, scan].slice(-policy.maximumScanHistory)
     await salvar(casa, store)
-    return { result: 'completed', scan }
+    // Os .md da memória do Claude Code entram no omni.db depois do estado da varredura salvo:
+    // falha aqui vira degradação anotada e nunca desfaz a varredura (plano 2 da F1). A pasta é a
+    // da casa, não a projectsRoot: a origem dos JSONL pode ser outra (diagnóstico, --origem) e
+    // não pode redirecionar a projeção.
+    let documentos
+    try {
+      documentos = await reconciliarDocumentosMd(casa)
+    } catch (erro) {
+      registrarDegradacao(casa, 'documentos.varredura', erro)
+      documentos = { resultado: 'degradada' }
+    }
+    return { result: 'completed', scan, documentos }
   } finally {
     await release()
   }

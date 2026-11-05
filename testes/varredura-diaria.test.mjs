@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { appendFile, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { appendFile, mkdir, mkdtemp, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
@@ -20,6 +20,7 @@ import {
   registrarCoberturaAoVivo,
   varrerAtividadesDoDia
 } from '../runtime/varredura-diaria.mjs'
+import { comBancoDaCasa, pastaDoBanco } from '../runtime/casa/banco.mjs'
 
 function inicializarGit(repo) {
   for (const args of [
@@ -454,6 +455,101 @@ test('ativacao vinda apenas de subagente nao habilita a sessao principal', async
     assert.equal(result.scan.activitiesFound, 0)
     assert.equal(result.scan.activitiesProcessed, 0)
     assert.equal((await lerMemoria(home)).confirmed.length, 0)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+// A reconciliação dos .md (plano 2 da F1) olha a pasta de projetos da casa, nunca a origem dos
+// JSONL: --origem e diagnóstico podem apontar outra pasta, e ela não pode redirecionar a projeção.
+test('varredura concluida reconcilia os .md da memoria da casa, nao os da origem dos JSONL', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'omni-daily-documentos-'))
+  const home = join(root, 'home')
+  const projects = join(root, 'projects')
+  const memoriaDaCasa = join(home, 'claude', 'projects', 'proj-a', 'memory')
+  try {
+    await mkdir(memoriaDaCasa, { recursive: true })
+    await writeFile(join(memoriaDaCasa, 'a.md'), '# memoria da casa\n', 'utf8')
+    await mkdir(join(projects, 'proj-z', 'memory'), { recursive: true })
+    await writeFile(join(projects, 'proj-z', 'memory', 'z.md'), '# fora da casa\n', 'utf8')
+    const result = await varrerAtividadesDoDia(home, {
+      date: '2026-08-28',
+      projectsRoot: projects,
+      now: new Date('2026-08-28T12:00:00-03:00')
+    })
+    assert.equal(result.result, 'completed')
+    assert.equal(result.documentos.resultado, 'concluida')
+    assert.equal(result.documentos.contagens.ingeridos, 1)
+    const ids = comBancoDaCasa(home, 'omni', (db) => db.prepare('SELECT id FROM documentos ORDER BY id').all().map((linha) => linha.id))
+    assert.deepEqual(ids, ['claude-projects/proj-a/memory/a.md'])
+    assert.equal((await lerEstadoVarredura(home)).scans.at(-1).documentos, undefined)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('varredura automatica fora do horario nao reconcilia os .md', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'omni-daily-documentos-due-'))
+  const home = join(root, 'home')
+  const projects = join(root, 'projects')
+  const memoriaDaCasa = join(home, 'claude', 'projects', 'proj-a', 'memory')
+  try {
+    await mkdir(projects, { recursive: true })
+    await mkdir(memoriaDaCasa, { recursive: true })
+    await writeFile(join(memoriaDaCasa, 'a.md'), 'a\n', 'utf8')
+    const primeira = await varrerAtividadesDoDia(home, {
+      date: '2026-08-28',
+      projectsRoot: projects,
+      automatic: true,
+      now: new Date('2026-08-28T12:00:00-03:00')
+    })
+    assert.equal(primeira.result, 'completed')
+    assert.equal(primeira.documentos.contagens.ingeridos, 1)
+    await writeFile(join(memoriaDaCasa, 'b.md'), 'b\n', 'utf8')
+    const segunda = await varrerAtividadesDoDia(home, {
+      date: '2026-08-28',
+      projectsRoot: projects,
+      automatic: true,
+      now: new Date('2026-08-28T12:05:00-03:00')
+    })
+    assert.equal(segunda.result, 'not-due')
+    assert.equal(segunda.documentos, undefined)
+    const ids = comBancoDaCasa(home, 'omni', (db) => db.prepare('SELECT id FROM documentos ORDER BY id').all().map((linha) => linha.id))
+    assert.deepEqual(ids, ['claude-projects/proj-a/memory/a.md'])
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+// Uma pasta antiga no lugar da trava da reconciliação (só dela: runs/ segue pasta, e o resto da
+// varredura usa runs/) faz a recuperação de trava velha tropeçar em EISDIR, e
+// reconciliarDocumentosMd rejeita: a varredura conclui assim mesmo, com o estado salvo e a
+// degradação anotada.
+test('reconciliacao que rejeita vira degradacao anotada e nao desfaz a varredura', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'omni-daily-documentos-falha-'))
+  const home = join(root, 'home')
+  const projects = join(root, 'projects')
+  const memoriaDaCasa = join(home, 'claude', 'projects', 'proj-a', 'memory')
+  const travaDaReconciliacao = join(home, 'runs', 'documentos-md.lock')
+  try {
+    await mkdir(projects, { recursive: true })
+    await mkdir(memoriaDaCasa, { recursive: true })
+    await writeFile(join(memoriaDaCasa, 'a.md'), 'a\n', 'utf8')
+    await mkdir(travaDaReconciliacao, { recursive: true })
+    await utimes(travaDaReconciliacao, new Date('2020-01-01T00:00:00Z'), new Date('2020-01-01T00:00:00Z'))
+    let result
+    await assert.doesNotReject(async () => {
+      result = await varrerAtividadesDoDia(home, {
+        date: '2026-08-28',
+        projectsRoot: projects,
+        now: new Date('2026-08-28T12:00:00-03:00')
+      })
+    })
+    assert.equal(result.result, 'completed')
+    assert.deepEqual(result.documentos, { resultado: 'degradada' })
+    assert.equal((await lerEstadoVarredura(home)).scans.length, 1)
+    const anotadas = (await readFile(join(pastaDoBanco(home), 'degradacoes.jsonl'), 'utf8')).trim().split('\n').map((linha) => JSON.parse(linha))
+    assert.deepEqual(anotadas.map((linha) => linha.operacao), ['documentos.varredura'])
   } finally {
     await rm(root, { recursive: true, force: true })
   }

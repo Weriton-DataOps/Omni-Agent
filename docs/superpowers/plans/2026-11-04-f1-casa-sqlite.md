@@ -10,7 +10,7 @@
 
 **Desenho:** [Casa única: Omni, Overcore e Oráculo](../specs/2026-11-04-casa-unica-tres-agentes-design.md): §3.1 (portabilidade), §3.5 (muitas sessões), §3.6 (a memória no `omni.db`) e §6 (fases e provas).
 
-**Situação em 04/11/2026:** T1 a T6 estão feitas e provadas no worktree `Omni-casa-f1` (branch `casa-sqlite-f1`, base `b4d82fc`), ainda sem commit. Faltam T7 a T10.
+**Situação em 05/11/2026:** entregue. T1 a T10 feitas e publicadas no `origin/casa-sqlite-f1`: `124c516` (fundação), `c375b59` (memória) e `6947443` (registro do push e da CI), commits de 04/11. O PR sai no plano 8.
 
 ---
 
@@ -20,8 +20,8 @@ A F1 do desenho (§6) entrega `nucleo.db`, `omni.db` e `cofre.db`, os importador
 
 | # | Plano | Desenho | Estado |
 |---|---|---|---|
-| 1 | **Este:** fundação da casa + memória no `omni.db` | §3, §3.1, §3.5, §3.6 | em execução |
-| 2 | Documentos `.md` da memória do Claude Code como projeção (tabela `documentos`) | §3.2 | a escrever |
+| 1 | **Este:** fundação da casa + memória no `omni.db` | §3, §3.1, §3.5, §3.6 | entregue |
+| 2 | [Documentos `.md` da memória do Claude Code como projeção (tabela `documentos`)](2026-11-05-f1-plano-2-documentos-md.md) | §3.2 | em execução |
 | 3 | Aprendizado, falhas e feedback no `omni.db`, com importador | §4.2, §6 | a escrever |
 | 4 | Cofre (`cofre.db`): importação dos `.dpapi`, inventário só com os nomes do Credential Manager, ponte DPAPI, CLI, exportação e importação com scrypt + AES-256-GCM | §8; prova em §8.5 | a escrever |
 | 5 | Card Cofre na ilha, falando pela API do Omni | §8.2, §3.4 | a escrever |
@@ -193,7 +193,7 @@ Nenhum módulo de `runtime/casa/` importa `runtime/memoria.mjs` ou pacote npm. F
 
 ---
 
-## Tarefas pendentes (T7 a T10)
+## Tarefas da entrega (T7 a T10)
 
 ### Task 7: `node --check` dos módulos da casa no `npm run check`
 
