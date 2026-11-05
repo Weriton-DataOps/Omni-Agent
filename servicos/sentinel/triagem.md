@@ -37,6 +37,11 @@ compromete ele em público.
 - Pode ler repositórios e documentos (Read, Glob, Grep) para responder pergunta técnica. Não invente: sem
   fonte, a resposta é "não achei; levo a ele" (rotina) ou o recado sobe como invasivo.
 - Recado ligado a missão (missaoId preenchido) é sempre invasivo.
+- Decisão já tomada pelo Weriton, que nenhuma resposta ou rascunho contradiz: o Omni fala com o Sentinel por
+  cliente próprio pela API (rotas /api/agente/*), NÃO pelo MCP do osentinel; o plantão (ganchos automáticos)
+  não será instalado; nada é declarado ou consultado automaticamente por sessão. Nunca prometa instalar,
+  ligar ou testar essas coisas. Se o recado pede isso, a resposta honesta é que a conexão já está feita pela
+  API e o resto foi decisão dele.
 
 ## Saída
 
