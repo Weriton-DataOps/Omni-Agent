@@ -403,7 +403,7 @@ $identidade = @('-c', 'user.name=Weriton-DataOps', '-c', "user.email=$email")
 
 Esperado: `Weriton-DataOps` com o e-mail vinculado à conta. Os passos 2 e 4 repetem as três primeiras linhas. Resultado (04/11): a primeira gravação usou o git global, com a identidade da empresa, e foi refeita com esta (item 11).
 
-- [ ] **Passo 2: commit 1, a fundação.** Mensagem em `$rascunho\commit1.txt`, criada com editor, sem acento (convenção dos commits deste repo):
+- [x] **Passo 2: commit 1, a fundação.** Mensagem em `$rascunho\commit1.txt`, criada com editor, sem acento (convenção dos commits deste repo):
 
 ```
 feat(casa): fundacao SQLite embutida da casa do Omni
@@ -437,9 +437,9 @@ git @identidade commit -F "$rascunho\commit1.txt"
 git log -1 --format='%h | autor %an | committer %cn'
 ```
 
-Esperado: nove arquivos no `--stat`, `runtime/memoria.mjs` fora, e autor e committer `Weriton-DataOps`.
+Esperado: nove arquivos no `--stat`, `runtime/memoria.mjs` fora, e autor e committer `Weriton-DataOps`. Resultado (04/11): `124c516`, nove arquivos, 2445 inserções e 1 remoção, autor e committer `Weriton-DataOps`, pai `b4d82fc`, mensagem só ASCII, sem BOM nem CR. A primeira gravação, `31f8a6a`, saiu com a identidade da empresa e foi desfeita antes do push (item 11).
 
-- [ ] **Passo 3: provar o commit 1 isolado**, extraído sem o trabalho em curso:
+- [x] **Passo 3: provar o commit 1 isolado**, extraído sem o trabalho em curso:
 
 ```powershell
 $rascunho = Join-Path $env:LOCALAPPDATA 'Temp\omni-f1'
@@ -467,7 +467,17 @@ Esperado:
 - `{"ok":true,…}` e `saida check-package: 0`;
 - `extracao apagada: True`.
 
-- [ ] **Passo 4: commit 2, a memória.** Antes, marcar neste plano as caixas já cumpridas. Mensagem em `$rascunho\commit2.txt`:
+Resultado (04/11), em `124c516`:
+- `rodando em:` e o `process.cwd()` do node, os dois na extração;
+- os quatro `check … : 0`;
+- `tests 29`, `pass 29`, `fail 0`, `skipped 0` e `saida testes: 0`;
+- `{"ok":true,"distFiles":59,"runtimeDependencies":0}` e `saida check-package: 0`;
+- `runtime/memoria.mjs` da extração igual ao da base, e `testes/memoria-casa.test.mjs` fora dela;
+- guarda `False` antes e depois, extração e tar apagados.
+
+A primeira tentativa rodou no worktree por causa do caminho curto (item 10) e não vale.
+
+- [x] **Passo 4: commit 2, a memória.** Antes, marcar neste plano as caixas já cumpridas. Mensagem em `$rascunho\commit2.txt`:
 
 ```
 feat(memoria): omni.db vira a fonte da memoria e memory.json a projecao

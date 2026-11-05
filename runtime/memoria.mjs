@@ -1,9 +1,19 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { isAbsolute, join, resolve } from 'node:path'
 
 import { acquireLocalFileLock } from '../dist/adapters/local-json/node-local-file-lock.js'
+import { arquivoDoBanco, comBancoDaCasa, registrarDegradacao, sha256, sqliteDisponivel } from './casa/banco.mjs'
+import {
+  ARQUIVO_MEMORIA,
+  ingerirMemoria,
+  lerMemoriaDoBanco,
+  salvarMemoria,
+  shaDaMemoriaNoBanco,
+  textoDaMemoria
+} from './casa/loja-memoria.mjs'
+import { escreverAtomico, lerSeExistir, situacaoDaProjecao } from './casa/projecao.mjs'
 
 export const MEMORY_SCHEMA_VERSION = 4
 export const MEMORY_GC_POLICY_VERSION = 1
@@ -401,37 +411,119 @@ function manutencaoVencida(memoria, policy, agora) {
   return Date.parse(agora) - Date.parse(memoria.store.lastMaintenanceAt) >= intervalMs
 }
 
+// Casa em SQLite (F1, §3.2 do desenho): o banco omni.db é a fonte da memória e memory.json é a
+// projeção dele, reconciliada por hash a cada carga. Sem node:sqlite (Electron, Node antigo,
+// OMNI_CASA_SEM_SQLITE=1) ou com o banco fora do ar, a memória segue só no arquivo, como sempre
+// foi, e a falha do banco vai para degradacoes.jsonl; na volta, o banco ingere o arquivo.
+//
+// Invariante: toda carga e gravação de memória, desta versão e das anteriores, acontece dentro de
+// memory.lock. Por isso a ingestão não confere de novo o hash do banco dentro da transação:
+// ninguém mexe na memória entre a leitura do arquivo e a gravação.
+
+function carimbo() {
+  return new Date().toISOString().replace(/[^0-9]/g, '')
+}
+
+function carregamento(memory, result, { migratedFrom = null, migrationBackup = null, changed = false } = {}) {
+  return { memory, result, migratedFrom, migrationBackup, changed }
+}
+
+// Interpreta o arquivo sem decidir nada: o erro volta junto, e quem decide é a reconciliação.
+function interpretarMemoria(fonte, arquivo) {
+  let bruta
+  try {
+    bruta = JSON.parse(fonte)
+    return migrarMemoria(bruta, arquivo)
+  } catch (erro) {
+    return { erro, futura: bruta?.schemaVersion > MEMORY_SCHEMA_VERSION }
+  }
+}
+
+async function guardarBackupDeMigracao(arquivo, fonte, migratedFrom) {
+  if (migratedFrom === null) return null
+  const backup = `${arquivo}.before-v${migratedFrom}-to-v${MEMORY_SCHEMA_VERSION}.${carimbo()}.backup`
+  await writeFile(backup, fonte, { encoding: 'utf8', flag: 'wx' })
+  return backup
+}
+
+// Só o arquivo, exatamente como antes do banco existir.
+async function deArquivo(arquivo, fonte, lida) {
+  if (fonte === null) return carregamento(memoriaVazia(), 'initialized', { changed: true })
+  if (lida.erro) throw lida.erro
+  const migrationBackup = await guardarBackupDeMigracao(arquivo, fonte, lida.migratedFrom)
+  return carregamento(lida.memory, lida.migratedFrom === null ? 'ready' : 'migrated', {
+    migratedFrom: lida.migratedFrom,
+    migrationBackup,
+    changed: lida.migratedFrom !== null
+  })
+}
+
+// Projeção que não sai fica defasada no disco e a próxima carga reescreve; o banco já tem tudo.
+function projetar(casa, arquivo, texto) {
+  try {
+    escreverAtomico(arquivo, texto)
+  } catch (erro) {
+    registrarDegradacao(casa, 'memoria.projetar', erro)
+  }
+}
+
 async function carregarSemTrava(casa) {
   const arquivo = caminhoDaMemoria(casa)
+  const fonte = lerSeExistir(arquivo)
+  const lida = fonte === null ? null : interpretarMemoria(fonte, arquivo)
+  if (!sqliteDisponivel()) return deArquivo(arquivo, fonte, lida)
+
+  const fonteSha = fonte === null ? null : sha256(fonte)
+  let estado
   try {
-    const source = await readFile(arquivo, 'utf8')
-    const original = JSON.parse(source)
-    const migrated = migrarMemoria(original, arquivo)
-    let migrationBackup = null
-    if (migrated.migratedFrom !== null) {
-      const stamp = new Date().toISOString().replace(/[^0-9]/g, '')
-      migrationBackup = `${arquivo}.before-v${migrated.migratedFrom}-to-v${MEMORY_SCHEMA_VERSION}.${stamp}.backup`
-      await writeFile(migrationBackup, source, { encoding: 'utf8', flag: 'wx' })
-    }
-    return {
-      memory: migrated.memory,
-      result: migrated.migratedFrom === null ? 'ready' : 'migrated',
-      migratedFrom: migrated.migratedFrom,
-      migrationBackup,
-      changed: migrated.migratedFrom !== null
-    }
+    estado = comBancoDaCasa(casa, 'omni', (db) => {
+      const shaNoBanco = shaDaMemoriaNoBanco(db)
+      const situacao = situacaoDaProjecao(db, ARQUIVO_MEMORIA, fonteSha, shaNoBanco)
+      const vence = situacao === 'defasada' || situacao === 'sem-arquivo' || (situacao === 'externa' && lida.erro)
+      return { situacao, bancoVazio: shaNoBanco === null, doBanco: vence ? lerMemoriaDoBanco(db) : null }
+    })
   } catch (erro) {
-    if (erro?.code === 'ENOENT') {
-      return {
-        memory: memoriaVazia(),
-        result: 'initialized',
-        migratedFrom: null,
-        migrationBackup: null,
-        changed: true
-      }
-    }
-    throw erro
+    registrarDegradacao(casa, 'memoria.carregar', erro)
+    return deArquivo(arquivo, fonte, lida)
   }
+
+  if (estado.situacao === 'vazio') return carregamento(memoriaVazia(), 'initialized', { changed: true })
+  if (estado.situacao === 'atual') {
+    // Mesmo texto que o banco guarda: se não interpreta, o banco também está além deste plugin.
+    if (lida.erro) throw lida.erro
+    return carregamento(lida.memory, 'ready')
+  }
+  if (estado.situacao === 'externa' && lida.erro && (estado.bancoVazio || lida.futura)) {
+    // Sem versão boa no banco, ou com arquivo de plugin mais novo: nada aqui pode decidir por ele.
+    throw lida.erro
+  }
+
+  if (estado.situacao !== 'externa' || lida.erro) {
+    // O banco vence. Memória do banco que este plugin não entende (versão mais nova) é erro, nunca
+    // degradação: reescrever a projeção com ela apagaria o que o plugin novo gravou.
+    const { memory } = migrarMemoria(estado.doBanco, arquivoDoBanco(casa, 'omni'))
+    if (lida?.erro) {
+      // Arquivo quebrado com banco bom: a cópia quebrada fica ao lado, para ninguém perder a edição.
+      await writeFile(`${arquivo}.invalida.${carimbo()}`, fonte, { encoding: 'utf8', flag: 'wx' })
+      registrarDegradacao(casa, 'memoria.arquivo-invalido', lida.erro)
+    }
+    projetar(casa, arquivo, textoDaMemoria(memory))
+    return carregamento(memory, 'ready')
+  }
+
+  // Externa e válida: o arquivo traz o que o banco ainda não viu e é ingerido.
+  const migrationBackup = await guardarBackupDeMigracao(arquivo, fonte, lida.migratedFrom)
+  const opcoes = { migratedFrom: lida.migratedFrom, migrationBackup, changed: lida.migratedFrom !== null }
+  const result = lida.migratedFrom === null ? 'ready' : 'migrated'
+  const texto = textoDaMemoria(lida.memory)
+  try {
+    comBancoDaCasa(casa, 'omni', (db) => ingerirMemoria(db, lida.memory, { texto, fonteSha }))
+  } catch (erro) {
+    registrarDegradacao(casa, 'memoria.ingerir', erro)
+    return carregamento(lida.memory, result, opcoes)
+  }
+  if (texto !== fonte) projetar(casa, arquivo, texto)
+  return carregamento(lida.memory, result, opcoes)
 }
 
 async function adquirirTrava(casa) {
@@ -446,14 +538,31 @@ async function adquirirTrava(casa) {
   return () => lock.release()
 }
 
+// Banco primeiro, projeção depois. Falhou só o banco: o arquivo leva a versão e o banco ingere na
+// volta. Falhou só a projeção: o banco já tem tudo e a próxima carga reescreve o arquivo. Erro
+// para quem chamou só quando nenhum dos dois guardou.
 async function gravar(casa, memoria) {
   const arquivo = caminhoDaMemoria(casa)
-  const temporario = `${arquivo}.${process.pid}.novo`
   memoria.store.updatedAt = new Date().toISOString()
   validarMemoria(memoria, arquivo)
-  await mkdir(join(casa, 'memory'), { recursive: true })
-  await writeFile(temporario, `${JSON.stringify(memoria, null, 2)}\n`, 'utf8')
-  await rename(temporario, arquivo)
+  const texto = textoDaMemoria(memoria)
+  if (!sqliteDisponivel()) {
+    escreverAtomico(arquivo, texto)
+    return
+  }
+  let falhaDoBanco = null
+  try {
+    comBancoDaCasa(casa, 'omni', (db) => salvarMemoria(db, memoria, texto))
+  } catch (erro) {
+    falhaDoBanco = erro
+    registrarDegradacao(casa, 'memoria.gravar', erro)
+  }
+  try {
+    escreverAtomico(arquivo, texto)
+  } catch (erro) {
+    if (falhaDoBanco !== null) throw erro
+    registrarDegradacao(casa, 'memoria.projetar', erro)
+  }
 }
 
 export async function prepararMemoria(casa) {
