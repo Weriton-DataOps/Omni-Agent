@@ -21,7 +21,7 @@ A F1 do desenho (§6) entrega `nucleo.db`, `omni.db` e `cofre.db`, os importador
 | # | Plano | Desenho | Estado |
 |---|---|---|---|
 | 1 | **Este:** fundação da casa + memória no `omni.db` | §3, §3.1, §3.5, §3.6 | entregue |
-| 2 | [Documentos `.md` da memória do Claude Code como projeção (tabela `documentos`)](2026-11-05-f1-plano-2-documentos-md.md) | §3.2 | em execução |
+| 2 | [Documentos `.md` da memória do Claude Code como projeção (tabela `documentos`)](2026-11-05-f1-plano-2-documentos-md.md) | §3.2 | entregue |
 | 3 | Aprendizado, falhas e feedback no `omni.db`, com importador | §4.2, §6 | a escrever |
 | 4 | Cofre (`cofre.db`): importação dos `.dpapi`, inventário só com os nomes do Credential Manager, ponte DPAPI, CLI, exportação e importação com scrypt + AES-256-GCM | §8; prova em §8.5 | a escrever |
 | 5 | Card Cofre na ilha, falando pela API do Omni | §8.2, §3.4 | a escrever |

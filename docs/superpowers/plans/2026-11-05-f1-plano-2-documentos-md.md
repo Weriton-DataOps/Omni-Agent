@@ -10,7 +10,7 @@
 
 **Desenho:** [Casa única: Omni, Overcore e Oráculo](../specs/2026-11-04-casa-unica-tres-agentes-design.md): §3.2 (a memória do Claude Code vira projeção), §3.1 (portabilidade), §3.5 (muitas sessões), §3.6 (o molde: a memória no `omni.db`) e §6 (fases e provas).
 
-**Situação em 05/11/2026:** T1 a T9 feitas e provadas no worktree `Omni-casa-f1` (branch `casa-sqlite-f1`, base `6947443`). T10 (commit, push e CI) em execução.
+**Situação em 05/11/2026:** entregue. T1 a T10 feitas e publicadas no `origin/casa-sqlite-f1`: `3f4d1f4` (módulos, suítes e os dois planos), commit de 05/11. O PR sai no plano 8.
 
 ---
 
@@ -41,7 +41,7 @@ Siglas usadas neste plano: CL = `testes/casa-loja-documentos.test.mjs`, CB = `te
 
 A v1 do `omni.db` ainda não congelou ([regra no plano 1](2026-11-04-f1-casa-sqlite.md#regra-de-congelamento-das-migrações)), porque não houve merge nem release. Mas ela já está publicada no `origin/casa-sqlite-f1`, e qualquer checkout desse ramo pode ter criado um `omni.db` v1. Editar a v1 faria o `_migracoes` recusar esse banco. Por isso a tabela nova entra como v2, e o CB 297 prova a subida de v1 para v2.
 
-`_documentos_no_disco` é interna e não tem gatilho de diário: guarda estado local de cada máquina, não dado a sincronizar. A v2 congela junto com a v1, no merge ou na release.
+`_documentos_no_disco` é interna e não tem gatilho de diário: guarda estado local de cada máquina, não dado a sincronizar. A v2 congela formalmente junto com a v1, no merge ou na release. Mas, publicada desde o `3f4d1f4`, ela já está no caso da v1 descrito acima: o próximo plano que mexer no esquema do `omni.db` entra como v3.
 
 ## O que o executor precisa saber antes de rodar qualquer coisa
 
@@ -423,13 +423,13 @@ Resultado (05/11): o `diff` imprimiu só os avisos de LF para CRLF, sem nenhuma 
 
 ---
 
-## Tarefa pendente (T10)
+## Tarefa da entrega (T10)
 
 ### Task 10: commit, push e CI
 
 Um commit só: os módulos, as suítes e o `package.json` só fazem sentido juntos, e o commit leva os dois planos (este e a atualização do plano 1).
 
-- [ ] **Passo 1: identidade** (item 11 do plano 1):
+- [x] **Passo 1: identidade** (item 11 do plano 1):
 
 ```powershell
 $email = git log origin/main --author='Weriton-DataOps' -1 --format='%ae'
@@ -438,9 +438,9 @@ $identidade = @('-c', 'user.name=Weriton-DataOps', '-c', "user.email=$email")
 "identidade: Weriton-DataOps <$email>"
 ```
 
-Esperado: `Weriton-DataOps` com o e-mail vinculado à conta.
+Esperado: `Weriton-DataOps` com o e-mail vinculado à conta. Resultado (05/11): igual ao esperado, com o e-mail lido do `origin/main` e passado só no comando, sem mexer na config.
 
-- [ ] **Passo 2: commit.** Mensagem em `$rascunho\commit-p2.txt`, criada com editor, sem acento:
+- [x] **Passo 2: commit.** Mensagem em `$rascunho\commit-p2.txt`, criada com editor, sem acento:
 
 ```
 feat(casa): documentos .md da memoria do Claude Code no omni.db
@@ -486,7 +486,9 @@ Esperado:
 - mensagem só ASCII, sem BOM nem CR;
 - `status` vazio.
 
-- [ ] **Passo 3: push pela conta dona do repo**, fora do sandbox do agente (T10, passo 5, do plano 1). O ramo já tem upstream, então o push vai sem `-u`:
+Resultado (05/11): `3f4d1f4`, doze arquivos, 2120 inserções e 10 remoções, autor e committer `Weriton-DataOps`, pai `6947443`, mensagem só ASCII, sem BOM nem CR, e `status` vazio. A mensagem gravada é o `commit-p2.txt` byte a byte, conferida pelo `git cat-file commit HEAD`. Comparar a saída do `git log` passada por `Out-String` dá diferença falsa, porque o PowerShell junta as linhas com CRLF.
+
+- [x] **Passo 3: push pela conta dona do repo**, fora do sandbox do agente (T10, passo 5, do plano 1). O ramo já tem upstream, então o push vai sem `-u`:
 
 ```powershell
 gh auth switch --user Weriton-DataOps
@@ -498,7 +500,9 @@ git rev-parse HEAD
 
 Esperado: push aceito, `wp-grgroup` ativa de novo e o SHA remoto igual ao local.
 
-- [ ] **Passo 4: CI**
+Resultado (05/11): `6947443..3f4d1f4` aceito; `3f4d1f4` no `origin/casa-sqlite-f1`, igual ao local, e `wp-grgroup` ativa.
+
+- [x] **Passo 4: CI**
 
 ```powershell
 gh run list --branch casa-sqlite-f1 --limit 5
@@ -508,10 +512,16 @@ Esperado:
 - "Linux / Node 22 / portable core" verde (ele não roda as suítes deste plano; item 12);
 - "Windows / Node 22 / full verification" vermelho só no `:165`, com 645 testes: 640 verdes, 4 pulados e 1 vermelho. Os números são lidos no log do job pela API (`gh api repos/Weriton-DataOps/Omni-Agent/actions/jobs/<id>/logs`), porque o `gh run view --log-failed` volta vazio.
 
-- [ ] **Passo 5: registrar o resultado.**
+Resultado (05/11), na run do push, em `3f4d1f4`:
+- "Linux / Node 22 / portable core" verde;
+- "Windows / Node 22 / full verification" vermelho, com 645 testes: 640 verdes, 4 pulados e 1 vermelho, o "contrato canônico declara a versão e exatamente o fingerprint do payload" (`:165`). São os números do verify local (T9), lidos no log do job pela API.
+
+- [x] **Passo 5: registrar o resultado.**
   - Marcar esta tarefa com os resultados.
   - Trocar a "Situação" para entregue e a linha 2 do escopo do plano 1 para "entregue".
   - Commit `docs(plano): …` com a mesma identidade, push e CI de novo.
+
+Resultado (05/11): os três itens no commit `docs(plano): registra push e CI do plano 2 da F1`. O push e a CI desse commit não aparecem aqui, porque este registro viaja dentro dele.
 
 Este plano não abre PR. O PR sai no plano 8, com a release.
 
