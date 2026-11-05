@@ -25,6 +25,7 @@ import { arquivo, sessaoBot, dono, donoJid, api, usuario, livro, anotar, enviarA
 import { escolherFormato, instrucaoAudio, separarResposta, cortarPedidoDeEnter } from './formato.mjs'
 import { destinatarioConhecido, responderInformativo } from './terceiros.mjs'
 import { ehDocumento, pareceAudio, descreverDocumento, nomeNaMidia, notaDoArquivo } from './documento.mjs'
+import { registrarResposta as respostaAoSentinel } from '../../sentinel/pedidos.mjs'
 
 const CLAUDE = process.env.OMNI_CLAUDE_EXE || arquivoNpm('@anthropic-ai/claude-code/bin/claude.exe')
 const CENTRAL_CWD = process.env.OMNI_CENTRAL_CWD || fileURLToPath(new URL('../../../', import.meta.url)).replace(/[\\/]$/, '')
@@ -368,6 +369,17 @@ async function varrer() {
     if (String(m.chatId).endsWith('@g.us')) continue
     if (remetente !== meuDono) { await respostaDeTerceiro(m, remetente).catch(e => log(`terceiro ${m.waMessageId}: ${e.message}`)); continue }
     if (!String(m.body || '').trim() && !ehAudio(m) && !ehImagem(m) && !ehDocumento(m)) continue
+    // resposta em texto citando um recado do Sentinel que subiu para ele decidir: o texto dele vai literal na
+    // próxima rodada da checagem (que a vigia solta a cada 5 min) e não vira pedido para a central
+    const citado = m.metadata?.quotedMessage?.id
+    if (citado && String(m.body || '').trim()) {
+      const recado = respostaAoSentinel(citado, m.body)
+      if (recado) {
+        log(`🛰️ resposta ao recado ${recado} do Sentinel anotada`)
+        await enviarAoDono('Anotei. Vai pro Sentinel como você escreveu, em até 5 min.', m.waMessageId).catch(e => log(`aviso de resposta: ${e.message}`))
+        continue
+      }
+    }
     if (ehComando(m)) { fila.push(m); continue }
     lote.push(m)
     ultimoNoLote = Date.now()
