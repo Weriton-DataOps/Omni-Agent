@@ -58,7 +58,7 @@ Nenhum módulo de `runtime/casa/` importa `runtime/memoria.mjs` ou pacote npm. F
    - os testes usam `OMNI_HOME` temporário, `casa` explícita ou dependências simuladas;
    - a única chamada com o `process.env` puro, `testes/cli.test.mjs:261` (comando `personalidade`), não chega à memória;
    - mesmo assim, T8 e T9 conferem a pasta antes e depois.
-3. **Teste vermelho de nascença.** O teste "contrato canônico declara a versão e exatamente o fingerprint do payload" (`testes/integridade-release.test.mjs:165`) já falha na base `b4d82fc`. É o único da suíte que compara com a raiz real do repositório (os outros usam fixture), e o plano 8 conserta. Como o `npm test` encadeia com `&&`, essa falha esconde os testes de `.test-dist`, o `test:dist` e o `verify:build`. Por isso T9 roda os três à parte.
+3. **Teste vermelho de nascença.** O teste "contrato canônico declara a versão e exatamente o fingerprint do payload" (`testes/integridade-release.test.mjs:165`) já falha na base `b4d82fc`. A falha entra pelo lado `3e710b4` do merge, porque no `main` (`c8a4bec`) a CI passa nesse teste (T10, passo 6). É o único da suíte que compara com a raiz real do repositório (os outros usam fixture), e o plano 8 conserta. Como o `npm test` encadeia com `&&`, essa falha esconde os testes de `.test-dist`, o `test:dist` e o `verify:build`. Por isso T9 roda os três à parte.
 4. **Empacotamento.**
    - `scripts/check-package.mjs` varre `runtime/**/*.mjs` e só barra import `../dist/` que não existe; os módulos da casa não importam `dist`.
    - `runtime/integridade-release.mjs` monta o payload varrendo as `PAYLOAD_ROOTS`, e `runtime` está entre elas. Então `runtime/casa/*` entra na instalação sem configuração e o fingerprint muda (veja o item 3).
@@ -515,18 +515,27 @@ git status --short
 
 Esperado: três arquivos no `--stat`, e autor e committer `Weriton-DataOps`. Depois do commit, nada da F1 fica pendente no `status`.
 
-- [ ] **Passo 5: push pela conta dona do repo.** O repositório é da `Weriton-DataOps`, e a troca de conta no `gh` vale para a máquina inteira, então volta logo depois:
+- [x] **Passo 5: push pela conta dona do repo.** O repositório é da `Weriton-DataOps`, e a troca de conta no `gh` vale para a máquina inteira. Por isso a volta fica no `finally`, no mesmo comando:
 
 ```powershell
 gh auth switch --user Weriton-DataOps
-git push -u origin casa-sqlite-f1
-gh auth switch --user wp-grgroup
-gh auth status
+try { git push -u origin casa-sqlite-f1 } finally { gh auth switch --user wp-grgroup }
+gh auth status --active
+git ls-remote origin refs/heads/casa-sqlite-f1
+git rev-parse HEAD
 ```
 
-Esperado: push aceito e `wp-grgroup` ativa de novo.
+Esperado: push aceito, `wp-grgroup` ativa de novo e o SHA remoto igual ao local.
 
-- [ ] **Passo 6: CI**
+Resultado (04/11): `c375b59` no `origin/casa-sqlite-f1`, igual ao local, e `wp-grgroup` ativa.
+
+A primeira tentativa rodou dentro do sandbox do agente e falhou antes de chegar ao GitHub:
+- o helper de credencial do `gh` é um comando de shell (`!…`), e o git o roda pelo `sh.exe` do MSYS;
+- o `sh.exe` não sobe no sandbox (`add_item … failed, errno 1`), e o git então cai em `could not read Username`.
+
+O push passou com esse único comando rodando fora do sandbox.
+
+- [x] **Passo 6: CI**
 
 ```powershell
 gh run list --branch casa-sqlite-f1 --limit 5
@@ -535,6 +544,12 @@ gh run list --branch casa-sqlite-f1 --limit 5
 Esperado:
 - "Linux / Node 22 / portable core" verde;
 - "Windows / Node 22 / full verification" vermelho só no teste do fingerprint, o mesmo da base. Para confirmar, ler o log do job pela API (`gh api repos/Weriton-DataOps/Omni-Agent/actions/jobs/<id>/logs`), porque o `gh run view --log-failed` volta vazio.
+
+Resultado (04/11), na run do push, em `c375b59`:
+- "Linux / Node 22 / portable core" verde;
+- "Windows / Node 22 / full verification" vermelho, com 612 testes: 607 verdes, 4 pulados e 1 vermelho, o "contrato canônico declara a versão e exatamente o fingerprint do payload". São os números do verify local (T9), lidos no log do job pela API.
+
+O vermelho não nasceu no `main`: a última run dele, em `c8a4bec`, está verde nos dois jobs. A falha entra pelo outro pai do merge de base, o `3e710b4` (ramo `omni-agenda-e-correcoes`). Na CI desse ramo o Windows cai antes dos testes, em `contracts:check` ("Contrato gerado está desatualizado"). No merge esse portão passa, porque a suíte chegou às contagens, e sobra só o fingerprint, que o plano 8 regenera com a release.
 
 Este plano não abre PR. O PR sai no plano 8, com a release.
 
