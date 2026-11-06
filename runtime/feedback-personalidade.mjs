@@ -278,18 +278,46 @@ function carregarSobTrava(casa) {
   return texto === null ? emptyStore() : validateStore(JSON.parse(texto), path)
 }
 
+// Escritores do mesmo processo fazem fila antes da trava do arquivo. A seção crítica abre o
+// omni.db de forma síncrona, então, sem a fila, a vez de um irmão consumia o prazo de 2 s dos
+// outros com o loop bloqueado, sem deixá-los tentar de novo. Entre processos, a trava do
+// arquivo segue igual, com o mesmo prazo; só a cabeça da fila disputa por ela.
+const filasDaTrava = new Map()
+
 async function acquireLock(casa) {
   const directory = join(casa, 'feedback')
   const path = join(directory, 'personality-feedback.lock')
-  const lock = await acquireLocalFileLock(path, {
-    acquisitionTimeoutMs: 2_000,
-    retryDelayMs: 50,
-    staleLockMs: 10_000,
-    heartbeatMs: 2_500,
-    recoverStaleLocks: false,
-    timeoutMessage: 'Feedback local de personalidade ocupado por outra escrita.'
-  })
-  return () => lock.release()
+  const anterior = filasDaTrava.get(path) ?? Promise.resolve()
+  let soltarVez
+  const vez = new Promise((resolve) => { soltarVez = resolve })
+  const cauda = anterior.then(() => vez)
+  filasDaTrava.set(path, cauda)
+  const sairDaFila = () => {
+    soltarVez()
+    if (filasDaTrava.get(path) === cauda) filasDaTrava.delete(path)
+  }
+  await anterior
+  let lock
+  try {
+    lock = await acquireLocalFileLock(path, {
+      acquisitionTimeoutMs: 2_000,
+      retryDelayMs: 50,
+      staleLockMs: 10_000,
+      heartbeatMs: 2_500,
+      recoverStaleLocks: false,
+      timeoutMessage: 'Feedback local de personalidade ocupado por outra escrita.'
+    })
+  } catch (erro) {
+    sairDaFila()
+    throw erro
+  }
+  return async () => {
+    try {
+      await lock.release()
+    } finally {
+      sairDaFila()
+    }
+  }
 }
 
 // Escrita pela ponte: banco, arquivo e base na mesma transação.
