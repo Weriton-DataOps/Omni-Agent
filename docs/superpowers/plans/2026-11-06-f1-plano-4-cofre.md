@@ -10,7 +10,7 @@
 
 **Desenho:** [Casa única: Omni, Overcore e Oráculo](../specs/2026-11-04-casa-unica-tres-agentes-design.md): §8.1 (onde fica), §8.3 (uso pelos agentes), §8.4 (máquina nova) e §8.5 (prova). O §8.2, o card na ilha, é o plano 5.
 
-**Situação em 06/11/2026:** T1 a T8 feitas e provadas no ramo `casa-sqlite-f1` (base `9badd6a`). T9 (commit, push e CI) em execução.
+**Situação em 06/11/2026:** entregue. T1 a T9 feitas e publicadas no `origin/casa-sqlite-f1`: `ef87498` (módulos, suítes, esquema, `package.json` e os planos), commit de 06/11. O PR sai no plano 8.
 
 ---
 
@@ -2525,7 +2525,7 @@ por
 
 Resultado (06/11): feito com o Edit; a linha 26 do plano 1 ficou igual à do bloco acima.
 
-- [ ] **Passo 2: CR e commit.** Autor e committer Weriton-DataOps, com o e-mail dos commits dela no `origin/main`, passado no comando e nunca impresso; mensagem em UTF-8 sem BOM.
+- [x] **Passo 2: CR e commit.** Autor e committer Weriton-DataOps, com o e-mail dos commits dela no `origin/main`, passado no comando e nunca impresso; mensagem em UTF-8 sem BOM.
 
 ```powershell
 $arquivos = 'package.json', 'runtime/casa/esquemas.mjs', 'runtime/casa/pacote-cofre.mjs', 'runtime/casa/dpapi.mjs', 'runtime/casa/loja-cofre.mjs', 'runtime/casa/testadores-cofre.mjs', 'runtime/cofre.mjs', 'testes/casa-pacote-cofre.test.mjs', 'testes/casa-dpapi.test.mjs', 'testes/casa-loja-cofre.test.mjs', 'testes/casa-testadores-cofre.test.mjs', 'testes/cofre-cli.test.mjs', 'docs/superpowers/plans/2026-11-06-f1-plano-4-cofre.md', 'docs/superpowers/plans/2026-11-04-f1-casa-sqlite.md'
@@ -2540,7 +2540,9 @@ git log -1 --format='%h %an %cn %s'
 
 Esperado: nenhuma linha de CR, os catorze arquivos no índice, o commit com autor e committer Weriton-DataOps.
 
-- [ ] **Passo 3: push e CI.** A conta do push é a dona do repositório, e a `wp-grgroup` volta no `finally`.
+Resultado (06/11): nenhuma linha de CR, e os catorze arquivos no índice, sem mais nada. Uma varredura das linhas adicionadas no índice, atrás do que não pode ir a repositório público, não achou nada real: o único achado foi um falso positivo de padrão, numa palavra comum. Commit `ef87498`, pai `9badd6a`, autor e committer `Weriton-DataOps`, com o mesmo e-mail dos commits dela no `origin/main`: 14 arquivos, 4103 inserções e 6 remoções, e `status` limpo depois.
+
+- [x] **Passo 3: push e CI.** A conta do push é a dona do repositório, e a `wp-grgroup` volta no `finally`.
 
 ```powershell
 gh auth switch --user Weriton-DataOps; try { git push origin casa-sqlite-f1 } finally { gh auth switch --user wp-grgroup }
@@ -2548,7 +2550,11 @@ gh auth switch --user Weriton-DataOps; try { git push origin casa-sqlite-f1 } fi
 
 Depois, o CI do ramo pela conta Weriton-DataOps, com o token só na variável do processo e removido no `finally`. Esperado: o job Linux verde e o Windows vermelho só no `:165` (item 7).
 
-- [ ] **Passo 4: registrar.** A "Situação" deste plano passa a "entregue", com o hash do commit, e os resultados entram nos passos. Esse registro vai num segundo commit, `docs(plano): registra push e CI do plano 4 da F1`, como no plano 3.
+Resultado (06/11): push `9badd6a..ef87498` pela conta Weriton-DataOps, com a `wp-grgroup` de volta no `finally`; o `ls-remote` deu o mesmo SHA do ramo local. Na CI, "Linux / Node 22 / portable core" ficou verde e "Windows / Node 22 / full verification" vermelho só no `:165`, no passo "Verify source, contracts, package and tests": 736 testes, 731 verdes, 4 pulados e 1 vermelho (`not ok 475`). A asserção que cai é a da linha 173, com o contrato `3c60182bbef2…` no `actual` e o calculado `07e0ba25deda…` no `expected`, o mesmo par da máquina local. Antes dos testes vieram as cinco linhas `{"ok":true,…}`: contratos 43 duas vezes, fontes 59 duas vezes e `distFiles` 59 com 0 dependências de runtime. O log não tem nenhuma linha com `EPERM`. Para esse job, o `gh run view --log-failed` voltou vazio, e o log inteiro veio pela API do job (`gh api repos/<dono>/<repo>/actions/jobs/<job>/logs`).
+
+- [x] **Passo 4: registrar.** A "Situação" deste plano passa a "entregue", com o hash do commit, e os resultados entram nos passos. Esse registro vai num segundo commit, `docs(plano): registra push e CI do plano 4 da F1`, como no plano 3.
+
+Resultado (06/11): a Situação e os resultados dos Passos 2 e 3 estão no commit `docs(plano): registra push e CI do plano 4 da F1`. O push e a CI desse commit não aparecem aqui, porque este registro viaja dentro dele.
 
 ## Autorrevisão contra o desenho
 
