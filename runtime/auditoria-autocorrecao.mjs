@@ -1,7 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { basename, extname, isAbsolute, join, resolve } from 'node:path'
+import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { verificarIntegridadeRelease } from './integridade-release.mjs'
 import { analisarComandoGit } from './git-command.mjs'
@@ -10,9 +11,16 @@ import {
   fingerprintObjetivo,
   OBJECTIVE_FINGERPRINT_ALGORITHM
 } from './passe.mjs'
-import { acquireLocalFileLock } from '../dist/adapters/local-json/node-local-file-lock.js'
+import {
+  acquireLocalFileLock,
+  isLockContentionError
+} from '../dist/adapters/local-json/node-local-file-lock.js'
 
 export const AUDIT_SELF_CORRECTION_SCHEMA_VERSION = 1
+
+const RENAME_RETRY_TIMEOUT_MS = 2_000
+const RENAME_RETRY_DELAY_MS = 15
+const SEM_MUDANCA = Symbol('auditoria-sem-mudanca')
 
 const CONTRACT_PATH = new URL('../contratos/operacao/auditoria-autocorrecao.json', import.meta.url)
 const TURN_STATES = new Set(['open', 'executing', 'repairing', 'verified', 'blocked'])
@@ -320,9 +328,9 @@ async function load(casa) {
     }
     migrarTurnosRecuperaveis(store)
     validateStore(store, path)
-    return { store, initialized: false }
+    return store
   } catch (error) {
-    if (error?.code === 'ENOENT') return { store: emptyStore(), initialized: true }
+    if (error?.code === 'ENOENT') return emptyStore()
     throw error
   }
 }
@@ -407,25 +415,56 @@ async function save(casa, store, policy) {
   store.sessions = store.sessions.slice(-policy.retention.turns)
   validateStore(store, path)
   await mkdir(join(casa, 'audits'), { recursive: true })
-  await writeFile(temporary, `${JSON.stringify(store, null, 2)}\n`, 'utf8')
-  await rename(temporary, path)
+  try {
+    await writeFile(temporary, `${JSON.stringify(store, null, 2)}\n`, 'utf8')
+    await replaceFile(temporary, path)
+  } finally {
+    // Sem o .catch, uma falha da limpeza esconderia o erro original da troca.
+    await rm(temporary, { force: true }).catch(() => undefined)
+  }
+}
+
+// No Windows, a troca por rename falha com EPERM enquanto outro processo tem o
+// arquivo aberto (um leitor da auditoria, um indexador). O leitor solta em
+// milissegundos, então a troca espera em vez de perder a gravação inteira.
+async function replaceFile(temporary, path) {
+  const deadline = Date.now() + RENAME_RETRY_TIMEOUT_MS
+  while (true) {
+    try {
+      await rename(temporary, path)
+      return
+    } catch (error) {
+      if (!isLockContentionError(error) || Date.now() >= deadline) throw error
+      await delay(RENAME_RETRY_DELAY_MS)
+    }
+  }
+}
+
+// Resultado de mutação que não tocou no store: change() devolve o resultado sem
+// regravar o arquivo inteiro.
+function semMudanca(result) {
+  return { [SEM_MUDANCA]: result }
 }
 
 async function change(casa, mutate) {
   const policy = await contract()
   const release = await acquireLock(casa)
   try {
-    const loaded = await load(casa)
-    const result = await mutate(loaded.store, policy)
-    await save(casa, loaded.store, policy)
-    return result
+    const store = await load(casa)
+    const outcome = await mutate(store, policy)
+    const unchanged = outcome !== null && typeof outcome === 'object' && SEM_MUDANCA in outcome
+    if (!unchanged) await save(casa, store, policy)
+    return unchanged ? outcome[SEM_MUDANCA] : outcome
   } finally {
     await release()
   }
 }
 
+// Leitura sem a trava de escrita: a gravação troca o arquivo inteiro por rename,
+// então o leitor vê a versão anterior ou a nova, nunca metade de uma. Ler não
+// regrava o arquivo.
 export async function lerAuditoriaAutocorrecao(casa) {
-  return change(casa, (store) => store)
+  return load(casa)
 }
 
 function classifyRequest(prompt) {
@@ -1412,7 +1451,7 @@ export async function registrarAcaoAuditoria(casa, input, { at } = {}) {
   const verifiedDiagnostic = canonical && (await verificarIntegridadeRelease(root)).status === 'verified'
   return change(casa, (store, policy) => {
     const { turn } = activeTurn(store, input?.session_id)
-    if (!turn || ['verified', 'blocked'].includes(turn.state)) return { result: 'ignored', action: null }
+    if (!turn || ['verified', 'blocked'].includes(turn.state)) return semMudanca({ result: 'ignored', action: null })
     const action = recordAction(turn, input, policy, timestamp, verifiedDiagnostic ? { effect: 'verification' } : {})
     turn.state = 'executing'
     turn.updatedAt = timestamp
@@ -1425,7 +1464,7 @@ export async function registrarDelegacaoAuditoria(casa, input, state, { at } = {
   const timestamp = now(at)
   return change(casa, (store, policy) => {
     const { turn } = activeTurn(store, input?.session_id)
-    if (!turn || ['verified', 'blocked'].includes(turn.state)) return { result: 'ignored', action: null }
+    if (!turn || ['verified', 'blocked'].includes(turn.state)) return semMudanca({ result: 'ignored', action: null })
     const action = recordAction(turn, input, policy, timestamp, {
       effect: 'delegation',
       toolName: input?.agent_type ?? 'Agent',
@@ -1453,10 +1492,12 @@ export async function registrarConclusaoTarefaAuditoria(casa, input, { at } = {}
   const timestamp = now(at)
   return change(casa, (store, policy) => {
     const { turn } = activeTurn(store, input?.session_id)
-    if (!turn || ['verified', 'blocked'].includes(turn.state)) return { result: 'ignored', evidence: null }
+    if (!turn || ['verified', 'blocked'].includes(turn.state)) return semMudanca({ result: 'ignored', evidence: null })
     const source = hash(input?.task_id ?? `${input?.session_id}:task`)
     const fingerprint = hash(`task-report:${source}`)
-    if (turn.evidence.some((item) => item.fingerprint === fingerprint)) return { result: 'duplicate', evidence: null }
+    if (turn.evidence.some((item) => item.fingerprint === fingerprint)) {
+      return semMudanca({ result: 'duplicate', evidence: null })
+    }
     const evidence = {
       id: `audit-evidence-${randomUUID()}`,
       sourceActionId: `task:${source}`,
@@ -1671,7 +1712,7 @@ export async function auditarParada(casa, input, { at } = {}) {
   return change(casa, (store, policy) => {
     const { session, turn } = activeTurn(store, input?.session_id)
     if (!turn || ['verified', 'blocked'].includes(turn.state)) {
-      return { result: 'ignored', decision: null, reason: null, turn: null }
+      return semMudanca({ result: 'ignored', decision: null, reason: null, turn: null })
     }
     turn.stopAttempts += 1
     const detected = currentFindings(turn, input, policy)
@@ -1709,7 +1750,7 @@ export async function encerrarSessaoAuditoria(casa, input, { at } = {}) {
   const timestamp = now(at)
   return change(casa, (store, policy) => {
     const { session, turn } = activeTurn(store, input?.session_id)
-    if (!session) return { result: 'ignored' }
+    if (!session) return semMudanca({ result: 'ignored' })
     if (turn && !['verified', 'blocked'].includes(turn.state)) {
       preserveTurnForRecovery(turn, policy, timestamp)
       releaseClaimsOwnedBy(store, turn.id, timestamp)

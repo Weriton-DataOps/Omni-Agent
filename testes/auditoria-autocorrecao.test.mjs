@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { closeSync, openSync, statSync } from 'node:fs'
+import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
@@ -12,9 +13,11 @@ import {
   lerAuditoriaAutocorrecao,
   reconciliarTurnosPendentesAuditoria,
   registrarAcaoAuditoria,
+  registrarConclusaoTarefaAuditoria,
   registrarDelegacaoAuditoria
 } from '../runtime/auditoria-autocorrecao.mjs'
 import { tratarHook } from '../runtime/hook-contexto.mjs'
+import { acquireLocalFileLock } from '../dist/adapters/local-json/node-local-file-lock.js'
 
 async function home(prefix = 'omni-audit-') {
   return mkdtemp(join(tmpdir(), prefix))
@@ -927,6 +930,138 @@ test('familia estrutural e marcador vinculam build real sem aceitar prova generi
       last_assistant_message: 'Build executado e estado conferido.'
     })
     assert.equal(accepted.result, 'verified')
+  } finally {
+    await rm(casa, { recursive: true, force: true })
+  }
+})
+
+async function temporariosDaAuditoria(casa) {
+  return (await readdir(join(casa, 'audits'))).filter((nome) => nome.endsWith('.novo'))
+}
+
+function marcaDoArquivo(path) {
+  const { ino, mtimeNs, size } = statSync(path, { bigint: true })
+  return { ino, mtimeNs, size }
+}
+
+test('gravacao espera o leitor que segura o arquivo e nao deixa temporario', async () => {
+  const casa = await home()
+  const session = 'sessao-leitor-breve'
+  try {
+    await abrirTurnoAuditoria(casa, prompt(session, 'verifique estado'))
+    const path = caminhoDaAuditoriaAutocorrecao(casa)
+    const fd = openSync(path, 'r')
+    let aberto = true
+    const fechar = () => {
+      if (!aberto) return
+      aberto = false
+      closeSync(fd)
+    }
+    const soltar = setTimeout(fechar, 150)
+    try {
+      await assert.doesNotReject(() => registrarAcaoAuditoria(casa, tool(session, { id: 'leitor-breve-1' })))
+    } finally {
+      clearTimeout(soltar)
+      fechar()
+    }
+    assert.deepEqual(await temporariosDaAuditoria(casa), [])
+    const stored = await lerAuditoriaAutocorrecao(casa)
+    assert.equal(stored.turns[0].actions.length, 1)
+  } finally {
+    await rm(casa, { recursive: true, force: true })
+  }
+})
+
+test('gravacao que nao substitui o arquivo apaga o temporario e devolve o erro', {
+  skip: process.platform !== 'win32' && 'so o Windows recusa substituir arquivo aberto'
+}, async () => {
+  const casa = await home()
+  const session = 'sessao-leitor-teimoso'
+  try {
+    await abrirTurnoAuditoria(casa, prompt(session, 'verifique estado'))
+    const path = caminhoDaAuditoriaAutocorrecao(casa)
+    const antes = await readFile(path, 'utf8')
+    const fd = openSync(path, 'r')
+    try {
+      await assert.rejects(
+        () => registrarAcaoAuditoria(casa, tool(session, { id: 'leitor-teimoso-1' })),
+        { code: 'EPERM' }
+      )
+    } finally {
+      closeSync(fd)
+    }
+    assert.deepEqual(await temporariosDaAuditoria(casa), [])
+    assert.equal(await readFile(path, 'utf8'), antes)
+  } finally {
+    await rm(casa, { recursive: true, force: true })
+  }
+})
+
+test('eventos sem turno ativo nao regravam a auditoria', async () => {
+  const casa = await home()
+  const semTurno = 'sessao-sem-turno'
+  try {
+    await abrirTurnoAuditoria(casa, prompt('sessao-com-turno', 'verifique estado'))
+    const path = caminhoDaAuditoriaAutocorrecao(casa)
+    const antes = marcaDoArquivo(path)
+    const conteudo = await readFile(path, 'utf8')
+    const resultados = [
+      await registrarAcaoAuditoria(casa, tool(semTurno, { id: 'sem-turno-1' })),
+      await registrarDelegacaoAuditoria(casa, {
+        session_id: semTurno,
+        agent_id: 'agente-sem-turno',
+        agent_type: 'Explore'
+      }, 'running'),
+      await registrarConclusaoTarefaAuditoria(casa, { session_id: semTurno, task_id: 'tarefa-sem-turno' }),
+      await auditarParada(casa, { session_id: semTurno, last_assistant_message: 'Feito.' }),
+      await encerrarSessaoAuditoria(casa, { session_id: semTurno })
+    ]
+    assert.deepEqual(resultados.map((item) => item.result), ['ignored', 'ignored', 'ignored', 'ignored', 'ignored'])
+    assert.deepEqual(marcaDoArquivo(path), antes)
+    assert.equal(await readFile(path, 'utf8'), conteudo)
+  } finally {
+    await rm(casa, { recursive: true, force: true })
+  }
+})
+
+test('conclusao de tarefa repetida nao regrava a auditoria', async () => {
+  const casa = await home()
+  const session = 'sessao-tarefa-repetida'
+  try {
+    await abrirTurnoAuditoria(casa, prompt(session, 'verifique estado'))
+    const conclusao = { session_id: session, task_id: 'tarefa-repetida-1' }
+    assert.equal((await registrarConclusaoTarefaAuditoria(casa, conclusao)).result, 'recorded')
+    const path = caminhoDaAuditoriaAutocorrecao(casa)
+    const antes = marcaDoArquivo(path)
+    assert.equal((await registrarConclusaoTarefaAuditoria(casa, conclusao)).result, 'duplicate')
+    assert.deepEqual(marcaDoArquivo(path), antes)
+  } finally {
+    await rm(casa, { recursive: true, force: true })
+  }
+})
+
+test('leitura da auditoria nao espera a trava de escrita nem regrava o arquivo', async () => {
+  const casa = await home()
+  try {
+    await abrirTurnoAuditoria(casa, prompt('sessao-leitura-livre', 'verifique estado'))
+    const path = caminhoDaAuditoriaAutocorrecao(casa)
+    const antes = marcaDoArquivo(path)
+    const trava = await acquireLocalFileLock(join(casa, 'audits', 'self-correction.lock'), {
+      acquisitionTimeoutMs: 1_000,
+      retryDelayMs: 10,
+      staleLockMs: 60_000,
+      heartbeatMs: 20_000
+    })
+    let lido
+    try {
+      await assert.doesNotReject(async () => {
+        lido = await lerAuditoriaAutocorrecao(casa)
+      })
+    } finally {
+      await trava.release()
+    }
+    assert.equal(lido.turns.length, 1)
+    assert.deepEqual(marcaDoArquivo(path), antes)
   } finally {
     await rm(casa, { recursive: true, force: true })
   }
