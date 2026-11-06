@@ -673,18 +673,38 @@ function memoriaJaCapturadaNoDia(memory, analysis, scope, activityDate) {
   )
 }
 
+// O placar da varredura não cancela o jogo: os quatro leitores assentam juntos (nenhum fica
+// rodando depois que a trava sai) e, se algum rejeitar, cada falha vira degradação anotada e o
+// placar fica null. O estado da varredura é salvo do mesmo jeito; sem isso, uma memória ocupada
+// por outro processo no fim da passada jogava fora cursores e evidências já processadas.
 async function contadores(casa) {
-  const [memory, failures, shortcuts, cycle] = await Promise.all([
+  const leituras = await Promise.allSettled([
     lerMemoria(casa),
     lerFalhas(casa),
     lerAtalhos(casa),
     lerCicloOperacional(casa)
   ])
+  const falhas = leituras.filter((leitura) => leitura.status === 'rejected')
+  for (const falha of falhas) registrarDegradacao(casa, 'contadores.varredura', falha.reason)
+  if (falhas.length > 0) return null
+  const [memory, failures, shortcuts, cycle] = leituras.map((leitura) => leitura.value)
   return {
     memory: { confirmed: memory.confirmed.length, candidates: memory.candidates.length },
     failures: failures.patterns.length,
     shortcuts: shortcuts.shortcuts.length,
     operationalImprovements: cycle.improvementCandidates.length
+  }
+}
+
+// Diferença entre os dois placares; sem um dos lados não existe diferença honesta para contar.
+function mudancas(before, after) {
+  if (before === null || after === null) return null
+  return {
+    confirmedMemories: after.memory.confirmed - before.memory.confirmed,
+    candidateMemories: after.memory.candidates - before.memory.candidates,
+    failurePatterns: after.failures - before.failures,
+    shortcuts: after.shortcuts - before.shortcuts,
+    operationalImprovements: after.operationalImprovements - before.operationalImprovements
   }
 }
 
@@ -895,13 +915,7 @@ export async function varrerAtividadesDoDia(casa, {
       desktopAudit,
       before,
       after,
-      changes: {
-        confirmedMemories: after.memory.confirmed - before.memory.confirmed,
-        candidateMemories: after.memory.candidates - before.memory.candidates,
-        failurePatterns: after.failures - before.failures,
-        shortcuts: after.shortcuts - before.shortcuts,
-        operationalImprovements: after.operationalImprovements - before.operationalImprovements
-      },
+      changes: mudancas(before, after),
       rawConversationStored: false,
       completedAt: now.toISOString()
     }

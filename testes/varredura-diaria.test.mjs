@@ -48,6 +48,18 @@ function registro(sessionId, uuid, timestamp, role, content, extra = {}) {
   })
 }
 
+// Degradações anotadas na casa de teste. Arquivo ausente vale lista vazia: um "nada foi anotado"
+// precisa cair na asserção que compara as operações, não num ENOENT da leitura.
+async function lerAnotadas(home) {
+  try {
+    const bruto = await readFile(join(pastaDoBanco(home), 'degradacoes.jsonl'), 'utf8')
+    return bruto.split('\n').filter(Boolean).map((linha) => JSON.parse(linha))
+  } catch (erro) {
+    if (erro?.code === 'ENOENT') return []
+    throw erro
+  }
+}
+
 function transcriptOmni(sessionId, date = '2026-08-26') {
   const lines = []
   let sequence = 0
@@ -548,7 +560,7 @@ test('reconciliacao que rejeita vira degradacao anotada e nao desfaz a varredura
     assert.equal(result.result, 'completed')
     assert.deepEqual(result.documentos, { resultado: 'degradada' })
     assert.equal((await lerEstadoVarredura(home)).scans.length, 1)
-    const anotadas = (await readFile(join(pastaDoBanco(home), 'degradacoes.jsonl'), 'utf8')).trim().split('\n').map((linha) => JSON.parse(linha))
+    const anotadas = await lerAnotadas(home)
     assert.deepEqual(anotadas.map((linha) => linha.operacao), ['documentos.varredura'])
   } finally {
     await rm(root, { recursive: true, force: true })
@@ -662,8 +674,50 @@ test('estado que falha na varredura vira degradacao anotada e nao desfaz a varre
     assert.equal(result.estados?.arquivos[RECIBOS], 'degradada', 'os recibos quebrados nao viraram degradacao')
     assert.equal(result.estados.arquivos[CONTINUIDADE], 'importada')
     assert.equal((await lerEstadoVarredura(home)).scans.length, 1)
-    const anotadas = (await readFile(join(pastaDoBanco(home), 'degradacoes.jsonl'), 'utf8')).trim().split('\n').map((linha) => JSON.parse(linha))
+    const anotadas = await lerAnotadas(home)
     assert.deepEqual(anotadas.map((linha) => linha.operacao), ['estados.varredura'])
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+// O placar da varredura (contadores antes e depois) não cancela o jogo. Uma pasta antiga no lugar
+// da trava da memória faz lerMemoria rejeitar nas duas pontas, como a memória ocupada por outro
+// processo: a varredura conclui, o placar fica null, a atividade já processada fica salva no
+// estado e cada leitura que caiu vira degradação anotada.
+test('contador que rejeita vira degradacao anotada e nao desfaz a varredura', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'omni-daily-contadores-falha-'))
+  const home = join(root, 'home')
+  const projects = join(root, 'projects')
+  const sessionId = 'session-contadores'
+  const travaDaMemoria = join(home, 'memory', 'memory.lock')
+  try {
+    await mkdir(projects, { recursive: true })
+    await writeFile(join(projects, 'contadores.jsonl'), [
+      registro(sessionId, 'activation', '2026-08-28T09:00:00-03:00', 'user', '<command-name>/omni:omni</command-name>'),
+      registro(sessionId, 'prompt', '2026-08-28T09:01:00-03:00', 'user', 'Verifique a tarefa agendada.'),
+      registro(sessionId, 'answer', '2026-08-28T09:02:00-03:00', 'assistant', [{ type: 'text', text: 'Verificada.' }])
+    ].join('\n') + '\n', 'utf8')
+    await mkdir(travaDaMemoria, { recursive: true })
+    await utimes(travaDaMemoria, new Date('2020-01-01T00:00:00Z'), new Date('2020-01-01T00:00:00Z'))
+    let result
+    await assert.doesNotReject(async () => {
+      result = await varrerAtividadesDoDia(home, {
+        date: '2026-08-28',
+        projectsRoot: projects,
+        now: new Date('2026-08-28T12:00:00-03:00')
+      })
+    })
+    assert.equal(result.result, 'completed')
+    assert.equal(result.scan.activitiesProcessed, 1)
+    assert.equal(result.scan.before, null, 'o placar de antes inventou contagem sem a memoria')
+    assert.equal(result.scan.after, null, 'o placar de depois inventou contagem sem a memoria')
+    assert.equal(result.scan.changes, null, 'a diferenca saiu de um placar que nao existe')
+    const estado = await lerEstadoVarredura(home)
+    assert.equal(estado.scans.length, 1)
+    assert.equal(estado.processedEvidence.length, 1, 'a atividade processada nao ficou salva')
+    const anotadas = await lerAnotadas(home)
+    assert.deepEqual(anotadas.map((linha) => linha.operacao), ['contadores.varredura', 'contadores.varredura'])
   } finally {
     await rm(root, { recursive: true, force: true })
   }
