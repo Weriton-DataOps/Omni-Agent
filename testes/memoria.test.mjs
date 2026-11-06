@@ -201,3 +201,39 @@ test('escritas concorrentes preservam JSON válido e não perdem registros', asy
     await rm(casa, { recursive: true, force: true })
   }
 })
+
+test('escritores do mesmo processo fazem fila e nenhuma lembranca estoura o prazo da trava', async () => {
+  // A gravação abre o omni.db de forma síncrona: sem fila no processo, a vez de cada irmão consome
+  // o prazo de 2 s dos outros com o loop bloqueado, e a lembrança volta recusada como "ocupada".
+  const casa = await home()
+  try {
+    const resultados = await Promise.allSettled(
+      Array.from({ length: 40 }, (_, index) => lembrarExplicitamente(casa, `fato da fila número ${index}`))
+    )
+    assert.deepEqual(resultados.filter((item) => item.status === 'rejected').map((item) => item.reason?.message), [])
+    const memory = await lerMemoria(casa)
+    assert.equal(memory.confirmed.length, 40)
+    assert.equal(new Set(memory.confirmed.map((item) => item.text)).size, 40)
+  } finally {
+    await rm(casa, { recursive: true, force: true })
+  }
+})
+
+test('recusa por trava ocupada nao prende a fila da memoria', async () => {
+  const casa = await home()
+  const lockPath = join(casa, 'memory', 'memory.lock')
+  let relogio
+  try {
+    await mkdir(join(casa, 'memory'), { recursive: true })
+    await writeFile(lockPath, 'writer-original\n', 'utf8')
+    await assert.rejects(() => lembrarExplicitamente(casa, 'fato antes da recusa'), /ocupada por outra escrita/)
+    await rm(lockPath, { force: true })
+    const presa = new Promise((resolve) => { relogio = setTimeout(() => resolve('presa na fila'), 8_000) })
+    const desfecho = await Promise.race([lembrarExplicitamente(casa, 'fato depois da recusa').then(() => 'gravou'), presa])
+    assert.equal(desfecho, 'gravou')
+    assert.equal((await lerMemoria(casa)).confirmed.length, 1)
+  } finally {
+    clearTimeout(relogio)
+    await rm(casa, { recursive: true, force: true })
+  }
+})

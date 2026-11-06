@@ -526,16 +526,43 @@ async function carregarSemTrava(casa) {
   return carregamento(lida.memory, result, opcoes)
 }
 
+// Escritores do mesmo processo fazem fila antes da trava de arquivo. A gravação abre o omni.db de
+// forma síncrona e, sem fila, a vez de cada um consumia o prazo de 2 s dos outros com o loop
+// parado. Entre processos, a trava de arquivo segue igual, com o mesmo prazo.
+const filasDaTrava = new Map()
+
 async function adquirirTrava(casa) {
   const trava = join(casa, 'memory', 'memory.lock')
-  const lock = await acquireLocalFileLock(trava, {
-    acquisitionTimeoutMs: 2_000,
-    retryDelayMs: 50,
-    staleLockMs: 10_000,
-    heartbeatMs: 2_500,
-    timeoutMessage: 'A memória está ocupada por outra escrita.'
-  })
-  return () => lock.release()
+  const anterior = filasDaTrava.get(trava) ?? Promise.resolve()
+  let soltarVez
+  const vez = new Promise((resolve) => { soltarVez = resolve })
+  const cauda = anterior.then(() => vez)
+  filasDaTrava.set(trava, cauda)
+  const sairDaFila = () => {
+    soltarVez()
+    if (filasDaTrava.get(trava) === cauda) filasDaTrava.delete(trava)
+  }
+  await anterior
+  let lock
+  try {
+    lock = await acquireLocalFileLock(trava, {
+      acquisitionTimeoutMs: 2_000,
+      retryDelayMs: 50,
+      staleLockMs: 10_000,
+      heartbeatMs: 2_500,
+      timeoutMessage: 'A memória está ocupada por outra escrita.'
+    })
+  } catch (erro) {
+    sairDaFila()
+    throw erro
+  }
+  return async () => {
+    try {
+      await lock.release()
+    } finally {
+      sairDaFila()
+    }
+  }
 }
 
 // Banco primeiro, projeção depois. Falhou só o banco: o arquivo leva a versão e o banco ingere na
