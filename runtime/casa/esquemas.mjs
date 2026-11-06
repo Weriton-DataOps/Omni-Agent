@@ -159,6 +159,7 @@ CREATE TABLE _estados_no_disco (
   }
 ]
 
+// A v1 do cofre foi revista no plano 4 (guarda dpapi | gerenciador-windows; blob nulo no inventário só de nomes) e congela com o push dele: mudança daí em diante é migração nova.
 export const MIGRACOES_COFRE = [
   {
     versao: 1,
@@ -181,10 +182,16 @@ CREATE TABLE credenciais (
   ultimo_teste_em TEXT,
   ultimo_teste_ok INTEGER,
   ultimo_teste_detalhe TEXT,
-  cifra TEXT NOT NULL DEFAULT 'dpapi-usuario',
-  blob BLOB NOT NULL,
-  blob_sha256 TEXT NOT NULL,
-  ${VIVO}
+  guarda TEXT NOT NULL CHECK (guarda IN ('dpapi', 'gerenciador-windows')),
+  alvo_windows TEXT,
+  blob BLOB,
+  blob_sha256 TEXT,
+  ${VIVO},
+  CHECK ((guarda = 'gerenciador-windows') = (alvo_windows IS NOT NULL)),
+  CHECK ((guarda = 'dpapi') = (blob IS NOT NULL)),
+  CHECK ((blob IS NULL) = (blob_sha256 IS NULL)),
+  CHECK (CASE WHEN json_valid(agentes) THEN json_type(agentes) = 'array' ELSE 0 END),
+  CHECK (CASE WHEN json_valid(etiquetas) THEN json_type(etiquetas) = 'array' ELSE 0 END)
 );
 CREATE UNIQUE INDEX credenciais_nome_vivo ON credenciais (nome) WHERE apagado_em IS NULL;
 ${gatilhosDeDiario('credenciais')}
