@@ -1,9 +1,10 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdir, open, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises'
+import { mkdir, open, readFile, stat, unlink, writeFile } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
 
 import { pareceConterSegredo } from './memoria.mjs'
 import { lerAuditoriaAutocorrecao } from './auditoria-autocorrecao.mjs'
+import { carregarTextoDoEstado, gravarTextoDoEstado } from './estados.mjs'
 
 export const SHORTCUT_STORE_SCHEMA_VERSION = 4
 export const SHORTCUT_POLICY_VERSION = 4
@@ -491,40 +492,36 @@ async function adquirirTrava(casa) {
   throw new Error('O aprendizado de atalhos está ocupado por outra escrita.')
 }
 
+// Carga sob a trava (adquirirTrava), pela ponte do omni.db.
 async function carregar(casa, policy) {
   const path = caminhoDosAtalhos(casa)
-  try {
-    const source = await readFile(path, 'utf8')
-    const parsed = JSON.parse(source)
-    let store = parsed.schemaVersion === 1 ? migrarV1(source, policy) : parsed
-    if (store.schemaVersion === 2) store = migrarV2(store)
-    if (store.schemaVersion === 3) store = migrarV3(store)
-    if (store.schemaVersion > SHORTCUT_STORE_SCHEMA_VERSION) {
-      throw new Error(`Aprendizado v${store.schemaVersion} é mais novo que este plugin.`)
-    }
-    validarStore(store, path)
-    return {
-      store,
-      initialized: false,
-      migratedFrom: parsed.schemaVersion < SHORTCUT_STORE_SCHEMA_VERSION ? parsed.schemaVersion : null,
-      source
-    }
-  } catch (error) {
-    if (error?.code === 'ENOENT') {
-      return { store: storeVazio(), initialized: true, migratedFrom: null, source: null }
-    }
-    throw error
+  const source = carregarTextoDoEstado(casa, 'learning/shortcuts.json', {
+    versao: SHORTCUT_STORE_SCHEMA_VERSION,
+    validar: (doc) => validarStore(doc, path)
+  })
+  if (source === null) return { store: storeVazio(), initialized: true, migratedFrom: null, source: null }
+  const parsed = JSON.parse(source)
+  let store = parsed.schemaVersion === 1 ? migrarV1(source, policy) : parsed
+  if (store.schemaVersion === 2) store = migrarV2(store)
+  if (store.schemaVersion === 3) store = migrarV3(store)
+  if (store.schemaVersion > SHORTCUT_STORE_SCHEMA_VERSION) {
+    throw new Error(`Aprendizado v${store.schemaVersion} é mais novo que este plugin.`)
+  }
+  validarStore(store, path)
+  return {
+    store,
+    initialized: false,
+    migratedFrom: parsed.schemaVersion < SHORTCUT_STORE_SCHEMA_VERSION ? parsed.schemaVersion : null,
+    source
   }
 }
 
+// Escrita pela ponte: banco, arquivo e base na mesma transação.
 async function gravar(casa, store) {
   const path = caminhoDosAtalhos(casa)
-  const temporary = `${path}.${process.pid}.novo`
   store.store.updatedAt = new Date().toISOString()
   validarStore(store, path)
-  await mkdir(join(casa, 'learning'), { recursive: true })
-  await writeFile(temporary, `${JSON.stringify(store, null, 2)}\n`, 'utf8')
-  await rename(temporary, path)
+  gravarTextoDoEstado(casa, 'learning/shortcuts.json', `${JSON.stringify(store, null, 2)}\n`)
 }
 
 function aplicarDecaimento(store, policy, at) {

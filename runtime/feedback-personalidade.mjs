@@ -1,11 +1,12 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { readFile, rename, unlink, writeFile } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { acquireLocalFileLock } from '../dist/adapters/local-json/node-local-file-lock.js'
 import { observePersonalityContinuity, readPersonalityContinuity } from '../dist/adapters/local-json/personality-continuity-store.js'
 import { hasContinuityComplaint, hasExplicitPersistentPersonalityDirective, normalizeOwnerText } from '../dist/core/personality/owner-feedback.js'
+import { carregarTextoDoEstado, gravarTextoDoEstado } from './estados.mjs'
 
 export const PERSONALITY_FEEDBACK_SCHEMA_VERSION = 1
 
@@ -256,7 +257,8 @@ export function caminhoDoFeedbackPersonalidade(casa) {
   return join(casa, 'feedback', 'personality-feedback.json')
 }
 
-async function load(casa) {
+// Leitura pura, sem trava e sem banco (desvio 8).
+async function lerArquivo(casa) {
   const path = caminhoDoFeedbackPersonalidade(casa)
   try {
     return validateStore(JSON.parse(await readFile(path, 'utf8')), path)
@@ -264,6 +266,16 @@ async function load(casa) {
     if (error?.code === 'ENOENT') return emptyStore()
     throw error
   }
+}
+
+// Carga dos escritores, sob a trava, pela ponte do omni.db.
+function carregarSobTrava(casa) {
+  const path = caminhoDoFeedbackPersonalidade(casa)
+  const texto = carregarTextoDoEstado(casa, 'feedback/personality-feedback.json', {
+    versao: PERSONALITY_FEEDBACK_SCHEMA_VERSION,
+    validar: (doc) => validateStore(doc, path)
+  })
+  return texto === null ? emptyStore() : validateStore(JSON.parse(texto), path)
 }
 
 async function acquireLock(casa) {
@@ -280,17 +292,12 @@ async function acquireLock(casa) {
   return () => lock.release()
 }
 
+// Escrita pela ponte: banco, arquivo e base na mesma transação.
 async function save(casa, store, at = now()) {
   const path = caminhoDoFeedbackPersonalidade(casa)
-  const temporary = `${path}.${process.pid}.${randomUUID()}.novo`
   store.store.updatedAt = at
   validateStore(store, path)
-  try {
-    await writeFile(temporary, `${JSON.stringify(store, null, 2)}\n`, 'utf8')
-    await rename(temporary, path)
-  } finally {
-    await unlink(temporary).catch(() => undefined)
-  }
+  gravarTextoDoEstado(casa, 'feedback/personality-feedback.json', `${JSON.stringify(store, null, 2)}\n`)
 }
 
 async function activeIdentity(pluginRoot = PLUGIN_ROOT) {
@@ -615,11 +622,11 @@ function unboundImmediateAdjustment(classification) {
 }
 
 export async function lerFeedbackPersonalidade(casa) {
-  return load(casa)
+  return lerArquivo(casa)
 }
 
 export async function resumirFeedbackPersonalidade(casa) {
-  const store = await load(casa)
+  const store = await lerArquivo(casa)
   return snapshot(store, casa)
 }
 
@@ -646,7 +653,7 @@ export async function registrarUltimaRespostaPersonalidade(casa, input, options 
   }
   const release = await acquireLock(casa)
   try {
-    const store = await load(casa)
+    const store = carregarSobTrava(casa)
     store.lastResponses = store.lastResponses.filter(
       (item) => item.sessionFingerprint !== response.sessionFingerprint
     )
@@ -687,7 +694,7 @@ export async function observarVotoPersonalidade(casa, input, options = {}) {
   )
   const release = await acquireLock(casa)
   try {
-    const store = await load(casa)
+    const store = carregarSobTrava(casa)
     const sessionFingerprint = hash(sessionId)
     const response = store.lastResponses.find((item) => item.sessionFingerprint === sessionFingerprint)
     if (!response) {

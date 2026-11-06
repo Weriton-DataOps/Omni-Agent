@@ -12,8 +12,10 @@
 // de personalidade) é responsabilidade de quem registrou, guiada por `revert`.
 
 import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
-import { isAbsolute, join } from 'node:path'
+import { mkdir, open, readFile, stat, unlink } from 'node:fs/promises'
+import { dirname, isAbsolute, join } from 'node:path'
+
+import { carregarTextoDoEstado, gravarTextoDoEstado } from './estados.mjs'
 
 export const RECIBOS_SCHEMA_VERSION = 1
 const RETENCAO_MAXIMA = 200
@@ -94,15 +96,46 @@ function validarStore(store, caminho) {
   return store
 }
 
-async function gravarAtomico(caminho, store, at) {
+// Trava no molde das falhas (desvio 15): open com wx, 40 tentativas a cada 50 ms; trava com mais
+// de 10 s é de escrita morta. O caminho sai de caminhoDosRecibos, que recusa casa relativa antes
+// de criar pasta.
+async function adquirirTrava(casa) {
+  const pasta = dirname(caminhoDosRecibos(casa))
+  await mkdir(pasta, { recursive: true })
+  const caminhoDaTrava = join(pasta, 'evolution-receipts.lock')
+  for (let tentativa = 0; tentativa < 40; tentativa += 1) {
+    try {
+      const handle = await open(caminhoDaTrava, 'wx')
+      return async () => {
+        await handle.close()
+        await unlink(caminhoDaTrava).catch(() => undefined)
+      }
+    } catch (erro) {
+      if (erro?.code !== 'EEXIST') throw erro
+      const idade = Date.now() - (await stat(caminhoDaTrava).catch(() => ({ mtimeMs: Date.now() }))).mtimeMs
+      if (idade > 10_000) await unlink(caminhoDaTrava).catch(() => undefined)
+      await new Promise((resolver) => setTimeout(resolver, 50))
+    }
+  }
+  throw new Error('Os recibos de evolução estão ocupados por outra escrita.')
+}
+
+// Carga dos escritores, sob a trava, pela ponte do omni.db. lerRecibos segue no arquivo (desvio 8).
+function carregarSobTrava(casa) {
+  const caminho = caminhoDosRecibos(casa)
+  const texto = carregarTextoDoEstado(casa, 'learning/evolution-receipts.json', {
+    versao: RECIBOS_SCHEMA_VERSION,
+    validar: (doc) => validarStore(doc, caminho)
+  })
+  return texto === null ? storeVazio() : validarStore(JSON.parse(texto), caminho)
+}
+
+function gravar(casa, store, at) {
   store.store.updatedAt = agora(at)
   if (store.receipts.length > RETENCAO_MAXIMA) {
     store.receipts = store.receipts.slice(store.receipts.length - RETENCAO_MAXIMA)
   }
-  await mkdir(join(caminho, '..'), { recursive: true })
-  const temp = `${caminho}.${process.pid}.novo`
-  await writeFile(temp, `${JSON.stringify(store, null, 2)}\n`, 'utf8')
-  await rename(temp, caminho)
+  gravarTextoDoEstado(casa, 'learning/evolution-receipts.json', `${JSON.stringify(store, null, 2)}\n`)
   return store
 }
 
@@ -130,35 +163,47 @@ export async function registrarRecibo(casa, entrada, { at } = {}) {
     at: agora(at),
     vetoedAt: null
   }
-  const caminho = caminhoDosRecibos(casa)
-  const store = await lerRecibos(casa)
-  store.receipts.push(recibo)
-  await gravarAtomico(caminho, store, at)
+  const release = await adquirirTrava(casa)
+  try {
+    const store = carregarSobTrava(casa)
+    store.receipts.push(recibo)
+    gravar(casa, store, at)
+  } finally {
+    await release()
+  }
   return recibo
 }
 
 export async function vetarRecibo(casa, id, { at } = {}) {
-  const caminho = caminhoDosRecibos(casa)
-  const store = await lerRecibos(casa)
-  const recibo = store.receipts.find((item) => item.id === id)
-  if (!recibo) return { result: 'not-found', id }
-  if (recibo.status === 'vetoed') return { result: 'already-vetoed', recibo }
-  recibo.status = 'vetoed'
-  recibo.vetoedAt = agora(at)
-  await gravarAtomico(caminho, store, at)
-  // O chamador executa a reversão real guiado por recibo.revert e marca 'reverted' depois.
-  return { result: 'vetoed', recibo }
+  const release = await adquirirTrava(casa)
+  try {
+    const store = carregarSobTrava(casa)
+    const recibo = store.receipts.find((item) => item.id === id)
+    if (!recibo) return { result: 'not-found', id }
+    if (recibo.status === 'vetoed') return { result: 'already-vetoed', recibo }
+    recibo.status = 'vetoed'
+    recibo.vetoedAt = agora(at)
+    gravar(casa, store, at)
+    // O chamador executa a reversão real guiado por recibo.revert e marca 'reverted' depois.
+    return { result: 'vetoed', recibo }
+  } finally {
+    await release()
+  }
 }
 
 export async function marcarRevertido(casa, id, { at } = {}) {
-  const caminho = caminhoDosRecibos(casa)
-  const store = await lerRecibos(casa)
-  const recibo = store.receipts.find((item) => item.id === id)
-  if (!recibo) return { result: 'not-found', id }
-  recibo.status = 'reverted'
-  if (!recibo.vetoedAt) recibo.vetoedAt = agora(at)
-  await gravarAtomico(caminho, store, at)
-  return { result: 'reverted', recibo }
+  const release = await adquirirTrava(casa)
+  try {
+    const store = carregarSobTrava(casa)
+    const recibo = store.receipts.find((item) => item.id === id)
+    if (!recibo) return { result: 'not-found', id }
+    recibo.status = 'reverted'
+    if (!recibo.vetoedAt) recibo.vetoedAt = agora(at)
+    gravar(casa, store, at)
+    return { result: 'reverted', recibo }
+  } finally {
+    await release()
+  }
 }
 
 export async function recibosAtivos(casa) {

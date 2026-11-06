@@ -304,6 +304,64 @@ operacional para o `omni.db` e desligar o 5433 depois que a instalação limpa p
 §5. É uma dependência externa a menos, que é o pedido de origem. Até essa decisão, nada é
 desligado.
 
+### 3.8 Estados de aprendizado e feedback no `omni.db`
+
+Os oito estados JSON de `learning/` e `feedback/` seguem o molde do §3.6: o `omni.db` é a fonte
+e o arquivo é a projeção, escrita byte a byte como o dono sempre gravou
+(`JSON.stringify(doc, null, 2)` e a quebra de linha final). São as falhas, a automação de
+falhas, o autoaperfeiçoamento, os atalhos, os recibos de evolução e o feedback de
+personalidade, cujos seis donos em JavaScript carregam e gravam pela ponte
+(`runtime/estados.mjs`), mais a continuidade e as direções do dono, escritas pela loja
+TypeScript do `dist`, que fica como está e é espelhada pela varredura.
+
+**Como guarda.** Cada estado vira um esqueleto em `estados` (o documento com as coleções vazias)
+e um registro por item em `estado_registros`. As duas tabelas são dado vivo e entram na migração
+v3, com duas exceções ao §3.1. O id é natural, não UUID v7: o do estado é o caminho relativo
+(`learning/failures.json`) e o do registro é `<estado>|<coleção>|<chave>`, para que duas
+máquinas que importam o mesmo estado cheguem aos mesmos ids e a F5 case as linhas em vez de
+duplicá-las. E mudar a ordem sobe a versão do registro movido, porque aqui a ordem é parte do
+documento: os recibos e os jobs encerrados da automação guardam só os 200 mais novos, contados
+por posição. A regra da cauda, que só renumera da primeira quebra em diante, mantém os movidos
+no mínimo. A chave é o campo indicado no catálogo; senão o `id`, quando é texto; senão o
+próprio item, quando é texto de até 200 caracteres; senão `h:` e 32 dígitos hexadecimais do
+sha256 do item. Chave repetida ganha `#1`, `#2` e assim por diante. A recomposição é conferida
+por hash. O `store.updatedAt` é o relógio local da linha: não sobe versão nem vai ao diário.
+Item que sai da coleção vira lápide; o estado inteiro, não: arquivo apagado volta do banco.
+
+**Três hashes decidem.** Disco, banco vivo e a base desta máquina, guardada em
+`_estados_no_disco`: interna e sem diário, porque é estado local de cada máquina, não dado a
+sincronizar. As decisões são `vazia`, `intocada`, `importada`, `projetada`, `atual`,
+`socorrida`, `defasada` e `ingerida`. A diferença para o §3.6 é a base por máquina no lugar da
+`_projecoes`: voltar o arquivo a um texto antigo é edição, e o disco vence. O relógio não serve
+de juiz, porque muda em toda escrita.
+
+**Uma transação, sob a trava do dono.** Leitura do arquivo, decisão, cópia, projeção e base
+acontecem no mesmo `BEGIN IMMEDIATE`, para que quem decide veja o disco e o banco do mesmo
+instante. Os donos já tinham trava; os recibos de evolução ganham a sua
+(`learning/evolution-receipts.lock`). O custo é a trava de escrita do banco presa enquanto o
+arquivo é lido e escrito: de 10 a 40 ms na leitura do `failures.json` de 4,5 MB e uns 130 ms na
+escrita inteira dele. Os leitores sem trava seguem no arquivo, que a projeção mantém em dia.
+
+**Primeira importação.** Acontece na primeira carga de cada dono com o código novo. Os bytes de
+antes ficam ao lado, em `<arquivo>.antes-da-casa.<carimbo>`: é a cópia datada do §4.2, mas o
+original não congela, porque o banco passa a projetar por cima dele. `_importacoes` ganha uma
+linha só nessa primeira vez; as ingestões seguintes não registram. A varredura diária importa os
+estados que nenhum dono carregou e espelha os dois da loja TypeScript sob a trava dela.
+
+**Degradação, nunca queda.** As operações em `degradacoes.jsonl` são `estado.carregar`,
+`estado.gravar`, `estado.projetar`, `estado.copia`, `estado.arquivo-invalido`, `estado.espelho`
+e `estados.varredura`, sempre sem conteúdo de estado. Arquivo quebrado com linha no banco é
+guardado em `.invalida.<carimbo>`, e só então o banco projeta, se o que ele guarda passa no
+validador do dono; se a cópia falhar, nada é tocado. Versão mais nova ou fora do contrato do
+dono fica intocada: o dono recebe o texto como está. Sem arquivo e com banco que não abre, a
+carga lança, porque devolver vazio faria o dono gravar um estado novo por cima do que o banco
+guarda. Sem SQLite, volta a ser só o arquivo.
+
+**Fora, por enquanto.** `learning/daily-scan.json` é o estado da própria varredura que dispara a
+reconciliação. `learning/live-coverage.json` (8 MB, reescrito várias vezes por hora),
+`audits/self-correction.json` e `runs/operational-cycle.json` têm o mesmo padrão de reescrita
+inteira e frequente; os três pedem um plano próprio.
+
 ## 4. O executor
 
 Ele não baixa repo: baixa **um arquivo** (`omni-instalar.ps1`, anexo do GitHub Release) e roda.

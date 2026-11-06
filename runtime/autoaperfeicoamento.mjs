@@ -4,6 +4,7 @@ import { access, mkdir, open, readFile, realpath, rename, rm, stat, unlink, writ
 import { isAbsolute, join, resolve, sep } from 'node:path'
 
 import { lerAtalhos } from './atalhos.mjs'
+import { carregarTextoDoEstado, gravarTextoDoEstado } from './estados.mjs'
 import { lerFalhas } from './falhas.mjs'
 import { pareceConterSegredo } from './memoria.mjs'
 import { verificarIntegridadeRelease } from './integridade-release.mjs'
@@ -255,28 +256,28 @@ async function adquirirTrava(casa) {
   throw new Error('O pipeline de autoaperfeiçoamento está ocupado por outra escrita.')
 }
 
+// Carga sob a trava (adquirirTrava), pela ponte do omni.db.
 async function carregar(casa, policy) {
   const path = caminhoDoAutoaperfeicoamento(casa)
-  try {
-    const store = JSON.parse(await readFile(path, 'utf8'))
-    if (store.schemaVersion > SELF_IMPROVEMENT_SCHEMA_VERSION) {
-      throw new Error(`Autoaperfeiçoamento v${store.schemaVersion} é mais novo que este plugin.`)
-    }
-    validarStore(store, path, policy)
-    return { store, initialized: false }
-  } catch (error) {
-    if (error?.code === 'ENOENT') return { store: storeVazio(), initialized: true }
-    throw error
+  const texto = carregarTextoDoEstado(casa, 'learning/self-improvement.json', {
+    versao: SELF_IMPROVEMENT_SCHEMA_VERSION,
+    validar: (doc) => validarStore(doc, path, policy)
+  })
+  if (texto === null) return { store: storeVazio(), initialized: true }
+  const store = JSON.parse(texto)
+  if (store.schemaVersion > SELF_IMPROVEMENT_SCHEMA_VERSION) {
+    throw new Error(`Autoaperfeiçoamento v${store.schemaVersion} é mais novo que este plugin.`)
   }
+  validarStore(store, path, policy)
+  return { store, initialized: false }
 }
 
+// Escrita pela ponte: banco, arquivo e base na mesma transação.
 async function gravar(casa, store, policy) {
   const path = caminhoDoAutoaperfeicoamento(casa)
-  const temporary = `${path}.${process.pid}.novo`
   store.store.updatedAt = agora()
   validarStore(store, path, policy)
-  await writeFile(temporary, `${JSON.stringify(store, null, 2)}\n`, 'utf8')
-  await rename(temporary, path)
+  gravarTextoDoEstado(casa, 'learning/self-improvement.json', `${JSON.stringify(store, null, 2)}\n`)
 }
 
 export function classificarAprendizado({ useful, reusable, nature = null }) {

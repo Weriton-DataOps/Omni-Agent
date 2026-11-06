@@ -120,6 +120,42 @@ ${gatilhosDeDiario('documentos')}`
   em TEXT NOT NULL,
   PRIMARY KEY (maquina, id)
 );`
+  },
+  // v3 (plano 3 da F1): estados de aprendizado e feedback (learning/*.json, feedback/*.json).
+  // estados guarda o documento sem as coleções (esqueleto), o hash do texto inteiro e o relógio
+  // (store.updatedAt, local de cada máquina, não sobe versão); cada item de coleção vira uma linha
+  // de estado_registros, para a F5 trafegar só o que mudou. Aqui a ordem é parte do documento e
+  // sobe versão. Sem chave estrangeira entre as duas: a F5 aplica em qualquer ordem.
+  // _estados_no_disco é a base por máquina (como _documentos_no_disco): interna, sem diário.
+  {
+    versao: 3,
+    nome: 'estados de aprendizado e feedback',
+    sql: `CREATE TABLE estados (
+  id TEXT PRIMARY KEY,
+  esqueleto TEXT NOT NULL,
+  texto_sha256 TEXT NOT NULL,
+  relogio TEXT,
+  ${VIVO}
+);
+${gatilhosDeDiario('estados')}
+CREATE TABLE estado_registros (
+  id TEXT PRIMARY KEY,
+  arquivo TEXT NOT NULL,
+  colecao TEXT NOT NULL,
+  ordem INTEGER NOT NULL,
+  sha256 TEXT NOT NULL,
+  corpo TEXT NOT NULL,
+  ${VIVO}
+);
+CREATE INDEX estado_registros_por_colecao ON estado_registros (arquivo, colecao, ordem) WHERE apagado_em IS NULL;
+${gatilhosDeDiario('estado_registros')}
+CREATE TABLE _estados_no_disco (
+  maquina TEXT NOT NULL,
+  id TEXT NOT NULL REFERENCES estados (id),
+  sha256 TEXT NOT NULL,
+  em TEXT NOT NULL,
+  PRIMARY KEY (maquina, id)
+);`
   }
 ]
 

@@ -554,3 +554,117 @@ test('reconciliacao que rejeita vira degradacao anotada e nao desfaz a varredura
     await rm(root, { recursive: true, force: true })
   }
 })
+
+// Plano 3 da F1: depois dos documentos, a varredura põe no omni.db os estados de learning/ e
+// feedback/ que nenhum dono carregou. Falhas e atalhos, que a própria varredura carrega antes,
+// chegam pela ponte do dono e aparecem como presentes; a continuidade é espelho da loja TS.
+const RECIBOS = 'learning/evolution-receipts.json'
+const CONTINUIDADE = 'feedback/personality-continuity.json'
+const recibosVazios = () => ({
+  schemaVersion: 1,
+  store: { id: 'omni-evolution-receipts', createdAt: '2026-08-27T10:00:00.000Z', updatedAt: '2026-08-27T10:00:00.000Z' },
+  receipts: []
+})
+const continuidadeVazia = () => ({ schemaVersion: 1, observations: [] })
+async function semearEstado(home, rel, doc) {
+  const [pasta, nome] = rel.split('/')
+  await mkdir(join(home, pasta), { recursive: true })
+  await writeFile(join(home, pasta, nome), `${JSON.stringify(doc, null, 2)}\n`, 'utf8')
+}
+function estadosNoBanco(home) {
+  return comBancoDaCasa(home, 'omni', (db) => db.prepare('SELECT id FROM estados ORDER BY id').all().map((linha) => linha.id))
+}
+
+test('varredura concluida poe no omni.db os estados que nenhum dono carregou', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'omni-daily-estados-'))
+  const home = join(root, 'home')
+  const projects = join(root, 'projects')
+  try {
+    await mkdir(projects, { recursive: true })
+    await semearEstado(home, RECIBOS, recibosVazios())
+    await semearEstado(home, CONTINUIDADE, continuidadeVazia())
+    const result = await varrerAtividadesDoDia(home, {
+      date: '2026-08-28',
+      projectsRoot: projects,
+      now: new Date('2026-08-28T12:00:00-03:00')
+    })
+    assert.equal(result.result, 'completed')
+    assert.deepEqual(Object.keys(result), ['result', 'scan', 'documentos', 'estados'], 'a varredura concluida nao devolveu os estados')
+    assert.deepEqual(result.estados, {
+      resultado: 'feita',
+      arquivos: {
+        'learning/failures.json': 'presente',
+        'learning/failure-automation.json': 'sem-arquivo',
+        'learning/self-improvement.json': 'sem-arquivo',
+        'learning/shortcuts.json': 'presente',
+        [RECIBOS]: 'importada',
+        'feedback/personality-feedback.json': 'sem-arquivo',
+        [CONTINUIDADE]: 'importada',
+        'feedback/personality-owner-directions.json': 'vazia'
+      }
+    })
+    assert.deepEqual(estadosNoBanco(home), [CONTINUIDADE, RECIBOS, 'learning/failures.json', 'learning/shortcuts.json'])
+    assert.equal((await lerEstadoVarredura(home)).scans.at(-1).estados, undefined)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('varredura automatica fora do horario nao reconcilia os estados', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'omni-daily-estados-due-'))
+  const home = join(root, 'home')
+  const projects = join(root, 'projects')
+  try {
+    await mkdir(projects, { recursive: true })
+    await semearEstado(home, RECIBOS, recibosVazios())
+    const primeira = await varrerAtividadesDoDia(home, {
+      date: '2026-08-28',
+      projectsRoot: projects,
+      automatic: true,
+      now: new Date('2026-08-28T12:00:00-03:00')
+    })
+    assert.equal(primeira.result, 'completed')
+    assert.equal(primeira.estados?.arquivos[RECIBOS], 'importada', 'a primeira passada nao importou os recibos')
+    await semearEstado(home, CONTINUIDADE, continuidadeVazia())
+    const segunda = await varrerAtividadesDoDia(home, {
+      date: '2026-08-28',
+      projectsRoot: projects,
+      automatic: true,
+      now: new Date('2026-08-28T12:05:00-03:00')
+    })
+    assert.equal(segunda.result, 'not-due')
+    assert.equal(segunda.estados, undefined)
+    assert.equal(estadosNoBanco(home).includes(CONTINUIDADE), false, 'a passada not-due reconciliou a continuidade')
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+// Uma pasta no lugar dos recibos faz a importação tropeçar em EISDIR: o estado degrada, a
+// continuidade segue e a varredura conclui com o estado salvo e a degradação anotada.
+test('estado que falha na varredura vira degradacao anotada e nao desfaz a varredura', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'omni-daily-estados-falha-'))
+  const home = join(root, 'home')
+  const projects = join(root, 'projects')
+  try {
+    await mkdir(projects, { recursive: true })
+    await mkdir(join(home, 'learning', 'evolution-receipts.json'), { recursive: true })
+    await semearEstado(home, CONTINUIDADE, continuidadeVazia())
+    let result
+    await assert.doesNotReject(async () => {
+      result = await varrerAtividadesDoDia(home, {
+        date: '2026-08-28',
+        projectsRoot: projects,
+        now: new Date('2026-08-28T12:00:00-03:00')
+      })
+    })
+    assert.equal(result.result, 'completed')
+    assert.equal(result.estados?.arquivos[RECIBOS], 'degradada', 'os recibos quebrados nao viraram degradacao')
+    assert.equal(result.estados.arquivos[CONTINUIDADE], 'importada')
+    assert.equal((await lerEstadoVarredura(home)).scans.length, 1)
+    const anotadas = (await readFile(join(pastaDoBanco(home), 'degradacoes.jsonl'), 'utf8')).trim().split('\n').map((linha) => JSON.parse(linha))
+    assert.deepEqual(anotadas.map((linha) => linha.operacao), ['estados.varredura'])
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})

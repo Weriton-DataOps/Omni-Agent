@@ -15,6 +15,7 @@ import { fingerprintObjetivo } from './passe.mjs'
 import { auditarDesktop } from './auditoria-desktop.mjs'
 import { registrarDegradacao } from './casa/banco.mjs'
 import { reconciliarDocumentosMd } from './documentos-md.mjs'
+import { reconciliarEstados } from './estados.mjs'
 
 export const DAILY_SCAN_SCHEMA_VERSION = 2
 const CONTRACT_PATH = new URL('../contratos/aprendizado/varredura-diaria.json', import.meta.url)
@@ -917,7 +918,11 @@ export async function varrerAtividadesDoDia(casa, {
       registrarDegradacao(casa, 'documentos.varredura', erro)
       documentos = { resultado: 'degradada' }
     }
-    return { result: 'completed', scan, documentos }
+    // Os estados de learning/ e feedback/ entram no omni.db depois dos documentos (plano 3 da F1):
+    // a varredura importa os p2 que nenhum dono carregou e acompanha os dois espelhos. Sem
+    // try/catch: reconciliarEstados degrada cada estado no próprio try e não rejeita.
+    const estados = await reconciliarEstados(casa)
+    return { result: 'completed', scan, documentos, estados }
   } finally {
     await release()
   }

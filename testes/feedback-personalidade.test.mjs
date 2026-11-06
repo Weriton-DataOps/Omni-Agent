@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 
+import { sqliteDisponivel } from '../runtime/casa/banco.mjs'
 import {
   caminhoDoFeedbackPersonalidade,
   classificarFeedbackPersonalidade,
@@ -236,7 +237,7 @@ test('sinal repetido permanece candidata local revisavel e nao altera galeria', 
     assert.equal(summary.counts.reviewableCandidates >= 2, true)
     assert.ok(summary.persistentAdjustment.directives.includes('increase-contextual-humor'))
     assert.ok(summary.persistentAdjustment.directives.includes('increase-tone-presence'))
-    assert.deepEqual(await readdir(casa), ['feedback'])
+    assert.deepEqual((await readdir(casa)).sort(), sqliteDisponivel() ? ['casa', 'feedback'] : ['feedback'])
   } finally {
     await rm(casa, { recursive: true, force: true })
   }

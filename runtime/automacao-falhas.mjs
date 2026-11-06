@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdir, open, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises'
+import { mkdir, open, readFile, stat, unlink, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -8,6 +8,7 @@ import { pareceConterSegredo } from './memoria.mjs'
 import { criarSolicitacaoDelegacao } from './porta-delegacao.mjs'
 import { atualizarDelegacao, lerCicloOperacional } from './ciclo-operacional.mjs'
 import { lerAuditoriaAutocorrecao } from './auditoria-autocorrecao.mjs'
+import { carregarTextoDoEstado, gravarTextoDoEstado } from './estados.mjs'
 
 export const FAILURE_AUTOMATION_SCHEMA_VERSION = 5
 
@@ -288,30 +289,30 @@ async function lock(casa) {
   throw new Error('A automação de falhas está ocupada por outra escrita.')
 }
 
+// Carga sob a trava (lock), pela ponte do omni.db; lerAutomacaoFalhas segue no arquivo (desvio 8).
 async function load(casa) {
   const path = caminhoDaAutomacaoFalhas(casa)
-  try {
-    const raw = await readFile(path, 'utf8')
-    let store = JSON.parse(raw)
-    if (store.schemaVersion > FAILURE_AUTOMATION_SCHEMA_VERSION) {
-      throw new Error(`Automação de falhas v${store.schemaVersion} é mais nova que este plugin.`)
-    }
-    if ([1, 2, 3].includes(store.schemaVersion)) {
-      await backupBeforeMigration(path, raw, store.schemaVersion)
-      store = migrateLegacy(store)
-    }
-    if (store.schemaVersion === 4) {
-      // Version boundary prevents an old hook from dispatching a diagnostic job
-      // with the pre-v5 execute envelope. Existing attempts/bindings stay intact.
-      await backupBeforeMigration(path, raw, 4)
-      store = { ...store, schemaVersion: FAILURE_AUTOMATION_SCHEMA_VERSION }
-    }
-    validateStore(store, path)
-    return store
-  } catch (error) {
-    if (error?.code === 'ENOENT') return emptyStore()
-    throw error
+  const raw = carregarTextoDoEstado(casa, 'learning/failure-automation.json', {
+    versao: FAILURE_AUTOMATION_SCHEMA_VERSION,
+    validar: (doc) => validateStore(doc, path)
+  })
+  if (raw === null) return emptyStore()
+  let store = JSON.parse(raw)
+  if (store.schemaVersion > FAILURE_AUTOMATION_SCHEMA_VERSION) {
+    throw new Error(`Automação de falhas v${store.schemaVersion} é mais nova que este plugin.`)
   }
+  if ([1, 2, 3].includes(store.schemaVersion)) {
+    await backupBeforeMigration(path, raw, store.schemaVersion)
+    store = migrateLegacy(store)
+  }
+  if (store.schemaVersion === 4) {
+    // Version boundary prevents an old hook from dispatching a diagnostic job
+    // with the pre-v5 execute envelope. Existing attempts/bindings stay intact.
+    await backupBeforeMigration(path, raw, 4)
+    store = { ...store, schemaVersion: FAILURE_AUTOMATION_SCHEMA_VERSION }
+  }
+  validateStore(store, path)
+  return store
 }
 
 // Status is a projection, never a queue synchronizer or a migration writer.
@@ -364,14 +365,12 @@ export async function diagnosticarAutomacaoFalhas(casa, store) {
     pending }
 }
 
+// Escrita pela ponte: banco, arquivo e base na mesma transação.
 async function save(casa, store) {
   const path = caminhoDaAutomacaoFalhas(casa)
-  const temporary = `${path}.${process.pid}.novo`
   store.store.updatedAt = now()
   validateStore(store, path)
-  await mkdir(join(casa, 'learning'), { recursive: true })
-  await writeFile(temporary, `${JSON.stringify(store, null, 2)}\n`, 'utf8')
-  await rename(temporary, path)
+  gravarTextoDoEstado(casa, 'learning/failure-automation.json', `${JSON.stringify(store, null, 2)}\n`)
 }
 
 function generation(pattern) {
