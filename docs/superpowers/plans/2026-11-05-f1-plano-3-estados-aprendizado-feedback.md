@@ -10,7 +10,7 @@
 
 **Desenho:** [Casa única: Omni, Overcore e Oráculo](../specs/2026-11-04-casa-unica-tres-agentes-design.md): §4.2 (migração inicial de `learning/` e `feedback/`), §3.1 (portabilidade), §3.5 (muitas sessões), §3.6 (o molde: a memória no `omni.db`), §3.8 (estados JSON como projeção, escrito por este plano) e §6 (fases e provas).
 
-**Situação em 05/11/2026:** T1 a T10 feitas e provadas no ramo `casa-sqlite-f1` (base `ecbd4df`). T11 (o §3.8, commit, push e CI) em execução.
+**Situação em 05/11/2026:** entregue. T1 a T11 feitas e publicadas no `origin/casa-sqlite-f1`: `673e2bb` (módulos, suítes, o §3.8 do desenho e os planos), commit de 05/11. O PR sai no plano 8.
 
 ---
 
@@ -3781,7 +3781,7 @@ Resultado (05/11): as treze linhas `igual`, na ordem do plano, e `saida: 0`.
 
 Um commit só: os módulos, as suítes e o `package.json` só fazem sentido juntos, e o commit leva os documentos: este plano, o §3.8 novo do desenho, a linha 3 do escopo do plano 1 e a correção do item 4 do plano 2.
 
-- [ ] **Passo 1: o §3.8 no desenho.** O cabeçalho deste plano promete o §3.8, e ele entra aqui, à mão (item 14), em `docs/superpowers/specs/2026-11-04-casa-unica-tres-agentes-design.md`, entre o fim do §3.7 e o §4. A largura das linhas segue a prosa do §3.6, que não passa de 98 caracteres.
+- [x] **Passo 1: o §3.8 no desenho.** O cabeçalho deste plano promete o §3.8, e ele entra aqui, à mão (item 14), em `docs/superpowers/specs/2026-11-04-casa-unica-tres-agentes-design.md`, entre o fim do §3.7 e o §4. A largura das linhas segue a prosa do §3.6, que não passa de 98 caracteres.
 
 Antes:
 
@@ -3875,7 +3875,9 @@ $bytes = [IO.File]::ReadAllBytes((Resolve-Path $desenho))
 
 Esperado: `secao: linhas 307 a 364, maior largura 96`; `antes dela: desligado.`; `CR: 0`; e `titulos 3.8: 1`.
 
-- [ ] **Passo 2: os outros documentos**, também à mão.
+Resultado (05/11): as quatro linhas como esperado, e o §3.8 do desenho é igual, byte a byte, ao bloco acima. Antes de gravar, cada fato do texto foi conferido no código, e o rascunho errava um número: o corte é de 200 itens, não de 100 (`RETENCAO_MAXIMA` em `runtime/recibos-evolucao.mjs:21` e o `slice(-200)` dos jobs encerrados em `runtime/automacao-falhas.mjs:607`). Na mesma conferência entrou o sufixo `#n` da chave repetida (`linhasDe`, `runtime/casa/loja-estados.mjs:51-63`). Também foram conferidos o id do registro (`:30`), a trava dos recibos (`runtime/recibos-evolucao.mjs:105`) e as sete operações de degradação (`runtime/estados.mjs`).
+
+- [x] **Passo 2: os outros documentos**, também à mão.
 
 Plano 1, linha 25, a linha 3 do escopo. Antes:
 
@@ -3922,7 +3924,9 @@ $plano = 'docs\superpowers\plans\2026-11-05-f1-plano-3-estados-aprendizado-feedb
 
 Esperado: as três linhas com o texto de "Depois". A conferência é por número de linha, porque os blocos acima repetem o texto.
 
-- [ ] **Passo 3: stage e conferências.** O `add` é explícito: nada de outra sessão entra.
+Resultado (05/11): as três linhas com o texto de "Depois", e nenhum dos três arquivos com CR.
+
+- [x] **Passo 3: stage e conferências.** O `add` é explícito: nada de outra sessão entra.
 
 ```powershell
 $rascunho = Join-Path $env:LOCALAPPDATA 'Temp\omni-f1'
@@ -3941,7 +3945,9 @@ git status --short
 
 Esperado: 21 arquivos no `--stat`; `CR 0, BOM False` nos 21 (item 13); treze `igual` e `saida: 0`; e, no `status`, quinze `M ` e seis `A `, nada fora do stage.
 
-- [ ] **Passo 4: a mensagem do commit.** Vai em `$rascunho\commit-p3.txt`, sem acento:
+Resultado (05/11): 21 arquivos, 5849 inserções e 137 remoções; `CR 0, BOM False` nos 21; as treze linhas `igual` e `saida: 0`; quinze `M ` e seis `A `, nada fora do stage. Fora do roteiro, uma varredura das 5849 linhas adicionadas não achou caminho de usuário, IP, telefone nem e-mail, fora o `noreply` do Co-Authored-By.
+
+- [x] **Passo 4: a mensagem do commit.** Vai em `$rascunho\commit-p3.txt`, sem acento:
 
 ```
 feat(casa): estados de aprendizado e feedback no omni.db
@@ -3982,7 +3988,9 @@ $bytes = [IO.File]::ReadAllBytes((Join-Path $rascunho 'commit-p3.txt'))
 
 Esperado: `fora do ASCII: 0`, o que também exclui BOM, e `CR: 0`.
 
-- [ ] **Passo 5: identidade e commit** (item 18). O e-mail sai do `origin/main` e vai só no comando, sem mexer na config e sem aparecer na saída.
+Resultado (05/11): `fora do ASCII: 0` e `CR: 0`. São 27 linhas, iguais ao bloco acima byte a byte, e só as duas de caminho passam de 72 caracteres (76 e 83).
+
+- [x] **Passo 5: identidade e commit** (item 18). O e-mail sai do `origin/main` e vai só no comando, sem mexer na config e sem aparecer na saída.
 
 ```powershell
 $rascunho = Join-Path $env:LOCALAPPDATA 'Temp\omni-f1'
@@ -4004,7 +4012,9 @@ $corpo = $bruto.Substring($bruto.IndexOf("`n`n") + 2)
 
 Esperado: 21 arquivos na linha do commit; `<sha> | autor Weriton-DataOps | committer Weriton-DataOps | pai ecbd4df`; `e-mails conferem: True`; `status` vazio; e `mensagem igual: True`. A comparação é pelo `git cat-file`, porque o `Out-String` junta as linhas com CRLF e dá diferença falsa (T10 do plano 2).
 
-- [ ] **Passo 6: push pela conta dona do repo**, fora do sandbox do agente. O ramo já tem upstream, então o push vai sem `-u`:
+Resultado (05/11): `673e2bb`, 21 arquivos, 5849 inserções e 137 remoções; `673e2bb | autor Weriton-DataOps | committer Weriton-DataOps | pai ecbd4df`; `e-mails conferem: True`; `status` vazio; e `mensagem igual: True`.
+
+- [x] **Passo 6: push pela conta dona do repo**, fora do sandbox do agente. O ramo já tem upstream, então o push vai sem `-u`:
 
 ```powershell
 gh auth switch --user Weriton-DataOps
@@ -4016,7 +4026,9 @@ git rev-parse HEAD
 
 Esperado: `ecbd4df..<sha>` aceito, `wp-grgroup` ativa de novo e o SHA remoto igual ao local.
 
-- [ ] **Passo 7: CI**
+Resultado (05/11): `ecbd4df..673e2bb` aceito, `wp-grgroup` ativa de novo, e remoto e local em `673e2bb`.
+
+- [x] **Passo 7: CI**
 
 ```powershell
 gh run list --repo Weriton-DataOps/Omni-Agent --branch casa-sqlite-f1 --limit 5
@@ -4026,7 +4038,9 @@ Esperado:
 - "Linux / Node 22 / portable core" verde (ele não roda as suítes `.mjs`; item 17);
 - "Windows / Node 22 / full verification" vermelho só no `:165`, com 696 testes: 691 verdes, 4 pulados e 1 vermelho. Os números saem do log do job pela API (`gh api repos/Weriton-DataOps/Omni-Agent/actions/jobs/<id>/logs`), porque o `gh run view --log-failed` volta vazio. Se o `EPERM` de `evolucao.test.mjs:348` (T10) reaparecer, ele entra no Resultado como veio.
 
-- [ ] **Passo 8: registrar o resultado.** Os passos desta tarefa ganham o que saiu. A linha 13 deste plano vira "**Situação em 05/11/2026:** entregue. T1 a T11 feitas e publicadas no `origin/casa-sqlite-f1`: `<sha do Passo 5>` (módulos, suítes, o §3.8 do desenho e os planos), commit de 05/11. O PR sai no plano 8.", e a linha 25 do plano 1 troca "em execução" por "entregue". Depois, um commit só com os dois planos, pela identidade do Passo 5, e push e CI como nos Passos 6 e 7. O push e a CI desse segundo commit não aparecem aqui, porque este registro viaja dentro dele.
+Resultado (05/11): "Linux / Node 22 / portable core" verde e "Windows / Node 22 / full verification" vermelho só no `:165`, com 696 testes: 691 verdes, 4 pulados e 1 vermelho. A asserção que cai é a da linha 173, com o contrato `3c60182bbef2…` no `actual` e o calculado `be11ab3853c0…` no `expected`, o mesmo par da máquina local. O `EPERM` de `evolucao.test.mjs:348` não reapareceu: o log não tem nenhuma linha com `EPERM`.
+
+- [x] **Passo 8: registrar o resultado.** Os passos desta tarefa ganham o que saiu. A linha 13 deste plano vira "**Situação em 05/11/2026:** entregue. T1 a T11 feitas e publicadas no `origin/casa-sqlite-f1`: `<sha do Passo 5>` (módulos, suítes, o §3.8 do desenho e os planos), commit de 05/11. O PR sai no plano 8.", e a linha 25 do plano 1 troca "em execução" por "entregue". Depois, um commit só com os dois planos, pela identidade do Passo 5, e push e CI como nos Passos 6 e 7. O push e a CI desse segundo commit não aparecem aqui, porque este registro viaja dentro dele.
 
 A mensagem vai em `$rascunho\commit-p3-registro.txt`, sem acento, com os números que a CI do Passo 7 der:
 
@@ -4053,6 +4067,8 @@ git status --short
 ```
 
 Esperado: dois arquivos no commit, autor e committer `Weriton-DataOps`, pai o SHA do Passo 5 e `status` vazio.
+
+Resultado (05/11): todos os passos desta tarefa têm o que saiu; a linha 13 deste plano e a linha 25 do plano 1 estão com o texto novo; nenhum `- [ ]` ficou no plano; o `--conferir` deu treze `igual`; e os dois planos estão sem CR. O commit, o push e a CI deste registro ficam fora daqui, porque ele viaja dentro do commit.
 
 Este plano não abre PR. O PR sai no plano 8, com a release.
 
