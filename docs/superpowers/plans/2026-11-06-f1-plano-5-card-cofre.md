@@ -10,7 +10,7 @@
 
 **Desenho:** [Casa única: Omni, Overcore e Oráculo](../specs/2026-11-04-casa-unica-tres-agentes-design.md): §8.2 (o card), §3.4 (a ilha não abre o banco; pergunta à API do Omni), §8.3 (o broker por pipe fica para a F2) e §6 (a F1 inclui o card).
 
-**Situação em 07/11/2026:** em execução. A Preparação e as tarefas 1 a 4 foram executadas, a T3 antes da T2, de que não depende: na T1, 54 testes verdes e 31 mutantes; na T3, 26 testes verdes e 32 mutantes; na T2, 28 testes verdes e 30 mutantes, que rodaram só com os testes falsos (executor, item 23); todos esses mutantes vermelhos pela asserção. Na T4, 19 testes verdes e 26 mutantes, 25 vermelhos pela asserção e 1 equivalente declarado, e o furo do `check` fechado para a presença e o fio. Na T5, 10 testes verdes e 31 mutantes, todos vermelhos pela asserção. Na T6, 9 testes verdes e 25 mutantes, todos vermelhos pela asserção, e a prova visual da janela com 23 conferências verdes. Na T7, 13 testes verdes e 20 mutantes, todos vermelhos pela asserção, e a prova visual do card com 14 conferências verdes. Na T8, a parte A verde nos Nodes 24 e 22 (17 conferências e 141 testes em cada); as partes B (Hello e área de transferência reais) e C (Postgres ao vivo) ficam abertas: a B porque o Hello responde indisponível nesta conta, sem PIN nem biometria, e a C porque espera o ok do Weriton. Na T9, as 11 suítes afetadas com 109 testes verdes, o verify com 819 testes e só o vermelho de nascença `:165`, e o `.test-dist`, o `test:dist` e o `verify:build` verdes à parte. A T10 vem a seguir.
+**Situação em 07/11/2026:** entregue no commit `45f3977`, com o CI igual ao verify local; ficam pendentes do Weriton as partes B e C da T8. A Preparação e as tarefas 1 a 4 foram executadas, a T3 antes da T2, de que não depende: na T1, 54 testes verdes e 31 mutantes; na T3, 26 testes verdes e 32 mutantes; na T2, 28 testes verdes e 30 mutantes, que rodaram só com os testes falsos (executor, item 23); todos esses mutantes vermelhos pela asserção. Na T4, 19 testes verdes e 26 mutantes, 25 vermelhos pela asserção e 1 equivalente declarado, e o furo do `check` fechado para a presença e o fio. Na T5, 10 testes verdes e 31 mutantes, todos vermelhos pela asserção. Na T6, 9 testes verdes e 25 mutantes, todos vermelhos pela asserção, e a prova visual da janela com 23 conferências verdes. Na T7, 13 testes verdes e 20 mutantes, todos vermelhos pela asserção, e a prova visual do card com 14 conferências verdes. Na T8, a parte A verde nos Nodes 24 e 22 (17 conferências e 141 testes em cada); as partes B (Hello e área de transferência reais) e C (Postgres ao vivo) ficam abertas: a B porque o Hello responde indisponível nesta conta, sem PIN nem biometria, e a C porque espera o ok do Weriton. Na T9, as 11 suítes afetadas com 109 testes verdes, o verify com 819 testes e só o vermelho de nascença `:165`, e o `.test-dist`, o `test:dist` e o `verify:build` verdes à parte. Na T10, a varredura do índice com 0 achados, o commit `45f3977` pela conta dona e o CI com o Linux verde e o Windows vermelho só no `:165`, com 819 testes.
 
 ---
 
@@ -7438,7 +7438,7 @@ Resultado (07/11): `linhas de stat: 0` e `checkout: 0`, com os avisos de LF para
 
 Um commit só: os módulos, as suítes, a janela, o card e o `package.json` só fazem sentido juntos, e o commit leva este plano e a linha 5 do escopo no plano 1. As partes B e C da T8 não seguram esta tarefa: ficam abertas neste plano, com o motivo, até o Weriton decidir.
 
-- [ ] **Passo 1: a linha 5 do escopo.** Em `docs/superpowers/plans/2026-11-04-f1-casa-sqlite.md`, trocar
+- [x] **Passo 1: a linha 5 do escopo.** Em `docs/superpowers/plans/2026-11-04-f1-casa-sqlite.md`, trocar
 
 ```markdown
 | 5 | Card Cofre na ilha, falando pela API do Omni | §8.2, §3.4 | a escrever |
@@ -7450,7 +7450,7 @@ por
 | 5 | [Card Cofre na ilha, falando pela API do Omni](2026-11-06-f1-plano-5-card-cofre.md) | §8.2, §3.4 | entregue |
 ```
 
-- [ ] **Passo 2: varredura, CR e commit.** Autor e committer Weriton-DataOps, com o e-mail dos commits dela no `origin/main`, passado no comando e nunca impresso; mensagem em UTF-8 sem BOM, em `$rascunho\msg-p5.txt`. A varredura olha só as linhas adicionadas no índice e imprime o número do padrão e o arquivo, nunca a linha: o que ela acha é investigado antes do commit, e o falso positivo fica declarado no resultado. Os padrões moram em `$rascunho\padroes-p5.txt`, um por linha, fora do repositório, porque escritos aqui eles seriam o próprio vazamento: a lista do montador deste plano (redes internas, domínio e usuário da empresa, pastas de usuário, os números do WhatsApp e o provedor), mais e-mail com domínio real, celular brasileiro e o nome do antivírus da máquina. O CR é conferido no índice (`i/…` do `ls-files --eol`), que é o que vai ao repositório.
+- [x] **Passo 2: varredura, CR e commit.** Autor e committer Weriton-DataOps, com o e-mail dos commits dela no `origin/main`, passado no comando e nunca impresso; mensagem em UTF-8 sem BOM, em `$rascunho\msg-p5.txt`. A varredura olha só as linhas adicionadas no índice e imprime o número do padrão e o arquivo, nunca a linha: o que ela acha é investigado antes do commit, e o falso positivo fica declarado no resultado. Os padrões moram em `$rascunho\padroes-p5.txt`, um por linha, fora do repositório, porque escritos aqui eles seriam o próprio vazamento: a lista do montador deste plano (redes internas, domínio e usuário da empresa, pastas de usuário, os números do WhatsApp e o provedor), mais e-mail com domínio real, celular brasileiro e o nome do antivírus da máquina. O CR é conferido no índice (`i/…` do `ls-files --eol`), que é o que vai ao repositório.
 
 ```powershell
 $rascunho = Join-Path $env:LOCALAPPDATA 'Temp\omni-f1b'
@@ -7487,7 +7487,9 @@ git status --short
 
 Esperado: autor e committer `Weriton-DataOps`; 29 arquivos; o `status` só com os ` M dist/…` de fim de linha, se houver.
 
-- [ ] **Passo 3: push e CI.** A conta do push é a dona do repositório; a conta que estava ativa é lida antes da troca e volta no `finally`.
+Resultado (07/11): `arquivos: 29`; o `status` com os 29 no índice (doze `M` e dezessete `A`) e nenhuma outra linha; `fora de i/lf: 0`; `padroes: 14`; `achados: 0`. A primeira geração do arquivo de padrões cortou um padrão do montador na barra de dentro de uma classe de caracteres e o PowerShell recusou a regex: o gerador passou a avaliar o literal da lista e usar o `source` de cada uma, e uma sonda com um texto por padrão casou os 11 esperados antes da varredura. Na mensagem do commit, o único casamento é o e-mail do `Co-Authored-By`, falso positivo esperado. Commit `45f3977`, pai `ce08319`, autor e committer `Weriton-DataOps`, `29 files changed, 11475 insertions(+), 60 deletions(-)`; o `status` vazio.
+
+- [x] **Passo 3: push e CI.** A conta do push é a dona do repositório; a conta que estava ativa é lida antes da troca e volta no `finally`.
 
 ```powershell
 $antes = gh api user --jq .login
@@ -7499,7 +7501,9 @@ git rev-parse HEAD
 
 Depois, o CI do ramo pela conta Weriton-DataOps, com o token só na variável do processo e removido no `finally`. Esperado: a última linha do `gh api user` igual à primeira (a conta voltou); o mesmo SHA no `ls-remote` e no `HEAD`; o job Linux verde e o Windows vermelho só no `:165` (item 7), com o mesmo par `actual`/`expected` da T9, Passo 3, e 819 testes. O log do job vermelho vem pela API do job (executor, item 21).
 
-- [ ] **Passo 4: registrar.** A "Situação" deste plano passa a "entregue", com o hash do commit e as partes B e C da T8 pendentes do Weriton, e os resultados entram nos passos. Esse registro vai num segundo commit, `docs(plano): registra push e CI do plano 5 da F1`, como nos planos 3 e 4, com o mesmo push do Passo 3.
+Resultado (07/11): a conta lida antes da troca voltou no `finally` (a primeira e a última linha iguais); push `ce08319..45f3977`, com o mesmo SHA no `ls-remote` e no `HEAD`. No CI, o job Linux (Node 22, núcleo portátil) verde e o Windows (Node 22, verificação completa) vermelho só no `integridade-release.test.mjs:165`, que cai na linha 173, com o mesmo par `actual`/`expected` da T9, Passo 3; `tests 819`, `pass 814`, `fail 1`, `cancelled 0` e `skipped 4`. No PowerShell 5.1, um filtro jq com aspas internas chega ao `gh` sem as aspas: a execução do commit foi achada filtrando o JSON no próprio PowerShell.
+
+- [x] **Passo 4: registrar.** A "Situação" deste plano passa a "entregue", com o hash do commit e as partes B e C da T8 pendentes do Weriton, e os resultados entram nos passos. Esse registro vai num segundo commit, `docs(plano): registra push e CI do plano 5 da F1`, como nos planos 3 e 4, com o mesmo push do Passo 3.
 
 ## Autorrevisão contra o desenho
 
