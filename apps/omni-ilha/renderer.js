@@ -265,7 +265,7 @@
     aplicar(true); // o main fica sabendo do estado novo no mesmo instante
     atualizarEscape();
     acenderChama(novo !== 'recolhida'); // espiar já acorda a chama
-    if (novo === 'aberta') { atualizar(); vigiar(true); } else vigiar(false);
+    if (novo === 'aberta') { atualizarCofre('abriu'); atualizar(); vigiar(true); } else vigiar(false);
   }
 
   // ── vistas (abas do cabeçalho) ────────────────────────────────────────────────────────────────────
@@ -482,13 +482,20 @@
       el('path', { class: 'glifo', d: 'M20 23 L29 32 L20 41' }),
       el('rect', { class: 'cheio cursor', x: 32, y: 38, width: 13, height: 4.5, rx: 2 }),
     ],
+    // cadeado: o cofre das credenciais (T7)
+    cofre: () => [
+      el('path', { class: 'glifo', d: 'M24 29 V24 a8 8 0 0 1 16 0 V29' }),
+      el('rect', { class: 'glifo', x: 18, y: 29, width: 28, height: 19, rx: 4 }),
+      el('circle', { class: 'cheio', cx: 32, cy: 37, r: 2.8 }),
+      el('path', { class: 'glifo', d: 'M32 39 V42' }),
+    ],
   };
   function icone(tipo, tom) {
     const svg = el('svg', { viewBox: '0 0 64 64', class: `icone ${tom}`, 'aria-hidden': 'true' });
     svg.append(el('rect', { class: 'placa', x: 5, y: 5, width: 54, height: 54, rx: 17 }), ...GLIFOS[tipo]());
     return svg;
   }
-  const TONS = ['tom-rodando', 'tom-espera', 'tom-concluiu', 'tom-ociosa', 'tom-actions', 'tom-whats', 'tom-oracle'];
+  const TONS = ['tom-rodando', 'tom-espera', 'tom-concluiu', 'tom-ociosa', 'tom-actions', 'tom-whats', 'tom-oracle', 'tom-cofre'];
   function tingir(svg, tom) {
     for (const t of TONS) svg.classList.toggle(t, t === tom);
   }
@@ -642,6 +649,46 @@
     $('oc-resumo').textContent = r.ok ? partes.join(' · ') || 'nenhuma sessão ativa' : r.erro || '–';
     $('oc-total').textContent = r.ok ? `${r.total || 0} execuç${r.total === 1 ? 'ão' : 'ões'} · ${r.concluidas || 0} concluída${r.concluidas === 1 ? '' : 's'}` : '–';
     $('oc-ultima').textContent = r.ok && r.ultima ? `última atividade: ${quando(typeof r.ultima === 'number' ? r.ultima : Date.parse(r.ultima))}` : '';
+  }
+
+  // ── card do cofre (F1, plano 5, T7): o total de credenciais e os primeiros alertas. Cada leitura abre um Node
+  // com a CLI do cofre (segundos), então o ritmo é o do cofre-card.js, não o relógio de 2 s: ao abrir a forma
+  // (no máximo 1x/min) e, aberta, a cada 5 min. Tocar abre a janela do cofre; a abertura seguinte relê.
+  const cardCofre = document.getElementById('card-cofre');
+  const { deveLer, vistaDoCard } = window.cofreCard;
+  const cofre = { lidoEm: null, lendo: false, assinatura: '' };
+  async function atualizarCofre(motivo) {
+    if (!deveLer({ agora: Date.now(), lidoEm: cofre.lidoEm, lendo: cofre.lendo, motivo })) return;
+    cofre.lendo = true;
+    let r;
+    try { r = await ponte.resumoCofre(); } catch (e) { r = { ok: false, codigo: 'falha', erro: String((e && e.message) || e) }; } finally { cofre.lendo = false; }
+    if (r === null) return; // o main recusou o pedido (não veio da ilha): nada a mostrar
+    cofre.lidoEm = Date.now();
+    desenharCofre(vistaDoCard(r));
+  }
+  function desenharCofre(v) {
+    const assinatura = JSON.stringify(v);
+    if (assinatura === cofre.assinatura) return;
+    cofre.assinatura = assinatura;
+    cardCofre.classList.toggle('alerta', v.estado === 'alerta');
+    cardCofre.classList.toggle('erro', v.estado === 'erro');
+    const svg = cardCofre.querySelector('.icone');
+    if (svg) tingir(svg, v.estado === 'alerta' ? 'tom-espera' : v.estado === 'erro' ? 'tom-ociosa' : 'tom-cofre');
+    $('cofre-total').textContent = v.numero;
+    $('cofre-rotulo').textContent = v.rotulo;
+    $('cofre-detalhe').textContent = v.detalhe;
+    $('cofre-detalhe').title = v.erro;
+    const linhas = v.linhas.map(({ nome, regra }) => {
+      const linha = no('div', 'int-linha');
+      linha.append(no('i', 'pt st-espera'), no('span', 'int-nome', nome), no('span', 'int-quando', regra));
+      return linha;
+    });
+    if (v.estado === 'erro' && v.erro) {
+      const aviso = no('div', 'int-vazio', v.erro);
+      aviso.title = v.erro; // a linha corta com reticências; o texto inteiro fica no title
+      linhas.push(aviso);
+    }
+    $('cofre-linhas').replaceChildren(...linhas);
   }
 
   // ── coluna da máquina (o que o Gerenciador de Tarefas mostra de relance) ─────────────────────────
@@ -965,6 +1012,7 @@
       try { sessoes = (await ponte.sessoes()) || []; } catch { /* mantém a última leitura */ }
       if (vista === 'inicio') {
         desenharPilulas();
+        atualizarCofre('relogio'); // sem await: a CLI do cofre pode levar segundos e não segura o relógio
         await Promise.all([atualizarActions(), atualizarSistema(), atualizarWhats(), atualizarOracle(), atualizarOvercore()]);
       } else await atualizarChat();
     } finally { lendo = false; }
@@ -1139,6 +1187,13 @@
     ponte.abrirActions();
     recolherJa();
   });
+  // o card do cofre abre a janela da T6; ao voltar, a ilha relê (o que mudou lá aparece aqui)
+  tocar(cardCofre, () => {
+    if (estado !== 'aberta' || !poco.classList.contains('revelada')) return;
+    ponte.abrirCofre();
+    cofre.lidoEm = null;
+    recolherJa();
+  });
 
   // o ⤢ do card Overcore (e as pílulas dele) abre a janela própria do Overcore, a tela inteira
   function abrirOvercoreInteiro() {
@@ -1173,7 +1228,7 @@
     document.documentElement.style.setProperty('--largura-aberta', `${LARGURA_ABERTA}px`);
     desenharFaixa(document.getElementById('faixa-esq'), 'aro-esq');
     desenharFaixa(document.getElementById('faixa-dir'), 'aro-dir');
-    const TOM_INICIAL = { actions: 'tom-actions', whats: 'tom-whats', sessao: 'tom-ociosa', overcore: 'tom-ociosa', oracle: 'tom-ociosa' };
+    const TOM_INICIAL = { actions: 'tom-actions', whats: 'tom-whats', sessao: 'tom-ociosa', overcore: 'tom-ociosa', oracle: 'tom-ociosa', cofre: 'tom-cofre' };
     for (const lugar of document.querySelectorAll('[data-icone]')) {
       lugar.replaceChildren(icone(lugar.dataset.icone, TOM_INICIAL[lugar.dataset.icone]));
     }

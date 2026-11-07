@@ -22,6 +22,8 @@ contextBridge.exposeInMainWorld('ilha', {
   abrirActions: () => ipcRenderer.send('abrir-actions'),
   abrirOvercore: () => ipcRenderer.send('abrir-overcore'),
   resumoOvercore: () => ipcRenderer.invoke('overcore:resumo'),
+  abrirCofre: () => ipcRenderer.send('abrir-cofre'),
+  resumoCofre: () => ipcRenderer.invoke('cofre:resumo'),
   resumoOracle: () => ipcRenderer.invoke('oracle:resumo'),
   abrirChat: () => ipcRenderer.send('abrir-chat'),
   resumoActions: () => ipcRenderer.invoke('actions:resumo'),

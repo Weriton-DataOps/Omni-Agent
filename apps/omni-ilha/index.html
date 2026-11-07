@@ -33,6 +33,7 @@
   --laranja: #f58349;
   --azul: #8fb8f6;
   --violeta: #a78bfa;
+  --cofre: #74d4c0; /* verde-água do cofre, o mesmo da janela dele (T6) */
   --mono: "Cascadia Mono", "Cascadia Code", Consolas, monospace;
   --faixa: 180px;          /* o renderer sobrescreve com o valor do main.js */
   --largura-aberta: 640px; /* idem */
@@ -153,6 +154,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .tom-actions { --tom: var(--laranja); --brilho: rgba(245, 131, 73, .38); }
 .tom-whats { --tom: var(--verde); --brilho: rgba(34, 197, 94, .4); }
 .tom-oracle { --tom: var(--violeta); --brilho: rgba(167, 139, 250, .4); }
+.tom-cofre { --tom: var(--cofre); --brilho: rgba(116, 212, 192, .38); }
 
 /* ══ vista Início: três colunas de altura fixa; o que não cabe rola dentro da coluna ══════ */
 .inicio { display: grid; grid-template-columns: 290px 1fr 1fr 1fr; gap: 10px; height: 300px; }
@@ -174,6 +176,20 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 /* cabe nos 300 px da coluna sem rolar (21/10): espaçamento apertado e o card nunca passa da altura */
 .coluna-maquina { overflow: hidden; }
 .coluna-maquina > .card-espaco { flex: 1 1 0; min-height: 0; }
+/* o card do cofre (F1, plano 5, T7): altura fixa embaixo do Omni, no molde dos cards de integração; tocar abre a janela */
+.coluna-maquina > .card-cofre { flex: none; height: 108px; cursor: pointer; transition: transform .12s, filter .12s; }
+.card-cofre .lugar-icone { width: 64px; }
+.card-cofre .icone { width: 40px; height: 40px; }
+.card-cofre .int { padding: 9px 14px 8px 64px; height: 100%; }
+.card-cofre .int-linhas { overflow: hidden; padding-top: 4px; }
+/* a regra e o erro são o recado do card: tons que passam de 4,5:1 sobre o card (o --dim-3 dá 3,7) */
+.card-cofre .int-quando { color: var(--dim-2); }
+.card-cofre .int-vazio { color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card-cofre:hover { filter: brightness(1.08); }
+.card-cofre:active { transform: scale(.985); }
+.card-cofre:hover .abre { color: var(--ink); translate: 1px -1px; }
+.card-cofre.alerta #cofre-detalhe { color: var(--ambar); }
+.card-cofre.erro #cofre-detalhe { color: var(--vermelho); }
 .card-espaco {
   padding: 10px 14px 10px; display: flex; flex-direction: column; gap: 6px;
   background:
@@ -565,6 +581,15 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
                 </div>
                 <!-- 27/10: disco, CPU e RAM foram para a metade de baixo do card do Oracle (pedido dele) -->
               </div>
+              <!-- F1, plano 5, T7: o cofre das credenciais; tocar abre a janela dele -->
+              <div class="card lava card-cofre" id="card-cofre" style="--lava: rgba(116, 212, 192, .13)" title="Abrir o cofre">
+                <div class="lugar-icone" data-icone="cofre"></div>
+                <div class="int">
+                  <div class="int-cab"><i class="bolinha"></i><b>Cofre</b><span>Credenciais</span><span class="abre">↗</span></div>
+                  <div class="int-saldo"><span id="cofre-total">–</span><i id="cofre-rotulo">CREDENCIAIS</i><em id="cofre-detalhe"></em></div>
+                  <div class="int-linhas" id="cofre-linhas"></div>
+                </div>
+              </div>
             </div>
 
             <!-- 27/10, 4ª volta: o Overcore veio para o lugar do Actions e do WhatsApp (pedido dele); só as
@@ -688,6 +713,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 <script src="ceu.js"></script>
 <script src="nucleo.js"></script>
 <script src="olho.js"></script>
+<script src="cofre-card.js"></script>
 <script src="renderer.js"></script>
 </body>
 </html>

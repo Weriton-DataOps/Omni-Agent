@@ -1,8 +1,11 @@
-// Loja do cofre (§8.1, §8.3, §8.4): credenciais no cofre.db, com o valor selado pela DPAPI do
-// usuário e só metadados em claro. Quem abre ou sela o valor é a ponte (runtime/casa/dpapi.mjs),
-// sempre fora da transação; a transação só grava. Todo pedido de uso vira linha em usos, entregue ou
-// recusado, e nenhuma linha leva o valor. As credenciais do Gerenciador de Credenciais do Windows
-// entram só como inventário (guarda gerenciador-windows, sem blob): o cofre sabe que existem, não as abre.
+// Loja do cofre (§8.1 a §8.4): credenciais no cofre.db, com o valor selado pela DPAPI do usuário e
+// só metadados em claro. Quem abre ou sela o valor é a ponte (runtime/casa/dpapi.mjs), sempre fora
+// da transação; a transação só grava. Todo pedido de uso vira linha em usos, entregue ou recusado, e
+// nenhuma linha leva o valor. As credenciais do Gerenciador de Credenciais do Windows entram só como
+// inventário (guarda gerenciador-windows, sem blob): o cofre sabe que existem, não as abre.
+// A gestão do card (§8.2) mora aqui também: histórico, saúde, edição, rotação, lixeira de 30 dias e o
+// caminho do dono, que vê e copia só depois da presença confirmada (runtime/casa/presenca.mjs). O dono
+// não é um agente: o nome fica reservado e nenhum agente o usa para pedir valor.
 import { readdirSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
@@ -18,6 +21,15 @@ const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/
 const LIMITE_DETALHE = 300
 const COLUNAS_PUBLICAS = 'id, nome, tipo, servico, url, usuario, notas, etiquetas, agentes, validade, rotacionar_dias, ultimo_teste_em, ultimo_teste_ok, ultimo_teste_detalhe, guarda, alvo_windows, blob_sha256, origem_maquina, criado_em, atualizado_em, versao'
 const SEM_METADADOS = Object.freeze({ url: null, usuario: null, notas: null, etiquetas: [], agentes: ['omni'], validade: null, rotacionar_dias: null })
+const DONO = 'dono'
+const DIA = 86_400_000
+const PRAZO_VENCE = 15 * DIA
+const PRAZO_SEM_USO = 90 * DIA
+const CARENCIA_AGENTE = 90 * DIA
+const PRAZO_LIXEIRA = 30 * DIA
+const USO_REAL = new Set(['entregue', 'revelado-ao-dono', 'copiado-ao-dono'])
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+const EDITAVEIS = new Set(['tipo', 'servico', 'url', 'usuario', 'notas', 'etiquetas', 'agentes', 'validade', 'rotacionar_dias'])
 
 export class CofreError extends Error {
   constructor(codigo, mensagem) {
@@ -53,11 +65,13 @@ function normalizarDados(dados) {
   if (validade !== null && Number.isNaN(Date.parse(validade))) throw new CofreError('dados-invalidos', 'Campo validade inválido.')
   const rotacionar = d.rotacionar_dias ?? null
   if (rotacionar !== null && (!Number.isInteger(rotacionar) || rotacionar < 1 || rotacionar > 3650)) throw new CofreError('dados-invalidos', 'Campo rotacionar_dias inválido.')
+  const agentes = lista(d.agentes, 'agentes', ['omni'], AGENTE)
+  if (agentes.includes(DONO)) throw new CofreError('agente-reservado', 'O agente dono é reservado: quem vê e copia é o dono, atrás do Windows Hello.')
   return {
     nome, tipo: d.tipo,
     servico: texto(d.servico, 'servico', { max: 100 }), url: texto(d.url, 'url'),
     usuario: texto(d.usuario, 'usuario', { max: 200 }), notas: texto(d.notas, 'notas'),
-    etiquetas: lista(d.etiquetas, 'etiquetas', [], ETIQUETA), agentes: lista(d.agentes, 'agentes', ['omni'], AGENTE),
+    etiquetas: lista(d.etiquetas, 'etiquetas', [], ETIQUETA), agentes,
     validade, rotacionar_dias: rotacionar
   }
 }
@@ -77,6 +91,17 @@ function deLinha(linha) {
 const metadados = (c) => ({ nome: c.nome, tipo: c.tipo, servico: c.servico, url: c.url, usuario: c.usuario, notas: c.notas, etiquetas: c.etiquetas, agentes: c.agentes, validade: c.validade, rotacionar_dias: c.rotacionar_dias })
 const porNome = (db, nome) => db.prepare('SELECT id, guarda, blob_sha256 FROM credenciais WHERE nome = ? AND apagado_em IS NULL').get(nome)
 const jaExiste = (nome) => new CofreError('ja-existe', `Já existe uma credencial com o nome ${nome}.`)
+const inexistente = (nome) => new CofreError('inexistente', `Não há credencial com o nome ${nome}.`)
+const soNoGerenciador = (nome) => new CofreError('gerenciador-windows', `${nome} mora no Gerenciador de Credenciais do Windows; o cofre só tem o nome.`)
+function exigirNome(nome) { if (typeof nome !== 'string' || !NOME.test(nome)) throw new CofreError('dados-invalidos', 'Campo nome inválido.') }
+function exigirId(id) { if (typeof id !== 'string' || !UUID.test(id)) throw new CofreError('dados-invalidos', 'Campo id inválido.') }
+const jaIngerido = (db, chave, sha) => Boolean(db.prepare('SELECT 1 AS sim FROM _projecoes WHERE arquivo = ? AND sha256 = ?').get(chave, sha))
+function abrirRegistrando(ponte, blob, nome, registrar) {
+  let aberto
+  try { [aberto] = ponte.abrir([blob]) } catch (erro) { registrar('falhou-abrir'); throw erro }
+  if (!aberto?.ok) { registrar('falhou-abrir'); throw new CofreError('nao-abriu', `${nome} não abriu nesta máquina (${aberto?.erro ?? 'sem resposta'}).`) }
+  return aberto.valor
+}
 function contar(resultados) { const contagens = {}; for (const { resultado } of resultados) contagens[resultado] = (contagens[resultado] ?? 0) + 1; return contagens }
 
 function inserir(db, c) {
@@ -121,35 +146,15 @@ export function usarCredencial(db, ponte, pedido, { maquina = maquinaAtual(), ag
   if (!valido) throw new CofreError('dados-invalidos', 'Pedido de uso inválido: nome, agente e motivo são obrigatórios.')
   const registrar = (credencialId, resultado) => registrarUso(db, { credencialId, nome, agente, sessao, motivo, resultado, maquina, agora })
   const linha = db.prepare('SELECT id, agentes, guarda, blob FROM credenciais WHERE nome = ? AND apagado_em IS NULL').get(nome)
-  if (!linha) {
-    registrar(null, 'recusado-inexistente')
-    throw new CofreError('inexistente', `Não há credencial com o nome ${nome}.`)
-  }
-  if (!JSON.parse(linha.agentes).includes(agente)) {
+  if (!linha) { registrar(null, 'recusado-inexistente'); throw inexistente(nome) }
+  // O dono não pede valor por aqui: ele vê e copia pelo caminho com presença (revelarAoDono, copiarAoDono).
+  if (agente === DONO || !JSON.parse(linha.agentes).includes(agente)) {
     registrar(linha.id, 'recusado-agente')
     throw new CofreError('agente-sem-acesso', `O agente ${agente} não tem acesso a ${nome}.`)
   }
-  if (linha.guarda !== 'dpapi') {
-    registrar(linha.id, 'recusado-gerenciador')
-    throw new CofreError('gerenciador-windows', `${nome} mora no Gerenciador de Credenciais do Windows; o cofre só tem o nome.`)
-  }
-  let aberto
-  try {
-    [aberto] = ponte.abrir([linha.blob])
-  } catch (erro) {
-    registrar(linha.id, 'falhou-abrir')
-    throw erro
-  }
-  if (!aberto?.ok) {
-    registrar(linha.id, 'falhou-abrir')
-    throw new CofreError('nao-abriu', `${nome} não abriu nesta máquina (${aberto?.erro ?? 'sem resposta'}).`)
-  }
-  try {
-    return { valor: aberto.valor, usoId: registrar(linha.id, 'entregue') }
-  } catch (erro) {
-    aberto.valor.fill(0)
-    throw erro
-  }
+  if (linha.guarda !== 'dpapi') { registrar(linha.id, 'recusado-gerenciador'); throw soNoGerenciador(nome) }
+  const valor = abrirRegistrando(ponte, linha.blob, nome, (resultado) => registrar(linha.id, resultado))
+  try { return { valor, usoId: registrar(linha.id, 'entregue') } } catch (erro) { valor.fill(0); throw erro }
 }
 
 export function registrarTeste(db, nome, { ok, detalhe }, agora = agoraIso()) {
@@ -157,7 +162,7 @@ export function registrarTeste(db, nome, { ok, detalhe }, agora = agoraIso()) {
   const corte = detalhe === undefined || detalhe === null ? null : String(detalhe).slice(0, LIMITE_DETALHE)
   const r = db.prepare('UPDATE credenciais SET ultimo_teste_em = ?, ultimo_teste_ok = ?, ultimo_teste_detalhe = ? WHERE nome = ? AND apagado_em IS NULL')
     .run(agora, ok === null ? null : ok ? 1 : 0, corte, nome)
-  if (r.changes !== 1) throw new CofreError('inexistente', `Não há credencial com o nome ${nome}.`)
+  if (r.changes !== 1) throw inexistente(nome)
 }
 
 function conferirClassificacao(classificacao) {
@@ -204,6 +209,9 @@ export function importarPastaDpapi(db, ponte, pasta, { classificacao = {}, maqui
       const situacao = situacaoDaProjecao(db, chave, sha, atual.blob_sha256)
       resultados.push({ nome, resultado: situacao === 'atual' || situacao === 'defasada' ? 'ja-importada' : 'divergente' }); continue
     }
+    // Hash já ingerido sem credencial viva com o nome: ela foi apagada (na lixeira ou já fora dela), e o
+    // arquivo velho no disco não a traz de volta. Valor novo no arquivo é hash novo e entra.
+    if (jaIngerido(db, chave, sha)) { resultados.push({ nome, resultado: 'apagada' }); continue }
     const hex = blobDoTextoHex(bruto)
     candidatas.push({ nome, chave, sha, blob: hex ?? bruto, textoHex: hex !== null })
   }
@@ -317,4 +325,164 @@ export function importarPacoteCofre(db, ponte, texto, frase, { maquina = maquina
     return n
   })
   return { importadas, resultados, recadastrar }
+}
+
+export function historicoCredencial(db, id, { limite = 50 } = {}) {
+  exigirId(id)
+  if (!Number.isInteger(limite) || limite < 1 || limite > 500) throw new CofreError('dados-invalidos', 'Campo limite inválido.')
+  if (!db.prepare('SELECT 1 AS sim FROM credenciais WHERE id = ?').get(id)) throw new CofreError('inexistente', 'Não há credencial com esse id.')
+  return db.prepare('SELECT em, agente, sessao, motivo, resultado FROM usos WHERE credencial_id = ? ORDER BY em DESC, rowid DESC LIMIT ?').all(id, limite).map((linha) => ({ ...linha }))
+}
+
+// Saúde (§8.2), com o relógio injetado: vence em até 15 dias (ou já venceu); falhou no último teste; sem
+// uso há 90 dias, contando só entregue, revelado-ao-dono e copiado-ao-dono; agente autorizado que nunca
+// usou, depois de 90 dias de cadastro; e, só quando pedida, a duplicata. As três últimas valem só para a
+// guarda dpapi: o cofre não vê o uso nem o valor do que mora no Gerenciador. O agente acrescentado
+// depois por edição conta do criado_em, e isso fica declarado.
+export function saudeCofre(db, { ponte = null, duplicatas = false, maquina = maquinaAtual(), agora = agoraIso() } = {}) {
+  const t = Date.parse(agora)
+  const vivas = listarCredenciais(db)
+  const ultimo = new Map(); const usaram = new Map()
+  const reais = [...USO_REAL]
+  for (const uso of db.prepare(`SELECT credencial_id, agente, resultado, em FROM usos WHERE credencial_id IS NOT NULL AND resultado IN (${reais.map(() => '?').join(', ')})`).all(...reais)) {
+    const anterior = ultimo.get(uso.credencial_id)
+    if (anterior === undefined || Date.parse(uso.em) > Date.parse(anterior)) ultimo.set(uso.credencial_id, uso.em)
+    if (uso.resultado === 'entregue') usaram.set(uso.credencial_id, (usaram.get(uso.credencial_id) ?? new Set()).add(uso.agente))
+  }
+  const alertas = []
+  for (const c of vivas) {
+    if (c.validade !== null && Date.parse(c.validade) - t <= PRAZO_VENCE) alertas.push({ regra: 'vence', nome: c.nome, validade: c.validade })
+    if (c.ultimo_teste_ok === false) alertas.push({ regra: 'teste-falhou', nome: c.nome, em: c.ultimo_teste_em })
+    if (c.guarda !== 'dpapi') continue
+    const desde = ultimo.get(c.id) ?? c.criado_em
+    if (t - Date.parse(desde) >= PRAZO_SEM_USO) alertas.push({ regra: 'sem-uso', nome: c.nome, desde })
+    else if (t - Date.parse(c.criado_em) >= CARENCIA_AGENTE) {
+      for (const agente of c.agentes) if (!usaram.get(c.id)?.has(agente)) alertas.push({ regra: 'agente-nunca-usou', nome: c.nome, agente })
+    }
+  }
+  return { total: vivas.length, alertas, duplicatas: duplicatas ? conferirDuplicatas(db, ponte, { maquina, agora }) : null }
+}
+
+function conferirDuplicatas(db, ponte, { maquina, agora }) {
+  if (!ponte) throw new CofreError('dados-invalidos', 'A conferência de duplicatas precisa da ponte da DPAPI.')
+  const linhas = db.prepare("SELECT id, nome, blob FROM credenciais WHERE apagado_em IS NULL AND guarda = 'dpapi' ORDER BY nome").all()
+  const abertos = linhas.length === 0 ? [] : ponte.abrir(linhas.map((linha) => linha.blob))   // se lançar, propaga sem registrar
+  try {
+    const pares = []
+    for (let i = 0; i < linhas.length; i += 1) for (let j = i + 1; j < linhas.length; j += 1) {
+      if (abertos[i]?.ok && abertos[j]?.ok && Buffer.compare(abertos[i].valor, abertos[j].valor) === 0) pares.push([linhas[i].nome, linhas[j].nome])
+    }
+    const naoAbriram = linhas.filter((_, i) => !abertos[i]?.ok).map((linha) => linha.nome)
+    transacao(db, () => { linhas.forEach((linha, i) => registrarUso(db, { credencialId: linha.id, nome: linha.nome, agente: 'omni', sessao: null, motivo: 'conferencia de duplicatas', resultado: abertos[i]?.ok ? 'conferido-saude' : 'falhou-abrir', maquina, agora })) })
+    return { pares, naoAbriram }
+  } finally {
+    for (const item of abertos) if (item?.ok) item.valor.fill(0)
+  }
+}
+
+export function editarCredencial(db, nome, mudancas, { maquina = maquinaAtual(), agora = agoraIso() } = {}) {
+  exigirNome(nome)
+  if (mudancas === null || typeof mudancas !== 'object' || Array.isArray(mudancas)) throw new CofreError('dados-invalidos', 'As mudanças precisam ser um objeto.')
+  const fora = Object.keys(mudancas).filter((campo) => !EDITAVEIS.has(campo))
+  if (fora.length > 0) throw new CofreError('dados-invalidos', `Campo(s) que não se editam: ${fora.join(', ')}.`)
+  return transacao(db, () => {
+    const atual = credencialPorNome(db, nome)
+    if (!atual) throw inexistente(nome)
+    const antes = metadados(atual)
+    const novo = normalizarDados({ ...antes, ...mudancas, nome: atual.nome })
+    if (JSON.stringify(novo) === JSON.stringify(antes)) return atual
+    db.prepare('UPDATE credenciais SET tipo = ?, servico = ?, url = ?, usuario = ?, notas = ?, etiquetas = ?, agentes = ?, validade = ?, rotacionar_dias = ?, origem_maquina = ?, atualizado_em = ?, versao = versao + 1 WHERE id = ?')
+      .run(novo.tipo, novo.servico, novo.url, novo.usuario, novo.notas, JSON.stringify(novo.etiquetas), JSON.stringify(novo.agentes), novo.validade, novo.rotacionar_dias, maquina, agora, atual.id)
+    return credencialPorNome(db, nome)
+  })
+}
+
+export function rotacionarCredencial(db, ponte, nome, valor, { maquina = maquinaAtual(), agora = agoraIso() } = {}) {
+  exigirNome(nome)
+  const bytes = comoBytes(valor)
+  try {
+    if (bytes.length === 0) throw new CofreError('valor-vazio', 'O valor da credencial está vazio.')
+    const atual = porNome(db, nome)
+    if (!atual) throw inexistente(nome)
+    if (atual.guarda !== 'dpapi') throw soNoGerenciador(nome)
+    const [blob] = ponte.selar([bytes])
+    return transacao(db, () => {
+      const r = db.prepare('UPDATE credenciais SET blob = ?, blob_sha256 = ?, ultimo_teste_em = NULL, ultimo_teste_ok = NULL, ultimo_teste_detalhe = NULL, origem_maquina = ?, atualizado_em = ?, versao = versao + 1 WHERE id = ? AND apagado_em IS NULL')
+        .run(blob, sha256(blob), maquina, agora, atual.id)
+      if (r.changes !== 1) throw inexistente(nome)
+      registrarUso(db, { credencialId: atual.id, nome, agente: 'omni', sessao: null, motivo: 'rotacao', resultado: 'rotacionado', maquina, agora })
+      return credencialPorNome(db, nome)
+    })
+  } finally { bytes.fill(0) }
+}
+
+export function apagarCredencial(db, nome, { maquina = maquinaAtual(), agora = agoraIso() } = {}) {
+  exigirNome(nome)
+  return transacao(db, () => {
+    const atual = porNome(db, nome)
+    if (!atual) throw inexistente(nome)
+    db.prepare('UPDATE credenciais SET apagado_em = ?, origem_maquina = ?, atualizado_em = ?, versao = versao + 1 WHERE id = ?').run(agora, maquina, agora, atual.id)
+    return { id: atual.id, apagado_em: agora }
+  })
+}
+
+export function restaurarCredencial(db, id, { maquina = maquinaAtual(), agora = agoraIso() } = {}) {
+  exigirId(id)
+  return transacao(db, () => {
+    const linha = db.prepare('SELECT nome FROM credenciais WHERE id = ? AND apagado_em IS NOT NULL').get(id)
+    if (!linha) throw new CofreError('inexistente', 'Não há credencial com esse id na lixeira.')
+    if (porNome(db, linha.nome)) throw jaExiste(linha.nome)
+    db.prepare('UPDATE credenciais SET apagado_em = NULL, origem_maquina = ?, atualizado_em = ?, versao = versao + 1 WHERE id = ?').run(maquina, agora, id)
+    return credencialPorNome(db, linha.nome)
+  })
+}
+
+export function listarLixeira(db) { return db.prepare(`SELECT ${COLUNAS_PUBLICAS}, apagado_em FROM credenciais WHERE apagado_em IS NOT NULL ORDER BY apagado_em DESC, nome`).all().map(deLinha) }
+
+// Esvaziar leva de vez só o que está na lixeira há mais de 30 dias; o registro de uso fica, e o diário
+// anota a remoção. Sem secure_delete, o blob removido pode sobrar em página livre ou no WAL até ser
+// reaproveitado, mas continua selado pela DPAPI do usuário.
+export function esvaziarLixeira(db, { agora = agoraIso() } = {}) {
+  const t = Date.parse(agora)
+  return transacao(db, () => {
+    const vencidas = db.prepare('SELECT id, apagado_em FROM credenciais WHERE apagado_em IS NOT NULL').all().filter((linha) => t - Date.parse(linha.apagado_em) > PRAZO_LIXEIRA)
+    const apagar = db.prepare('DELETE FROM credenciais WHERE id = ?')
+    for (const linha of vencidas) apagar.run(linha.id)
+    return { apagadas: vencidas.length }
+  })
+}
+
+// O caminho do dono: a presença (Windows Hello ou PIN, pela ponte de runtime/casa/presenca.mjs) é uma
+// função síncrona que devolve { ok, motivo }. Ela só é chamada para credencial viva da guarda dpapi, para
+// não pedir digital à toa, e todo pedido vira linha em usos com o agente dono.
+function pedirAoDono(db, presenca, nome, motivo, { maquina, agora }) {
+  exigirNome(nome)
+  if (typeof presenca !== 'function') throw new CofreError('dados-invalidos', 'Falta a ponte de presença.')
+  const linha = db.prepare('SELECT id, guarda, blob FROM credenciais WHERE nome = ? AND apagado_em IS NULL').get(nome)
+  const registrar = (resultado) => registrarUso(db, { credencialId: linha?.id ?? null, nome, agente: DONO, sessao: null, motivo, resultado, maquina, agora })
+  if (!linha) { registrar('recusado-inexistente'); throw inexistente(nome) }
+  if (linha.guarda !== 'dpapi') { registrar('recusado-gerenciador'); throw soNoGerenciador(nome) }
+  let presente
+  try { presente = presenca() } catch (erro) { registrar('recusado-presenca'); throw erro }
+  if (presente?.ok !== true) {
+    registrar('recusado-presenca')
+    throw new CofreError('sem-presenca', `A presença do dono não foi confirmada (${presente?.motivo ?? 'sem resposta'}).`)
+  }
+  return { linha, registrar }
+}
+
+export function revelarAoDono(db, ponte, presenca, nome, { maquina = maquinaAtual(), agora = agoraIso() } = {}) {
+  const { linha, registrar } = pedirAoDono(db, presenca, nome, 'ver', { maquina, agora })
+  const valor = abrirRegistrando(ponte, linha.blob, nome, registrar)
+  try { return { valor, usoId: registrar('revelado-ao-dono') } } catch (erro) { valor.fill(0); throw erro }
+}
+
+// Copiar não devolve o valor: a ponte abre o blob, grava na área de transferência fora do histórico e da
+// nuvem e programa a limpeza (runtime/casa/dpapi.mjs); aqui volta só o uso e a hora da limpeza.
+export function copiarAoDono(db, ponte, presenca, nome, { maquina = maquinaAtual(), agora = agoraIso() } = {}) {
+  const { linha, registrar } = pedirAoDono(db, presenca, nome, 'copiar', { maquina, agora })
+  let copiado
+  try { copiado = ponte.abrirParaAreaDeTransferencia(linha.blob) } catch (erro) { registrar('falhou-copiar'); throw erro }
+  if (!copiado?.ok) { registrar('falhou-copiar'); throw new CofreError('nao-copiou', `${nome} não foi copiada (${copiado?.erro ?? 'sem resposta'}).`) }
+  return { usoId: registrar('copiado-ao-dono'), limpaEm: copiado.limpaEm ?? null }
 }

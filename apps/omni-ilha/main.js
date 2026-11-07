@@ -14,7 +14,7 @@
 //    O Escape é um atalho global registrado só enquanto a ilha está aberta com o ponteiro em cima.
 'use strict';
 
-const { app, BrowserWindow, globalShortcut, ipcMain, screen } = require('electron');
+const { app, BrowserWindow, clipboard, globalShortcut, ipcMain, screen } = require('electron');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -28,6 +28,8 @@ const { registrarVeredito, dispensarPraVoce, mexerNoItem } = require('./escrita'
 const { criar: criarExecucao, responder: responderExecucao, atualizar: atualizarExecucao, visto: execucaoVista } = require('./execucoes');
 const { lerSistema, processos } = require('./sistema');
 const { lerWhatsapp } = require('./whatsapp');
+const { criarMaoCofre } = require('./cofre');
+const { registrarIpcCofre } = require('./cofre-ipc');
 const ICONE = path.join(__dirname, 'omni.ico'); // a face do Omni (b2-arte.png recortada)
 
 // FAIXA px de cada lado para a faixa que escorre pela borda de cima da tela; FOLGA px a mais de cada lado
@@ -232,6 +234,8 @@ if (trava) app.whenReady().then(() => {
       trocarCursor: (fn) => { lerCursor = fn; },
       janelaActions: () => janelaActions,
       janelaOvercore: () => janelaOvercore,
+      janelaCofre: () => janelaCofre,
+      abrirCofre: () => abrirCofre(),
       estado: () => ({ ignorando, dentro, alvo, estadoIlha, caixa, tamanho, escapeLigado }),
       // a bancada não aperta teclas de verdade: simula o atalho global (só se estivesse registrado)
       apertarEscape: () => { if (escapeLigado) janela.webContents.send('tecla', 'escape'); return escapeLigado; },
@@ -387,6 +391,40 @@ ipcMain.on('abrir-overcore', (evento) => {
 });
 ipcMain.handle('overcore:resumo', (evento) => (daIlha(evento) ? resumoOvercore() : null));
 ipcMain.handle('oracle:resumo', (evento) => (daIlha(evento) ? resumoOracle() : null));
+// ── janela do cofre (F1, plano 5, T6): as credenciais da casa. Uma só, como a do Overcore. O valor nunca
+// mora aqui: cofre-ipc.js converte e repassa à mão (cofre.js), que roda a CLI num processo à parte. A janela
+// pede ao Windows para ficar fora de captura de tela de outros programas, porque mostra o valor revelado.
+let janelaCofre = null;
+function abrirCofre() {
+  if (janelaCofre && !janelaCofre.isDestroyed()) {
+    if (janelaCofre.isMinimized()) janelaCofre.restore();
+    if (!ESCONDIDA) { janelaCofre.show(); janelaCofre.focus(); }
+    return;
+  }
+  const area = screen.getPrimaryDisplay().workArea;
+  const largura = Math.min(1080, area.width - 80);
+  const altura = Math.min(720, area.height - 80);
+  janelaCofre = new BrowserWindow({
+    width: largura, height: altura,
+    x: Math.round(area.x + (area.width - largura) / 2 + 60), y: Math.round(area.y + (area.height - altura) / 2 + 60),
+    minWidth: 720, minHeight: 400, show: false, title: 'Cofre', icon: ICONE, backgroundColor: '#11141a',
+    titleBarStyle: 'hidden', titleBarOverlay: { color: '#11141a', symbolColor: '#9aa2b5', height: 40 },
+    webPreferences: { preload: path.join(__dirname, 'cofre-preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, offscreen: ESCONDIDA },
+  });
+  janelaCofre.setContentProtection(true);
+  janelaCofre.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  janelaCofre.webContents.on('will-navigate', (ev) => ev.preventDefault());
+  janelaCofre.on('closed', () => { janelaCofre = null; });
+  janelaCofre.once('ready-to-show', () => { if (!ESCONDIDA) janelaCofre?.show(); });
+  janelaCofre.loadFile(path.join(__dirname, 'cofre.html'));
+}
+const daJanelaCofre = (evento) => janelaCofre && !janelaCofre.isDestroyed() && evento.sender === janelaCofre.webContents;
+ipcMain.on('abrir-cofre', (evento) => {
+  if (!daIlha(evento)) return;
+  ligarEscape(false);
+  abrirCofre();
+});
+registrarIpcCofre({ ipcMain, mao: criarMaoCofre(), clipboard, daJanela: daJanelaCofre, daIlha });
 
 // ── janela do chat com o Omni (27/10): a ilha não pega foco, então a conversa mora numa janela normal.
 // Por enquanto é só a forma (pedido dele): a caixa escreve e a bolha aparece, mas nada sai daqui. Uma só.
