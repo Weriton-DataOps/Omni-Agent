@@ -10,7 +10,7 @@
 
 **Desenho:** [Casa única: Omni, Overcore e Oráculo](../specs/2026-11-04-casa-unica-tres-agentes-design.md): §4.2 (o `agente.json` e o núcleo), §4 (passos 3 e 9 do executor), §3 e §3.1 (SQLite e portabilidade), §3.8 (o precedente do id natural), §2 (cada agente dono do seu banco) e §6 (a F1 inclui o núcleo).
 
-**Situação em 08/11/2026:** a Preparação e as tarefas 1 a 4 foram executadas em 07/11, e a T5 (commit, push, CI e registro) está em curso. Na T1, 24 testes verdes e 17 mutantes; na T2, 60 testes verdes e 63 mutantes; na T3, 9 testes verdes e 30 mutantes, e o furo do `check` fechado para a loja e a CLI; todos esses mutantes vermelhos pela asserção. Na T4, o verify com 889 testes e só o vermelho de nascença `:165`, e o `.test-dist`, o `test:dist` e o `verify:build` verdes à parte. A execução teve desvios de ordem, declarados no item 13 do executor e nos resultados.
+**Situação em 08/11/2026:** entregue no commit `25d0160`, enviado ao ramo `casa-sqlite-f1`, com o CI no esperado: Linux verde e Windows vermelho só no `:165`, com 889 testes. A Preparação e as tarefas 1 a 4 foram executadas em 07/11, e a T5 em 08/11. Na T1, 24 testes verdes e 17 mutantes; na T2, 60 testes verdes e 63 mutantes; na T3, 9 testes verdes e 30 mutantes, e o furo do `check` fechado para a loja e a CLI; todos esses mutantes vermelhos pela asserção. Na T4, o verify com 889 testes e só o vermelho de nascença `:165`, e o `.test-dist`, o `test:dist` e o `verify:build` verdes à parte. A execução teve desvios de ordem, declarados no item 13 do executor e nos resultados.
 
 ---
 
@@ -2359,7 +2359,7 @@ Resultado (07/11): `linhas de stat: 0` e `checkout: 0`; o `status` com as três 
 
 Um commit só: o esquema, a loja, a CLI, as suítes e o `package.json` só fazem sentido juntos, e o commit leva este plano e a linha 6 do escopo no plano 1. Antes dele, o `--conferir` que as tarefas não rodaram (executor, item 13).
 
-- [ ] **Passo 1: conferir o plano e trocar a linha 6 do escopo.**
+- [x] **Passo 1: conferir o plano e trocar a linha 6 do escopo.**
 
 ```powershell
 $rascunho = Join-Path $env:LOCALAPPDATA 'Temp\omni-f1b'
@@ -2384,7 +2384,9 @@ por
 | 6 | [Núcleo (`nucleo.db`): agentes e máquinas](2026-11-07-f1-plano-6-nucleo.md) | §4.2 | entregue |
 ```
 
-- [ ] **Passo 2: varredura, CR e commit.** Autor e committer Weriton-DataOps, com o e-mail dos commits dela no `origin/main`, passado no comando e nunca impresso; mensagem em UTF-8 sem BOM, em `$rascunho\msg-p6.txt`. A varredura olha só as linhas adicionadas no índice e imprime o número do padrão e o arquivo, nunca a linha: o que ela acha é investigado antes do commit, e o falso positivo fica declarado no resultado. Os padrões moram em `$rascunho\padroes-p6.txt`, um por linha, fora do repositório, porque escritos aqui eles seriam o próprio vazamento: a lista do montador deste plano (redes internas, domínio e usuário da empresa, pastas de usuário, os números do WhatsApp e o provedor), mais e-mail com domínio real, celular brasileiro e o nome do antivírus da máquina. O CR é conferido no índice (`i/…` do `ls-files --eol`), que é o que vai ao repositório.
+Resultado (08/11): as quatro `gravado`; `igual: 12, outros: 0` e `saida: 0`; `False`. Antes, a primeira montagem do plano passou pela conferência das referências de mutantes: três decisões citavam faixas erradas (o 39 é de tarefa e não de formato, o 48 é da raiz e o 62 é da listagem de máquinas) e os mutantes 13 a 17 da T1 não tinham decisão; a montagem foi refeita com as faixas certas e o `--conferir` deu os mesmos 12 `igual`. A linha 6 do escopo trocada.
+
+- [x] **Passo 2: varredura, CR e commit.** Autor e committer Weriton-DataOps, com o e-mail dos commits dela no `origin/main`, passado no comando e nunca impresso; mensagem em UTF-8 sem BOM, em `$rascunho\msg-p6.txt`. A varredura olha só as linhas adicionadas no índice e imprime o número do padrão e o arquivo, nunca a linha: o que ela acha é investigado antes do commit, e o falso positivo fica declarado no resultado. Os padrões moram em `$rascunho\padroes-p6.txt`, um por linha, fora do repositório, porque escritos aqui eles seriam o próprio vazamento: a lista do montador deste plano (redes internas, domínio e usuário da empresa, pastas de usuário, os números do WhatsApp e o provedor), mais e-mail com domínio real, celular brasileiro e nomes de produto instalados na máquina. O CR é conferido no índice (`i/…` do `ls-files --eol`), que é o que vai ao repositório.
 
 ```powershell
 $rascunho = Join-Path $env:LOCALAPPDATA 'Temp\omni-f1b'
@@ -2421,7 +2423,9 @@ git status --short
 
 Esperado: autor e committer `Weriton-DataOps`; 9 arquivos; o `status` só com os ` M dist/…` de fim de linha, se houver.
 
-- [ ] **Passo 3: push e CI.** A conta do push é a dona do repositório; a conta que estava ativa é lida antes da troca e volta no `finally`.
+Resultado (08/11): `arquivos: 9`; o `status` com os 9 no índice (quatro `M` e cinco `A`) e nenhuma outra linha; `fora de i/lf: 0`; `padroes: 14`, provados antes por uma sonda com um texto inventado por padrão, que casou o padrão de cada um e nada no texto neutro; `achados: 1`, o padrão 12 neste plano: é a frase acima que descreve a lista de padrões, sem nome nenhum, falso positivo. Commit `25d0160`, pai `c38af18`, autor e committer `Weriton-DataOps`, `9 files changed, 3513 insertions(+), 13 deletions(-)`; o `status` vazio.
+
+- [x] **Passo 3: push e CI.** A conta do push é a dona do repositório; a conta que estava ativa é lida antes da troca e volta no `finally`.
 
 ```powershell
 $antes = gh api user --jq .login
@@ -2433,7 +2437,11 @@ git rev-parse HEAD
 
 Depois, o CI do ramo pela conta Weriton-DataOps, com o token só na variável do processo e removido no `finally`. Esperado: a última linha do `gh api user` igual à primeira (a conta voltou); o mesmo SHA no `ls-remote` e no `HEAD`; o job Linux verde e o Windows vermelho só no `:165` (item 4), com o mesmo par `actual`/`expected` da T4, Passo 1, e 889 testes. O log do job vermelho vem pela API do job (executor, item 11).
 
-- [ ] **Passo 4: registrar.** A "Situação" deste plano passa a "entregue", com o hash do commit, e os resultados entram nos passos. Esse registro vai num segundo commit, `docs(plano): registra push e CI do plano 6 da F1`, como nos planos 3 a 5, com o mesmo push do Passo 3.
+Resultado (08/11): a conta lida antes da troca voltou no `finally`; push `c38af18..25d0160`, com o mesmo SHA no `ls-remote` e no `HEAD`. No CI, o job `Linux / Node 22 / portable core` verde e o `Windows / Node 22 / full verification` vermelho só no `:165`, que cai na linha 173, com o mesmo par `actual`/`expected` da T4, Passo 1; `tests 889`, `pass 884`, `fail 1`, `cancelled 0` e `skipped 4`.
+
+- [x] **Passo 4: registrar.** A "Situação" deste plano passa a "entregue", com o hash do commit, e os resultados entram nos passos. Esse registro vai num segundo commit, `docs(plano): registra push e CI do plano 6 da F1`, como nos planos 3 a 5, com o mesmo push do Passo 3.
+
+Resultado (08/11): a Situação e os passos 1 a 3 desta tarefa registrados neste segundo commit. A frase do Passo 2 que descrevia a lista de padrões foi reescrita sem a palavra que dava o falso positivo do padrão 12; a varredura deste commit deu `achados: 0`.
 
 ## Autorrevisão contra o desenho
 
