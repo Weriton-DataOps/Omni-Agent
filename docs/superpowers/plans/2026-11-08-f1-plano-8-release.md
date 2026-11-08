@@ -10,7 +10,7 @@
 
 ---
 
-**Situação em 08/11/2026:** Tarefas 1 e 2 executadas, e a T3 em curso. Versão 0.26.0 nos cinco arquivos de metadado, com o fingerprint `278ef6bb2382771b7e6c10010b7f119686cc29d3030fee42f0ffb01459bc1d2d`, e o verify inteiro verde, sem o vermelho de nascença.
+**Situação em 08/11/2026:** Entregue no commit `3c2b8ae`, com a versão 0.26.0 nos cinco arquivos de metadado e o fingerprint `278ef6bb2382771b7e6c10010b7f119686cc29d3030fee42f0ffb01459bc1d2d` no contrato. O verify inteiro ficou verde, sem o vermelho de nascença. O CI ficou verde nos dois jobs, e o PR #4 está aberto. O merge espera o Weriton.
 
 Planos anteriores: [plano 1](2026-11-04-f1-casa-sqlite.md) (o escopo da F1 está na tabela dele) e [plano 7](2026-11-08-f1-plano-7-degradacoes.md), cuja T3 deixou o único vermelho do verify no `testes/integridade-release.test.mjs:165` e calculou o `expected` `278ef6bb2382771b7e6c10010b7f119686cc29d3030fee42f0ffb01459bc1d2d`.
 
@@ -177,7 +177,7 @@ git -c user.name=Weriton-DataOps -c ('user.email=' + $email) commit -F "$rascunh
 
 Esperado: os 7 arquivos no índice e nenhuma outra linha; `fora de i/lf: 0`; `achados: 0`; autor e committer `Weriton-DataOps`.
 
-Resultado (08/11): a registrar.
+Resultado (08/11): Commit `3c2b8ae`, filho do `5848313`, com autor e committer `Weriton-DataOps`: `7 files changed, 228 insertions(+), 7 deletions(-)`. Antes dele, o índice tinha só os 7 arquivos, `fora de i/lf: 0` e `achados: 0`; depois, o `git status --short` ficou vazio.
 
 - [x] **Passo 3: push e CI.**
 
@@ -188,17 +188,17 @@ gh auth switch --user Weriton-DataOps; try { git push origin casa-sqlite-f1 } fi
 
 Esperado: a conta volta; o mesmo SHA no `ls-remote` e no `HEAD`; **os dois jobs verdes**, pela primeira vez desde o merge de base: o Linux (`portable core`) e o Windows (`full verification`, com o `:165` agora passando).
 
-Resultado (08/11): a registrar.
+Resultado (08/11): A conta voltou, e `ls-remote` e `HEAD` deram o mesmo SHA: `5848313..3c2b8ae  casa-sqlite-f1 -> casa-sqlite-f1`. O push dentro do sandbox do agente caiu no helper de credencial (`could not read Username`), como já tinha acontecido no plano 1. Passou fora dele, com zero processos do MSYS vivos. O run `Omni CI` do `3c2b8ae` terminou com `success`, e os **dois jobs ficaram verdes**: `Linux / Node 22 / portable core` em 11 s e `Windows / Node 22 / full verification` em 9 min 13 s. É o primeiro CI todo verde da F1.
 
 ## Tarefa 4: PR e registro
 
 - [x] **Passo 1: o PR** de `casa-sqlite-f1` para `main`, pela conta `Weriton-DataOps`, com o título `release 0.26.0: casa SQLite do Omni (F1)`. O corpo resume as mudanças do histórico, lista os oito planos e diz que o merge espera o Weriton.
 
-Resultado (08/11): a registrar.
+Resultado (08/11): PR #4 aberto pela `Weriton-DataOps`, de `casa-sqlite-f1` para `main`, com o título `release 0.26.0: casa SQLite do Omni (F1)`, estado `OPEN`, `MERGEABLE` e 30 commits (este registro soma o 31º). O corpo resume as nove mudanças do histórico, a tabela dos oito planos, a prova e a regra de congelamento, e diz que o merge espera o Weriton, por merge commit. A varredura do corpo deu `achados: 0`. Nenhum merge foi feito.
 
 - [x] **Passo 2: registrar.** A Situação deste plano passa a "entregue", e os resultados entram nos passos, num segundo commit, `docs(plano): registra push, CI e PR do plano 8 da F1`, com push.
 
-Resultado (08/11): a registrar.
+Resultado (08/11): Os resultados entram neste plano pelo `montar.mjs` sem `--provisorio`, que exige os seis resultados e recusa marcador sobrando, CR, acento estragado e dado proibido. O `--conferir` do bloco da T1 deu `igual versao-p8.mjs`. O commit `docs(plano): registra push, CI e PR do plano 8 da F1` leva só este arquivo e vai com push para o ramo do PR #4. O SHA dele fica no `git log` do ramo.
 
 ## Autorrevisão
 
