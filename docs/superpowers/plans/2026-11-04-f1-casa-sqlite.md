@@ -27,7 +27,7 @@ A F1 do desenho (§6) entrega `nucleo.db`, `omni.db` e `cofre.db`, os importador
 | 5 | [Card Cofre na ilha, falando pela API do Omni](2026-11-06-f1-plano-5-card-cofre.md) | §8.2, §3.4 | entregue |
 | 6 | [Núcleo (`nucleo.db`): agentes e máquinas](2026-11-07-f1-plano-6-nucleo.md) | §4.2 | entregue |
 | 7 | [Diagnóstico que lê `degradacoes.jsonl`](2026-11-08-f1-plano-7-degradacoes.md) | §3.6 | entregue |
-| 8 | Release 0.26.0: `contratos/atualizacao/integridade.json` com o fingerprint novo, versão nova, PR (merge só com o ok do Weriton) | — | a escrever |
+| 8 | [Release 0.26.0: `contratos/atualizacao/integridade.json` com o fingerprint novo, versão nova, PR (merge só com o ok do Weriton)](2026-11-08-f1-plano-8-release.md) | — | entregue |
 
 ## Regra de congelamento das migrações
 
