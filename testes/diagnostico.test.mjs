@@ -12,6 +12,7 @@ import { verificarIntegridadeRelease } from '../runtime/integridade-release.mjs'
 import { tratarHook } from '../runtime/hook-contexto.mjs'
 import { caminhoDaAutomacaoFalhas, sincronizarAutomacaoFalhas } from '../runtime/automacao-falhas.mjs'
 import { registrarFalha } from '../runtime/falhas.mjs'
+import { registrarDegradacao } from '../runtime/casa/banco.mjs'
 
 async function ambiente() {
   const raiz = await mkdtemp(join(tmpdir(), 'omni-diagnostic-hook-'))
@@ -64,7 +65,28 @@ test('diagnostico sem store nao cria nada nem inventa sessao carregada', async (
     assert.equal(result.loadedSession, null)
     assert.equal(result.failures.readOnly, true)
     assert.equal(result.overcore.status, 'unverified')
+    assert.equal(result.degradacoes?.registro, 'ausente')
     assert.deepEqual(await readdir(home), [])
+  } finally { await rm(home, { recursive: true, force: true }) }
+})
+
+test('diagnostico resume as degradacoes da casa sem abrir o banco', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'omni-diagnostic-degradacoes-'))
+  try {
+    const root = fileURLToPath(new URL('../', import.meta.url))
+    const resumo = ({ degradacoes }) => [degradacoes?.registro, degradacoes?.operacoes?.map(({ operacao, total, ultimoCodigo, ultimoErro }) => ({ operacao, total, ultimoCodigo, ultimoErro }))]
+    registrarDegradacao(home, 'memoria.carregar', Object.assign(new Error('database is locked'), { code: 'SQLITE_BUSY' }), {})
+    assert.deepEqual(resumo(await diagnosticarRuntime(home, root, 'session-missing', {})),
+      ['presente', [{ operacao: 'memoria.carregar', total: 1, ultimoCodigo: 'SQLITE_BUSY', ultimoErro: 'database is locked' }]])
+    // O env do diagnóstico chega à leitura: OMNI_CASA_BANCO troca a pasta do registro.
+    const env = { OMNI_CASA_BANCO: join(home, 'banco') }
+    registrarDegradacao(home, 'cofre.cli', new Error('cofre fechado'), env)
+    assert.deepEqual(resumo(await diagnosticarRuntime(home, root, 'session-missing', env)),
+      ['presente', [{ operacao: 'cofre.cli', total: 1, ultimoCodigo: null, ultimoErro: 'cofre fechado' }]])
+    // Só os registros existem: o diagnóstico não cria o omni.db nem outra coisa na casa para lê-los.
+    assert.deepEqual((await readdir(home)).sort(), ['banco', 'casa'])
+    assert.deepEqual(await readdir(join(home, 'casa')), ['degradacoes.jsonl'])
+    assert.deepEqual(await readdir(join(home, 'banco')), ['degradacoes.jsonl'])
   } finally { await rm(home, { recursive: true, force: true }) }
 })
 

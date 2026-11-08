@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { diagnosticarAutomacaoFalhas } from './automacao-falhas.mjs'
+import { lerDegradacoes } from './casa/degradacoes.mjs'
 import { lerIdentidadeRelease } from './integridade-release.mjs'
 import { consultarCapacidadesOvercore, consultarEvidenciasOvercore } from './overcore-task-flow.mjs'
 
@@ -17,6 +18,7 @@ export async function diagnosticarRuntime(casa, pluginRoot, sessionId, env = pro
     operator: await lerIdentidadeRelease(pluginRoot),
     loadedSession: loaded, loadedSessionIsHistoricalObservation: true,
     failures: await diagnosticarAutomacaoFalhas(casa),
+    degradacoes: await lerDegradacoes(casa, env),
     overcore: await consultarCapacidadesOvercore(env),
     overcoreValidation: await consultarEvidenciasOvercore(env) }
 }
