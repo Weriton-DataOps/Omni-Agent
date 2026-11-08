@@ -25,7 +25,7 @@ A F1 do desenho (§6) entrega `nucleo.db`, `omni.db` e `cofre.db`, os importador
 | 3 | [Estados de aprendizado e feedback no `omni.db`, com importador](2026-11-05-f1-plano-3-estados-aprendizado-feedback.md) | §3.8, §4.2, §6 | entregue |
 | 4 | [Cofre (`cofre.db`): importação dos `.dpapi`, inventário só com os nomes do Credential Manager, ponte DPAPI, CLI, exportação e importação com scrypt + AES-256-GCM](2026-11-06-f1-plano-4-cofre.md) | §8; prova em §8.5 | entregue |
 | 5 | [Card Cofre na ilha, falando pela API do Omni](2026-11-06-f1-plano-5-card-cofre.md) | §8.2, §3.4 | entregue |
-| 6 | Núcleo (`nucleo.db`): agentes e máquinas | §4.2 | a escrever |
+| 6 | [Núcleo (`nucleo.db`): agentes e máquinas](2026-11-07-f1-plano-6-nucleo.md) | §4.2 | entregue |
 | 7 | Diagnóstico que lê `degradacoes.jsonl` | §3.6 | a escrever |
 | 8 | Release 0.26.0: `contratos/atualizacao/integridade.json` com o fingerprint novo, versão nova, PR (merge só com o ok do Weriton) | — | a escrever |
 

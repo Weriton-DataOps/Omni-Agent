@@ -278,7 +278,7 @@ comBanco(process.env.OMNI_TESTE_ARQUIVO, [], (db) => {
 test('cada banco da casa abre com as tabelas do desenho', () => {
   const casa = casaTemporaria()
   const esperadas = {
-    nucleo: ['_diario', '_migracoes', 'agentes', 'maquinas', 'sqlite_sequence'],
+    nucleo: ['_diario', '_migracoes', 'agentes', 'instalacoes', 'maquinas', 'sqlite_sequence'],
     omni: ['_diario', '_documentos_no_disco', '_estados_no_disco', '_importacoes', '_migracoes', '_projecoes', 'documentos', 'estado_registros', 'estados', 'memoria_meta', 'memorias', 'sqlite_sequence'],
     cofre: ['_diario', '_importacoes', '_migracoes', '_projecoes', 'credenciais', 'sqlite_sequence', 'usos']
   }
@@ -289,6 +289,66 @@ test('cada banco da casa abre com as tabelas do desenho', () => {
       assert.equal(arquivoDoBanco(casa, nome), join(casa, 'casa', BANCOS[nome].arquivo))
     }
     assert.throws(() => arquivoDoBanco(casa, 'oraculo'), /Banco desconhecido na casa: oraculo/)
+  } finally {
+    apagar(casa)
+  }
+})
+
+test('nucleo.db guarda catalogo, instalacoes e maquinas com as travas do desenho', () => {
+  const casa = casaTemporaria()
+  const sha = 'a'.repeat(64)
+  const vivo = ['pc', 't0', 't0']
+  try {
+    comBancoDaCasa(casa, 'nucleo', (db) => {
+      const maquina = db.prepare(`INSERT INTO maquinas (id, nome, sistema, visto_em, origem_maquina, criado_em, atualizado_em)
+        VALUES (?, ?, ?, ?, ?, ?, ?)`)
+      maquina.run('pc', 'PC', 'win32', 't0', ...vivo)
+      assert.throws(() => maquina.run('PC-2', 'PC-2', 'win32', 't0', ...vivo), /CHECK/)
+      assert.throws(() => maquina.run('', 'vazio', 'win32', 't0', ...vivo), /CHECK/)
+      assert.throws(() => maquina.run('pc/b', 'barra', 'win32', 't0', ...vivo), /CHECK/)
+
+      const agente = db.prepare(`INSERT INTO agentes (id, versao_agente, banco, manifesto, manifesto_sha256, origem_maquina, criado_em, atualizado_em)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+      agente.run('exemplo', '0.3.0', 'exemplo.db', '{"agente":"exemplo"}', sha, ...vivo)
+      agente.run('sem-banco', '1.0.0', null, '{}', sha, ...vivo)
+      assert.throws(() => agente.run('outro', '1.0.0', 'exemplo.db', '{}', sha, ...vivo), /CHECK/)
+      assert.throws(() => agente.run('lista', '1.0.0', null, '[]', sha, ...vivo), /CHECK/)
+      assert.throws(() => agente.run('quebrado', '1.0.0', null, '{', sha, ...vivo), /CHECK/)
+      assert.throws(() => agente.run('curto', '1.0.0', null, '{}', 'abc', ...vivo), /CHECK/)
+      for (const id of ['Maiusculo', '9inicio', 'com_sub', 'a'.repeat(41), '']) {
+        assert.throws(() => agente.run(id, '1.0.0', null, '{}', sha, ...vivo), /CHECK/, id)
+      }
+      agente.run('a'.repeat(40), '1.0.0', null, '{}', sha, ...vivo)
+
+      const instalacao = db.prepare(`INSERT INTO instalacoes (id, maquina, agente, raiz, versao_agente, manifesto_sha256, origem_maquina, criado_em, atualizado_em)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      instalacao.run('pc/exemplo', 'pc', 'exemplo', 'C:/agentes/exemplo', '0.3.0', sha, ...vivo)
+      assert.throws(() => instalacao.run('pc/outro', 'pc', 'exemplo', 'C:/x', '1.0.0', sha, ...vivo), /CHECK/)
+      assert.throws(() => instalacao.run('pc/Errado', 'pc', 'Errado', 'C:/x', '1.0.0', sha, ...vivo), /CHECK/)
+      assert.throws(() => instalacao.run('PC/exemplo', 'PC', 'exemplo', 'C:/x', '1.0.0', sha, ...vivo), /CHECK/)
+      assert.throws(() => instalacao.run('pc/b/exemplo', 'pc/b', 'exemplo', 'C:/x', '1.0.0', sha, ...vivo), /CHECK/)
+      assert.throws(() => instalacao.run('pc/sem-raiz', 'pc', 'sem-raiz', '', '1.0.0', sha, ...vivo), /CHECK/)
+      assert.throws(() => instalacao.run('pc/curto', 'pc', 'curto', 'C:/x', '1.0.0', 'abc', ...vivo), /CHECK/)
+      assert.throws(() => instalacao.run('pc/exemplo', 'pc', 'exemplo', 'C:/y', '0.3.0', sha, ...vivo), /UNIQUE|PRIMARY/)
+      // Sem chave estrangeira: a sincronizacao aplica as linhas em qualquer ordem.
+      instalacao.run('notebook/sem-catalogo', 'notebook', 'sem-catalogo', '/opt/agentes/x', '1.0.0', sha, 'notebook', 't0', 't0')
+
+      // visto_em e relogio local: atualizar so ele nao sobe a versao e nao vai ao diario.
+      db.prepare('UPDATE maquinas SET visto_em = ? WHERE id = ?').run('t1', 'pc')
+      db.prepare('UPDATE maquinas SET nome = ?, versao = versao + 1 WHERE id = ?').run('PC novo', 'pc')
+      db.prepare('UPDATE instalacoes SET apagado_em = ?, versao = versao + 1 WHERE id = ?').run('t2', 'pc/exemplo')
+      const diario = db.prepare('SELECT tabela, linha, operacao, versao FROM _diario ORDER BY seq').all()
+      assert.deepEqual(diario.map((l) => `${l.tabela}:${l.linha}:${l.operacao}:${l.versao}`), [
+        'maquinas:pc:I:1',
+        'agentes:exemplo:I:1',
+        'agentes:sem-banco:I:1',
+        `agentes:${'a'.repeat(40)}:I:1`,
+        'instalacoes:pc/exemplo:I:1',
+        'instalacoes:notebook/sem-catalogo:I:1',
+        'maquinas:pc:U:2',
+        'instalacoes:pc/exemplo:U:2'
+      ])
+    })
   } finally {
     apagar(casa)
   }

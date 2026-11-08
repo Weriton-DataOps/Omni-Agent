@@ -53,25 +53,47 @@ const IMPORTACOES = `CREATE TABLE _importacoes (
   feita_em TEXT NOT NULL
 );`
 
+// Nome de agente: o mesmo formato do cofre (minúscula, dígito e hífen; começa por letra; até 40).
+const slug = (coluna) => `length(${coluna}) BETWEEN 1 AND 40 AND ${coluna} GLOB '[a-z]*' AND ${coluna} NOT GLOB '*[^a-z0-9-]*'`
+// Máquina: o hostname em minúsculas, sem barra (a barra separa máquina e agente no id da instalação).
+const maquinaValida = (coluna) => `length(${coluna}) BETWEEN 1 AND 253 AND ${coluna} = lower(${coluna}) AND ${coluna} NOT GLOB '*/*'`
+
+// nucleo.db (§4.2): quem é cada agente (catálogo, igual em toda máquina: o último registrado
+// vence), onde ele está instalado (cada máquina grava só as próprias linhas) e quais máquinas a
+// casa conhece. Sem chave estrangeira entre as tabelas: a sincronização aplica em qualquer ordem.
+// maquinas.visto_em é relógio local: atualizá-lo não sobe a versao e não vira tráfego.
 export const MIGRACOES_NUCLEO = [
   {
     versao: 1,
-    nome: 'registro de agentes e maquinas',
+    nome: 'catalogo de agentes, instalacoes e maquinas',
     sql: `${DIARIO}
+CREATE TABLE maquinas (
+  id TEXT PRIMARY KEY CHECK (${maquinaValida('id')}),
+  nome TEXT NOT NULL,
+  sistema TEXT NOT NULL,
+  visto_em TEXT NOT NULL,
+  ${VIVO}
+);
+${gatilhosDeDiario('maquinas')}
 CREATE TABLE agentes (
-  id TEXT PRIMARY KEY,
+  id TEXT PRIMARY KEY CHECK (${slug('id')}),
   versao_agente TEXT NOT NULL,
-  banco TEXT,
-  manifesto TEXT NOT NULL DEFAULT '{}',
+  banco TEXT CHECK (banco IS NULL OR banco = id || '.db'),
+  manifesto TEXT NOT NULL CHECK (CASE WHEN json_valid(manifesto) THEN json_type(manifesto) = 'object' ELSE 0 END),
+  manifesto_sha256 TEXT NOT NULL CHECK (length(manifesto_sha256) = 64),
   ${VIVO}
 );
 ${gatilhosDeDiario('agentes')}
-CREATE TABLE maquinas (
-  id TEXT PRIMARY KEY,
-  nome TEXT NOT NULL,
-  primeiro_visto TEXT NOT NULL,
-  ultimo_visto TEXT NOT NULL
-);`
+CREATE TABLE instalacoes (
+  id TEXT PRIMARY KEY CHECK (id = maquina || '/' || agente),
+  maquina TEXT NOT NULL CHECK (${maquinaValida('maquina')}),
+  agente TEXT NOT NULL CHECK (${slug('agente')}),
+  raiz TEXT NOT NULL CHECK (length(raiz) > 0),
+  versao_agente TEXT NOT NULL,
+  manifesto_sha256 TEXT NOT NULL CHECK (length(manifesto_sha256) = 64),
+  ${VIVO}
+);
+${gatilhosDeDiario('instalacoes')}`
   }
 ]
 
