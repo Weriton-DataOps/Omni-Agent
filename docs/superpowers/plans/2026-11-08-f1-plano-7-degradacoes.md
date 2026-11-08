@@ -10,7 +10,7 @@
 
 **Desenho:** [Casa única: Omni, Overcore e Oráculo](../specs/2026-11-04-casa-unica-tres-agentes-design.md): §3.6 ("Degradação, nunca queda": o registro, as operações da memória e o que cada linha leva), §3.8 (as operações dos estados) e §3 (a pasta do banco fora do Roaming).
 
-**Situação em 08/11/2026:** PreparaÃ§Ã£o e tarefas 1 a 3 executadas, e a T4 em curso. Na T1, 9 testes verdes e 38 mutantes, 37 vermelhos pela asserÃ§Ã£o e 1 declarado equivalente; na T2, 5 testes verdes e 3 mutantes vermelhos, e o furo do `check` fechado para o leitor e o diagnÃ³stico. Na T3, o verify com 899 testes e sÃ³ o vermelho de nascenÃ§a `:165`, e o `.test-dist`, o `test:dist` e o `verify:build` verdes Ã  parte. A execuÃ§Ã£o teve desvios de ordem, declarados no item 11 do executor e nos resultados.
+**Situação em 08/11/2026:** Entregue no commit `3f5ee06`, no ramo `casa-sqlite-f1`. Na T1, 9 testes verdes e 38 mutantes, 37 vermelhos pela asserção e 1 declarado equivalente; na T2, 5 testes verdes e 3 mutantes vermelhos, e o furo do `check` fechado para o leitor e o diagnóstico. Na T3, o verify com 899 testes e só o vermelho de nascença `:165`, e o `.test-dist`, o `test:dist` e o `verify:build` verdes à parte; na T4, o plano conferido, o commit e o CI com o mesmo par da T3. A execução teve desvios de ordem, declarados no item 11 do executor e nos resultados. O plano 8 grava o `expected` no contrato e fecha a release.
 
 ---
 
@@ -1221,7 +1221,7 @@ Esperado:
 
 Base: o verify do plano 6, com 889 testes. Os 10 deste plano são CD 9 e DG 1.
 
-Resultado (08/11): `tests 899`, `pass 894`, `fail 1`, `cancelled 0` e `skipped 4`, em 455 s. A Ãºnica falha Ã© a `testes\integridade-release.test.mjs:165`, que cai na linha 173: `actual` `3c60182bbef281d96b6782d614482b5e7459ce036468233c29eb6f1af3ef3df3` (o contrato) e `expected` `278ef6bb2382771b7e6c10010b7f119686cc29d3030fee42f0ffb01459bc1d2d` (o calculado com este plano, que o plano 8 grava). SaÃ­ram as cinco linhas `{"ok":true,â€¦}`, e a saÃ­da foi 1. O arquivo do verify ficou fora do `$rascunho`, na pasta temporÃ¡ria da sessÃ£o. A guarda deu `False` antes e depois.
+Resultado (08/11): `tests 899`, `pass 894`, `fail 1`, `cancelled 0` e `skipped 4`, em 455 s. A única falha é a `testes\integridade-release.test.mjs:165`, que cai na linha 173: `actual` `3c60182bbef281d96b6782d614482b5e7459ce036468233c29eb6f1af3ef3df3` (o contrato) e `expected` `278ef6bb2382771b7e6c10010b7f119686cc29d3030fee42f0ffb01459bc1d2d` (o calculado com este plano, que o plano 8 grava). Saíram as cinco linhas `{"ok":true,…}`, e a saída foi 1. O arquivo do verify ficou fora do `$rascunho`, na pasta temporária da sessão. A guarda deu `False` antes e depois.
 
 - [x] **Passo 2: o que a falha conhecida mascara, rodado à parte.** O `npm test` para no primeiro `node --test` vermelho, então o `.test-dist`, o `test:dist` e o `verify:build` não rodam dentro do verify.
 
@@ -1238,7 +1238,7 @@ Test-Path "$env:LOCALAPPDATA\omni\casa"
 
 Esperado: as três com `saida: 0`; `.test-dist` 55/55, `test:dist` 1/1 e `{"ok":true,"files":59}`, os mesmos números do plano 6; `False`.
 
-Resultado (08/11): as trÃªs com `saida: 0`: `.test-dist` com `tests 55`, `pass 55` e `fail 0`; `test:dist` com `tests 1`, `pass 1` e `fail 0`; `verify:build` com `{"ok":true,"files":59}`; `False`.
+Resultado (08/11): as três com `saida: 0`: `.test-dist` com `tests 55`, `pass 55` e `fail 0`; `test:dist` com `tests 1`, `pass 1` e `fail 0`; `verify:build` com `{"ok":true,"files":59}`; `False`.
 
 - [x] **Passo 3: devolver o `dist` e a guarda.** O `checkout` só roda se o `--stat` sem CR vier vazio: diferença de conteúdo no `dist` é defeito a investigar, não sobra a descartar.
 
@@ -1252,7 +1252,7 @@ Test-Path "$env:LOCALAPPDATA\omni\casa"
 
 Esperado: `linhas de stat: 0` e `checkout: 0`; o `status` com as cinco linhas das tarefas 1 e 2 e nenhuma em `dist/`: três `M` (`package.json`, o diagnóstico e o DG) e duas `??` (o leitor e a CD), além deste plano; `False`.
 
-Resultado (08/11): `linhas de stat: 0` e `checkout: 0`; o `status` com as trÃªs `M` e as duas `??`, nenhuma linha em `dist/`; `False`.
+Resultado (08/11): `linhas de stat: 0` e `checkout: 0`; o `status` com as três `M` e as duas `??`, nenhuma linha em `dist/`; `False`.
 
 ### Task 4: commit, push, CI e registro
 
@@ -1321,7 +1321,7 @@ git status --short
 
 Esperado: autor e committer `Weriton-DataOps`; 7 arquivos; o `status` vazio.
 
-Resultado (08/11): a registrar.
+Resultado (08/11): `arquivos: 7`; o `status` com quatro `M ` e três `A `; `fora de i/lf: 0`; `padroes: 14`; `achados: 0`. O commit `3f5ee06` (pai `802d786`), autor e committer `Weriton-DataOps`, `7 files changed, 1676 insertions(+), 2 deletions(-)`; o `status` vazio.
 
 - [x] **Passo 3: push e CI.** A conta do push é a dona do repositório; a conta que estava ativa é lida antes da troca e volta no `finally`.
 
@@ -1335,11 +1335,11 @@ git rev-parse HEAD
 
 Depois, o CI do ramo pela conta Weriton-DataOps, com o token só na variável do processo e removido no `finally`. Esperado: a última linha do `gh api user` igual à primeira (a conta voltou); o mesmo SHA no `ls-remote` e no `HEAD`; o job Linux verde e o Windows vermelho só no `:165`, com o mesmo par `actual`/`expected` da T3, Passo 1, e 899 testes.
 
-Resultado (08/11): a registrar.
+Resultado (08/11): a conta voltou à que estava ativa; `802d786..3f5ee06` aceito, e o mesmo SHA no `ls-remote` e no `HEAD`. O CI do commit: o job Linux (`portable core`) verde e o Windows (`full verification`) vermelho só no `not ok 626 - contrato canônico declara a versão e exatamente o fingerprint do payload`, em `testes/integridade-release.test.mjs:165`, que cai na linha 173, com `tests 899`, `pass 894`, `fail 1`, `cancelled 0` e `skipped 4` e o mesmo par `actual`/`expected` da T3, Passo 1: o plano em `docs/` não entra no payload.
 
 - [x] **Passo 4: registrar.** A "Situação" deste plano passa a "entregue", com o hash do commit, e os resultados entram nos passos. Esse registro vai num segundo commit, `docs(plano): registra push e CI do plano 7 da F1`, como nos planos 3 a 6, com o mesmo push do Passo 3.
 
-Resultado (08/11): a registrar.
+Resultado (08/11): este segundo commit, com o mesmo push do Passo 3. Ele também conserta quatro linhas do plano do primeiro commit (a Situação e os resultados do verify, das suítes à parte e da devolução do `dist`), em que os acentos tinham saído codificados duas vezes: o arquivo de resultados do montador foi lido uma vez como ANSI por engano antes da montagem; o código e os blocos não foram afetados, como mostra o `--conferir` do Passo 1.
 
 ## Autorrevisão contra o desenho
 
