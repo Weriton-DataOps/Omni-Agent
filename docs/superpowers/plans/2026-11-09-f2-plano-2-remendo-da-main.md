@@ -81,10 +81,10 @@ O caminho fixo da máquina aparece nos `.vbs`, nos `-agendar.ps1` e nos `.md` de
 
 **Arquivos:** os 11 do ramo e `servicos/sentinel/triagem.md`.
 
-- [ ] **1.1** No worktree, `git merge --no-ff omni-agenda-e-correcoes` com autor e committer Weriton-DataOps. Esperado: sem conflito.
-- [ ] **1.2** Em `servicos/sentinel/triagem.md`, linha 1, trocar o usuário de rede por "o Weriton". O resto do prompt fica igual.
-- [ ] **1.3** Rodar `node --test testes/sentinel-checagem.test.mjs testes/whatsapp-dns-rapido.test.mjs`. Esperado: todos pass, totais lidos.
-- [ ] **1.4** Commit: `fix(sentinel): prompt da triagem sem o usuario de rede`.
+- [x] **1.1** No worktree, `git merge --no-ff omni-agenda-e-correcoes` com autor e committer Weriton-DataOps. Esperado: sem conflito.
+- [x] **1.2** Em `servicos/sentinel/triagem.md`, linha 1, trocar o usuário de rede por "o Weriton". O resto do prompt fica igual.
+- [x] **1.3** Rodar `node --test testes/sentinel-checagem.test.mjs testes/whatsapp-dns-rapido.test.mjs`. Esperado: todos pass, totais lidos.
+- [x] **1.4** Commit: `fix(sentinel): prompt da triagem sem o usuario de rede`.
 
 ### Tarefa 2: o WhatsApp um mês depois
 
@@ -92,12 +92,12 @@ O caminho fixo da máquina aparece nos `.vbs`, nos `-agendar.ps1` e nos `.md` de
 - os 11 modificados listados acima, sem o `mcp.mjs`;
 - novos: `aprovacoes.mjs`, `saude.mjs`, `saude-openai.ps1`, `vigia-sessoes.mjs`, `vigia-sessoes.vbs` e `transcrever-local.py`.
 
-- [ ] **2.1** Conferir que a versão base de cada modificado no worktree é igual à do HEAD do checkout principal (`git hash-object` contra `git rev-parse omni-agenda-e-correcoes:<arquivo>`). Só então copiar. Se alguma divergir, parar e reconciliar à mão.
-- [ ] **2.2** Copiar os modificados e os novos do checkout principal para o worktree.
-- [ ] **2.3** Em `vigia-sessoes.vbs`, trocar o caminho fixo pela pasta do próprio script (`CreateObject("Scripting.FileSystemObject").GetParentFolderName(WScript.ScriptFullName)`).
-- [ ] **2.4** Rodar a varredura de dado pessoal nos 17 arquivos. Esperado: só falsos positivos já classificados (expressões regulares de `vigia-pedidos.mjs` e do teste dele, e o e-mail de exemplo do spec do Baileys).
-- [ ] **2.5** Rodar `node --test testes/vigia-pedidos.test.mjs` e `node --check` nos `.mjs` novos. Rodar o spec do Baileys pelo runner do serviço (`servicos/whatsapp`), se o `node_modules` dele existir; se não existir, registrar como não rodado.
-- [ ] **2.6** Commit: `feat(whatsapp): saude, aprovacoes, vigia de sessoes e o trabalho parado desde outubro`.
+- [x] **2.1** Conferir que a versão base de cada modificado no worktree é igual à do HEAD do checkout principal (`git hash-object` contra `git rev-parse omni-agenda-e-correcoes:<arquivo>`). Só então copiar. Se alguma divergir, parar e reconciliar à mão.
+- [x] **2.2** Copiar os modificados e os novos do checkout principal para o worktree.
+- [x] **2.3** Em `vigia-sessoes.vbs`, trocar o caminho fixo pela pasta do próprio script (`CreateObject("Scripting.FileSystemObject").GetParentFolderName(WScript.ScriptFullName)`).
+- [x] **2.4** Rodar a varredura de dado pessoal nos 17 arquivos. Esperado: só falsos positivos já classificados (expressões regulares de `vigia-pedidos.mjs` e do teste dele, e o e-mail de exemplo do spec do Baileys).
+- [x] **2.5** Rodar `node --test testes/vigia-pedidos.test.mjs` e `node --check` nos `.mjs` novos. Rodar o spec do Baileys pelo runner do serviço (`servicos/whatsapp`), se o `node_modules` dele existir; se não existir, registrar como não rodado.
+- [x] **2.6** Commit: `feat(whatsapp): saude, aprovacoes, vigia de sessoes e o trabalho parado desde outubro`.
 
 ### Tarefa 3: o que a ilha chama
 
@@ -106,12 +106,12 @@ O caminho fixo da máquina aparece nos `.vbs`, nos `-agendar.ps1` e nos `.md` de
 - `scripts/omni-actions-visita.{md,ps1,vbs}`, `scripts/omni-actions-agendar.ps1`;
 - `testes/actions-organizador.test.mjs`.
 
-- [ ] **3.1** Copiar os arquivos para o worktree.
-- [ ] **3.2** Trocar o caminho fixo da máquina pela pasta do script nos `.vbs` e no `.ps1` (`$PSScriptRoot`), e por `%USERPROFILE%` ou caminho relativo nos `.md`. O `-agendar.ps1` registra a tarefa apontando para a pasta de onde roda. O plano 5 troca tudo pelo executor.
-- [ ] **3.3** Em `testes/actions-organizador.test.mjs`, trocar o número do dono por um fictício com DDD 00 (`5500999990000`). Os caminhos `C:\Users\x\...` já são fictícios.
-- [ ] **3.4** Rodar `node --test testes/actions-organizador.test.mjs`. Esperado: todos pass, totais lidos.
-- [ ] **3.5** Mutação: trocar a cota de vereditos de `omni-actions.mjs` de 2 para 3. O teste "cota" deve ficar vermelho pela asserção. Desfazer.
-- [ ] **3.6** Commit: `feat(actions): organizador e despacho da ilha versionados`.
+- [x] **3.1** Copiar os arquivos para o worktree.
+- [x] **3.2** Trocar o caminho fixo da máquina pela pasta do script nos `.vbs` e no `.ps1` (`$PSScriptRoot`), e por `%USERPROFILE%` ou caminho relativo nos `.md`. O `-agendar.ps1` registra a tarefa apontando para a pasta de onde roda. O plano 5 troca tudo pelo executor.
+- [x] **3.3** Em `testes/actions-organizador.test.mjs`, trocar o número do dono por um fictício com DDD 00 (`5500999990000`). Os caminhos `C:\Users\x\...` já são fictícios.
+- [x] **3.4** Rodar `node --test testes/actions-organizador.test.mjs`. Esperado: todos pass, totais lidos.
+- [x] **3.5** Mutação: trocar a cota de vereditos de `omni-actions.mjs` de 2 para 3. O teste "cota" deve ficar vermelho pela asserção. Desfazer.
+- [x] **3.6** Commit: `feat(actions): organizador e despacho da ilha versionados`.
 
 ### Tarefa 4: o resto do Omni e as cercas
 
@@ -121,15 +121,15 @@ O caminho fixo da máquina aparece nos `.vbs`, nos `-agendar.ps1` e nos `.md` de
 - as duas especificações;
 - `.gitignore`.
 
-- [ ] **4.1** Copiar e varrer.
-- [ ] **4.2** Rodar `powershell -NoProfile -File testes/credential-write-ops.test.ps1`. Se falhar por depender da máquina, o teste fica fora e o motivo vai para o PR.
-- [ ] **4.3** No `.gitignore`, acrescentar `apps/omni-ilha/bancada/` e `.suite-*.txt`.
-- [ ] **4.4** No checkout principal, acrescentar à `.git/info/exclude` (local, não vai para o repo) os arquivos privados: `scripts/omni-equipedev*`, `scripts/omni-perfis-*` e `testes/omni-overcore-mao.test.mjs`.
-- [ ] **4.5** Commit: `chore: cofre por linha de comando, especificacoes e cercas do repo`.
+- [x] **4.1** Copiar e varrer.
+- [x] **4.2** Rodar `powershell -NoProfile -File testes/credential-write-ops.test.ps1`. Se falhar por depender da máquina, o teste fica fora e o motivo vai para o PR.
+- [x] **4.3** No `.gitignore`, acrescentar `apps/omni-ilha/bancada/` e `.suite-*.txt`.
+- [x] **4.4** No checkout principal, acrescentar à `.git/info/exclude` (local, não vai para o repo) os arquivos privados: `scripts/omni-equipedev*`, `scripts/omni-perfis-*` e `testes/omni-overcore-mao.test.mjs`.
+- [x] **4.5** Commit: `chore: cofre por linha de comando, especificacoes e cercas do repo`.
 
 ### Tarefa 5: release 0.27.1, verde, PR e merge
 
-- [ ] **5.1** Marcar os itens 3 e 4 da T8 do plano 1 e anotar o que foi para as notas acima.
+- [x] **5.1** Marcar os itens 3 e 4 da T8 do plano 1 e anotar o que foi para as notas acima.
 - [ ] **5.2** Bump 0.27.1:
   - `plugin.json`, `package.json`, `package-lock.json`;
   - `releases.json`, com a nota "a main traz o que a ilha chama; ramo do Sentinel e trabalho do WhatsApp";
@@ -138,6 +138,14 @@ O caminho fixo da máquina aparece nos `.vbs`, nos `-agendar.ps1` e nos `.md` de
 - [ ] **5.4** Commit da release, push, PR para a main, CI lido, merge com `--merge --match-head-commit`.
 - [ ] **5.5** Atualizar o plugin para a 0.27.1 e verificar a cópia instalada (`verified`, cobertura ok, fingerprint batendo).
 - [ ] **5.6** Plano mestre: linha 2 "entregue".
+
+## Notas da execução (09/11)
+
+- Dois testes eram bombas-relógio. `sentinel-checagem` e `actions-organizador` liam prazos de outubro e novembro com o relógio real, então ficaram vermelhos quando a data passou, também no checkout de origem. Os dois agora leem com relógio fixo; o código não mudou.
+- Mutantes vistos vermelhos pela asserção: a cota de propostas (2 para 3) e "postgres" fora dos reservados do cofre.
+- Das "duas especificações", só entrou a do organizador. A `casa-unica` do checkout principal é a cópia de 04/11 (21 KB); a versionada é a mais nova (35 KB) e ficou.
+- A bancada saiu inteira do git: são 484 arquivos de laboratório (78 MB de `.py`, `.html`, `.json`), nunca revisados. O comentário do `.gitignore` foi reescrito com a decisão. O backup do `exclude` do checkout principal está ao lado dele (`exclude.2026-11-09.bak`).
+- `enviar-pc.mjs` tinha um telefone e o nome de uma colega já na main pública. Agora usa um número fictício, mas o original segue no histórico.
 
 ## Depois deste plano
 
