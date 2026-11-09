@@ -236,6 +236,26 @@ CREATE TABLE aprendizado_eventos (
   origem_maquina TEXT NOT NULL
 );
 CREATE INDEX aprendizado_eventos_por_achado ON aprendizado_eventos (achado_id, em);`
+  },
+  // v5 (plano 3 da F2): a campainha dos agentes. Cada POST /v1/despachos vira um recibo; o id é
+  // agente/execucao, então o mesmo toque repetido não duplica. A fila do agente é a verdade: isto é só
+  // o aviso de que há trabalho lá. Dado operacional desta máquina, sem diário de sincronização.
+  {
+    versao: 5,
+    nome: 'despachos da campainha',
+    sql: `CREATE TABLE despachos (
+  id TEXT PRIMARY KEY,
+  agente TEXT NOT NULL CHECK (${slug('agente')}),
+  execucao TEXT NOT NULL CHECK (length(execucao) BETWEEN 1 AND 128 AND execucao NOT GLOB '*[^A-Za-z0-9._:-]*'),
+  estado TEXT NOT NULL DEFAULT 'recebido' CHECK (estado IN ('recebido', 'assumido', 'recusado', 'falhou')),
+  tentativas INTEGER NOT NULL DEFAULT 0 CHECK (tentativas >= 0),
+  detalhe TEXT CHECK (detalhe IS NULL OR length(detalhe) <= 300),
+  recebido_em TEXT NOT NULL,
+  atualizado_em TEXT NOT NULL,
+  origem_maquina TEXT NOT NULL CHECK (${maquinaValida('origem_maquina')}),
+  CHECK (id = agente || '/' || execucao)
+);
+CREATE INDEX despachos_recebidos ON despachos (recebido_em) WHERE estado = 'recebido';`
   }
 ]
 
