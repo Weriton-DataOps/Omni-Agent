@@ -1,4 +1,6 @@
-export const DEFAULT_INLINE_CONTEXT_BUDGET = 9_500;
+// O Claude Code troca additionalContext acima de 10.000 caracteres (String.length) por uma prévia
+// em arquivo (AUD-177). 9.900 deixa 100 de margem; subir daqui é perder a persona, não ganhar espaço.
+export const DEFAULT_INLINE_CONTEXT_BUDGET = 9_900;
 export class RequiredContextExceedsBudgetError extends Error {
     budgetCharacters;
     requiredCharacters;

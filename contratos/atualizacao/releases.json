@@ -398,6 +398,12 @@
         "Persona v3 ganha o bloco ESPELHO: o erro do dono e nomeado como dele, com evidencia e conserto, e culpa indevida atribuida ao Omni e contestada com a prova (git, log ou a mensagem dele); a mira passa a incluir a decisao do dono e a bajulacao sai. A ancora e o nucleo Realtime acompanham, e a ancora encolhe para nao pesar a cada turno.",
         "Eval de personalidade com 31 casos: contesta-culpa-indevida e aponta-erro-do-dono-sem-pano, ambos de peso 5."
       ]
+    },
+    {
+      "version": "0.26.2",
+      "changes": [
+        "Orcamento inline do hook sobe de 9.500 para 9.900 caracteres: o Claude Code troca additionalContext acima de 10.000 caracteres (String.length) por uma previa em arquivo (AUD-177), entao 9.900 deixa 100 de margem. O runtime passa a usar a mesma constante do nucleo em vez de repetir o numero, e a folga da ativacao sobe de 191 para cerca de 591 caracteres."
+      ]
     }
   ]
 }

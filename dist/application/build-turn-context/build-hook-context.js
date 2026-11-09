@@ -2,7 +2,7 @@ import { CRITICAL_COMPACT_ANCHOR, CRITICAL_TURN_CLOSING, CRITICAL_VOICE_RULE, re
 import { assembleContextBlocks, DEFAULT_INLINE_CONTEXT_BUDGET, RequiredContextExceedsBudgetError } from '../../core/context/context-block.js';
 import { projectionToContextBlocks } from '../../core/context/projection-blocks.js';
 const TRUNCATION_NOTICE = [
-    'CONTEXTO AUXILIAR TRUNCADO POR BLOCOS COMPLETOS: o limite inline de 9.500 caracteres foi aplicado.',
+    `CONTEXTO AUXILIAR TRUNCADO POR BLOCOS COMPLETOS: o limite inline de ${String(DEFAULT_INLINE_CONTEXT_BUDGET).replace(/\B(?=(\d{3})+$)/g, '.')} caracteres foi aplicado.`,
     'A personalidade, as regras obrigatórias e o encerramento crítico foram preservados; nenhum bloco foi cortado no meio.'
 ].join(' ');
 function completeLineCompact(content, maximumLines) {

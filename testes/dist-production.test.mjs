@@ -48,7 +48,7 @@ test('dist de producao expoe e executa os contratos criticos de personalidade e 
     },
     projection: '## RULES\n- REGRA_DIST_VERIFICADA'
   })
-  assert.ok(turn.characters <= 9_500)
+  assert.ok(turn.characters <= 9_900)
   assert.match(turn.text, /Inventor Cumplice permanece ativo no dist/)
   assert.match(turn.text, /REGRA_DIST_VERIFICADA/)
 
