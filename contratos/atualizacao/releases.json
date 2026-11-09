@@ -420,6 +420,14 @@
         "Entram o ramo do Sentinel (checagem com o cerco, triagem sem usuario de rede, DNS rapido para a midia do WhatsApp) e o trabalho do WhatsApp parado desde outubro: saude, aprovacoes, vigia de sessoes, transcricao local e os ajustes de ponte, formato, relatorio, terceiros e vigia de pedidos.",
         "Cofre por linha de comando (cardapio de escrita com teste) e guarda de chave pela area de transferencia. A bancada da ilha sai inteira do git."
       ]
+    },
+    {
+      "version": "0.28.0",
+      "changes": [
+        "Nasce a API local do Omni: node runtime/servir.mjs --porta <n> escuta so em 127.0.0.1, exige token em toda rota (localhost recebe 421) e anuncia a porta na primeira linha do stdout, so depois de escutar.",
+        "Campainha dos agentes: POST /v1/despachos {agente, execucao} responde 202 e e idempotente pelo id; o recibo fica na tabela despachos, migracao v5 do omni.db.",
+        "Supervisor do servir dos agentes instalados nesta maquina: sobe servir --porta 0 com OMNI_API e OMNI_API_TOKEN, le a porta, volta com espera dobrada e trata saida 2, recusa:true e comando inexistente como recusa permanente. Provado com o Oraculo real."
+      ]
     }
   ]
 }
