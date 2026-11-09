@@ -155,8 +155,9 @@ test('pedido: 👍 do dono manda o rascunho SEM a marca sozinho; 👎 não manda
 test('texto dele citando o pedido vai literal', async () => {
   const { deps, chamadas } = falsos({ caixa: { recados: [recado(8)] }, triagem: { decisoes: [{ id: 8, classe: 'invasivo', resposta: 'rascunho' }] } })
   await rodada({ agora: quarta(9), deps })
-  assert.equal(registrarResposta('wa1', '  Só semana que vem.  '), 8)
-  assert.equal(registrarResposta('wa-desconhecido', 'x'), null)
+  // relógio fixo: com Date.now() o pedido de 05/11 vence e o teste vira bomba-relógio
+  assert.equal(registrarResposta('wa1', '  Só semana que vem.  ', quarta(9, 30).getTime()), 8)
+  assert.equal(registrarResposta('wa-desconhecido', 'x', quarta(9, 30).getTime()), null)
   await rodada({ agora: quarta(10), deps })
   assert.deepEqual(chamadas.responder, [{ emRespostaA: 8, texto: 'Só semana que vem.' }])
 })
