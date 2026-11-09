@@ -1320,6 +1320,20 @@ No fim do script `check`, acrescentar `&& node --check runtime/servir.mjs && nod
 
 Nenhum arquivo do repo do Oráculo é escrito: todo banco e registro vai para uma pasta temporária via `OMNI_CASA_BANCO` e `OMNI_HOME`. Antes e depois, conferir `git -C <Oracle> status --porcelain`, que tem de ficar igual.
 
+**Desvio na execução, achado ao ler o código dele.** Na subida, o `servir` do Oráculo reconcilia o disco: o `Actions` (`OMNI_ACTIONS`, padrão `Documents\Actions`) e o `state/` e `registry/` do próprio repo. Então:
+- a raiz registrada é uma cópia por `git archive d3d4050` + `tar`, dentro da pasta da prova;
+- `OMNI_ACTIONS` aponta para uma pasta vazia da prova.
+
+O repo e o `Actions` reais não entram na prova.
+
+**Resultado (09/11, Oráculo `f3/lote-d` `d3d4050`):**
+- sem `instalar`: `recusado` permanente, com o erro dele ("o Oráculo não está instalado nesta casa: rode instalar antes"); uma subida só;
+- `instalar --stdin` com os dois sha256: saída 0, migração `0005_credenciais_api`, `tela` e `visita` gravadas;
+- `servir` de novo: `no-ar`, com a campainha ligada na API do Omni;
+- a saúde do Oráculo responde 200 com o token `tela` e 401 sem token;
+- fechar o stdin: os dois saem 0 e o processo do Oráculo some;
+- `git status` do Oráculo igual antes e depois, e nenhum arquivo do `Actions` real mexido.
+
 - [ ] **Passo 1: preparar a pasta.**
   - Criar uma pasta temporária em `%LOCALAPPDATA%\omni\rascunho\prova-p3-<hora>`.
   - Registrar o manifesto do Oráculo (`<Oracle>\executor\agente.json`, lido) num `nucleo.db` dessa pasta, com raiz `<Oracle>`. Usar `node runtime/nucleo.mjs registrar` ou um script de uma linha com `registrarAgente`.
