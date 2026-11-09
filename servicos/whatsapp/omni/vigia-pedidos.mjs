@@ -5,8 +5,10 @@
 //
 //   1. registro: lê as transcrições (.jsonl) e acrescenta cada prompt do Weriton ao registro
 //      append-only (C:\tmp\pedidos-abertos.jsonl) como `nao_classificado`, com sessão, hora e ramo;
-//   2. dona morta: sem processo e transcrição parada há mais de 20 min, com trabalho pendurado
-//      (pedido classificado aberto, tarefa em segundo plano sem retorno, ou a trava no nome dela);
+//   2. dona morta: sem processo e transcrição parada há mais de 20 min, com trabalho REAL pendurado
+//      (pedido classificado aberto, ou a trava no nome dela). Tarefa em segundo plano sem "retorno"
+//      NÃO conta: sessão que encerrou o expediente deixa marcador de subagente pendurado e isso é o
+//      normal, não um pedido abandonado — era a fonte de falso-incidente que metralhava o Weriton (07/11).
 //   3. sem progresso: pedido classificado com dona viva e nenhum commit/push/evento em 60 min;
 //   4. trava de morta: lock presente, dona sem processo e transcrição parada há mais de 15 min.
 //
@@ -42,6 +44,18 @@ export const ESTADOS = ['nao_classificado', 'aberto', 'em_prova', 'pr', 'homolog
 const ABERTOS_CLASSIFICADOS = new Set(['aberto', 'em_prova', 'pr', 'homolog', 'producao'])
 const MIN = 60_000
 export const LIMITES = { donaViva: 20 * MIN, travaMorta: 15 * MIN, semProgresso: 60 * MIN, repeticao: 60 * MIN, janela: 48 * 60 * MIN }
+
+// Janela de silêncio (madrugada): dentro dela o vigia continua lendo, registrando e guardando
+// estado, mas não manda nada ao WhatsApp. config.silencio = { de:'HH:MM', ate:'HH:MM', tz? }.
+// Cruza a meia-noite quando de > ate. O que estiver de pé sai uma vez só quando a janela acaba.
+export function emSilencio(silencio, agora = Date.now()) {
+  if (!silencio || !silencio.de || !silencio.ate) return false
+  const tz = silencio.tz || 'America/Sao_Paulo'
+  const hhmm = new Intl.DateTimeFormat('en-GB', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(Number(agora)))
+  const min = s => { const [h, m] = String(s).split(':').map(Number); return h * 60 + m }
+  const [de, ate, ag] = [min(silencio.de), min(silencio.ate), min(hhmm)]
+  return de <= ate ? (ag >= de && ag < ate) : (ag >= de || ag < ate)
+}
 
 // ───────────────────────────── utilidades ─────────────────────────────
 function flag(args, nome, padrao) {
@@ -288,8 +302,10 @@ export function avaliar({ agora, pedidos, sessoes, transcricoes, vivos, travas, 
   for (const tr of travas) {
     if (!tr) continue
     let dona = null
-    for (const [sid, s] of sessoes) if (etiqueta(s.name) === tr.tag) { if (!dona || (s.updatedAt || 0) > (sessoes.get(dona)?.updatedAt || 0)) dona = sid }
-    if (!dona) for (const p of pedidos.values()) if (etiqueta(p.nomeSessao) === tr.tag) dona = p.sessao
+    // Lock sem etiqueta "-xx" (ex.: "dw-7-b0/..."): sem dona identificável, só avisa e nunca derruba.
+    // Antes, null === null casava com qualquer sessão sem nome e morta, e derrubou a trava viva da dw-7-b0 (04/11 16:49Z).
+    if (tr.tag) for (const [sid, s] of sessoes) if (etiqueta(s.name) === tr.tag) { if (!dona || (s.updatedAt || 0) > (sessoes.get(dona)?.updatedAt || 0)) dona = sid }
+    if (!dona && tr.tag) for (const p of pedidos.values()) if (etiqueta(p.nomeSessao) === tr.tag) dona = p.sessao
     const r = dona ? resumo(dona) : null
     const parada = r ? (r.mtime ? agora - r.mtime : agora - tr.mtime) : agora - tr.mtime
     const morta = r ? (!r.processo && parada > LIMITES.travaMorta) : parada > LIMITES.semProgresso
@@ -317,10 +333,9 @@ export function avaliar({ agora, pedidos, sessoes, transcricoes, vivos, travas, 
     if (!r.viva) {
       if (r.mtime && agora - r.mtime > LIMITES.janela && !classificados.length) continue   // morte antiga sem pedido aberto: fora da janela
       const motivo = classificados.length ? `pedido classificado como ${classificados[0].estado}`
-        : r.pendentes.length ? `tarefa em segundo plano sem retorno (${r.pendentes.slice(-2).reverse().join(', ')})`
         : travaDaSessao.has(sid) ? 'trava no nome dela' : null
-      if (!motivo) continue                                   // morreu com o turno fechado e nada pendurado: conversa encerrada
-      if (travaDaSessao.has(sid) && !classificados.length && !r.pendentes.length) continue   // já coberto pelo aviso da trava
+      if (!motivo) continue                                   // morreu com o turno fechado e nada REAL pendurado: conversa encerrada
+      if (travaDaSessao.has(sid) && !classificados.length) continue   // só trava: já coberto pelo aviso da trava
       const alvo = classificados[0] || ultimo
       achados.push({
         chave: `morta:${sid}:${alvo.id}`, tipo: 'dona-morta', desde: r.mtime || alvo.at, pedidos: [alvo.id], sessao: sid,
@@ -456,9 +471,12 @@ async function principal(args) {
     a.tipo = 'queda-automatica'; a.chave = `queda:${a.trava.caminho}:${a.trava.hash}`; a.texto = texto
   }
   const enviar = filtrarRepeticao(achados, estado.avisos, agora)
+  // silêncio noturno: não envia nada ao WhatsApp dentro da janela; o que ficar de pé sai quando ela acaba
+  const calado = emSilencio(config.silencio, agora)
+  const aEnviar = calado ? [] : enviar
 
   if (teste) {
-    console.log(JSON.stringify({ novosNoRegistro: recentes.length, achados: achados.length, enviaria: enviar.length }, null, 1))
+    console.log(JSON.stringify({ novosNoRegistro: recentes.length, achados: achados.length, enviaria: aEnviar.length, calado }, null, 1))
     for (const a of enviar) console.log(`\n── ${a.tipo} (${a.chave})\n${a.texto}`)
     return
   }
@@ -466,7 +484,7 @@ async function principal(args) {
   if (recentes.length) for (const e of recentes) { const p = pedidos.get(e.id); if (p) p.at = e.at }
 
   const resultado = []
-  for (const a of enviar.slice(0, 4)) {
+  for (const a of aEnviar.slice(0, 4)) {
     const texto = `🤖 *Omni · vigia de pedidos*\n\n${a.texto}`
     let waId
     if (ENVIO.startsWith('arquivo:')) {
@@ -488,7 +506,7 @@ async function principal(args) {
   const vivosAgora = new Set(achados.map(a => a.chave))
   for (const k of Object.keys(estado.avisos)) if (!vivosAgora.has(k)) delete estado.avisos[k]
   gravaDuravel(ESTADO, JSON.stringify(estado))
-  console.log(JSON.stringify({ at: new Date(agora).toISOString(), novosNoRegistro: recentes.length, achados: achados.length, avisos: resultado }))
+  console.log(JSON.stringify({ at: new Date(agora).toISOString(), novosNoRegistro: recentes.length, achados: achados.length, calado, avisos: resultado }))
 }
 
 const direto = process.argv[1] && import.meta.url.toLowerCase().endsWith(basename(process.argv[1]).toLowerCase())

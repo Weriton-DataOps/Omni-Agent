@@ -52,15 +52,22 @@ test('lerTranscricao: tarefa em segundo plano sem retorno fica pendente; com ret
 const pedido = (id, sessao, estado, at, extra = {}) => [id, { id, sessao, estado, at, texto: `pedido ${id}`, ultimoSinal: at, eventos: [], ...extra }]
 const base = over => ({ agora: AGORA, pedidos: new Map(), sessoes: new Map(), transcricoes: new Map(), vivos: new Set(), travas: [], sinalGit: () => 0, ...over })
 
-test('avaliar: dona morta com tarefa em segundo plano sem retorno vira aviso com o id do pedido', () => {
+test('avaliar: dona morta só com tarefa em segundo plano pendurada NÃO avisa (sessão encerrou o expediente, não abandonou pedido)', () => {
   const a = v.avaliar(base({
     pedidos: new Map([pedido('p-1', 's1', 'nao_classificado', AGORA - 18 * 60 * MIN)]),
+    transcricoes: new Map([['s1', { mtime: AGORA - 17 * 60 * MIN, pendentes: new Set(['byx']) }]]),
+  }))
+  assert.deepEqual(a, [], 'marcador de subagente pendurado de sessão morta é ruído, não pedido parado')
+})
+
+test('avaliar: dona morta com pedido CLASSIFICADO vira aviso com o id do pedido', () => {
+  const a = v.avaliar(base({
+    pedidos: new Map([pedido('p-1', 's1', 'aberto', AGORA - 18 * 60 * MIN)]),
     transcricoes: new Map([['s1', { mtime: AGORA - 17 * 60 * MIN, pendentes: new Set(['byx']) }]]),
   }))
   assert.equal(a.length, 1)
   assert.equal(a[0].tipo, 'dona-morta')
   assert.match(a[0].texto, /p-1/)
-  assert.match(a[0].texto, /byx/)
   assert.match(a[0].texto, /\?$/, 'termina numa pergunta só')
 })
 
@@ -155,21 +162,21 @@ test('ponta a ponta: dona fictícia + .jsonl parado + trava falsa → aviso com 
   assert.equal(r1.novosNoRegistro, 1)
   const ids = readFileSync(registro, 'utf8').trim().split('\n').map(l => JSON.parse(l).id)
   const msgs = readFileSync(saida, 'utf8').trim().split('\n').map(l => JSON.parse(l))
-  assert.equal(msgs.length, 2, 'um aviso da trava, um da dona morta com tarefa pendurada')
-  assert.ok(msgs.every(m => m.texto.includes(ids[0])), 'os dois levam o id do pedido')
+  assert.equal(msgs.length, 1, 'só o aviso da trava; tarefa em segundo plano pendurada de dona morta não gera aviso')
+  assert.ok(msgs.every(m => m.texto.includes(ids[0])), 'o aviso leva o id do pedido')
   assert.ok(msgs.some(m => /Posso anular a trava da -zz\?/.test(m.texto)))
   assert.ok(existsSync(feed))
 
   roda(AGORA + 30 * MIN)
-  assert.equal(readFileSync(saida, 'utf8').trim().split('\n').length, 2, '30 min depois: não repete')
+  assert.equal(readFileSync(saida, 'utf8').trim().split('\n').length, 1, '30 min depois: não repete')
   roda(AGORA + 61 * MIN)
-  assert.equal(readFileSync(saida, 'utf8').trim().split('\n').length, 4, '61 min depois: repete os dois')
+  assert.equal(readFileSync(saida, 'utf8').trim().split('\n').length, 2, '61 min depois: repete o da trava')
 
   roda(AGORA + 62 * MIN, 'dispensar', ids[0], 'era simulação')
   rmSync(trava)   // quem decide soltou a trava: some o achado dela
   const r3 = JSON.parse(roda(AGORA + 130 * MIN))
   assert.equal(r3.achados, 0, 'pedido dispensado e trava solta: nada mais a avisar')
-  assert.equal(readFileSync(saida, 'utf8').trim().split('\n').length, 4)
+  assert.equal(readFileSync(saida, 'utf8').trim().split('\n').length, 2)
 })
 
 test('fechar exige sha e run; classificar não aceita "fechado" sem prova', () => {

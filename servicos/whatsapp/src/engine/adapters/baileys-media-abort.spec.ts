@@ -1,3 +1,4 @@
+import { EventEmitter } from 'node:events';
 import { BaileysEvents, type BaileysEventsHost } from './baileys-events';
 import { ConcurrencyLimiter } from '../../common/utils/concurrency-limiter';
 import { createLogger } from '../../common/services/logger.service';
@@ -145,6 +146,42 @@ describe('BaileysEvents aborted media download size', () => {
     await jest.advanceTimersByTimeAsync(200);
     expect(stream.destroy).toHaveBeenCalled();
     expect(read).not.toHaveBeenCalled();
+  });
+});
+
+describe('BaileysEvents stream error after the download already finished', () => {
+  beforeEach(() => {
+    downloadMediaMessage.mockReset();
+    process.env.MEDIA_DOWNLOAD_ENABLED = 'true';
+  });
+
+  afterEach(() => {
+    delete process.env.MEDIA_DOWNLOAD_ENABLED;
+  });
+
+  // 08/10/2026 production crash: `for await` drops the stream's listeners once the loop exits (here,
+  // on normal completion), but the underlying TLS/undici read can still fail asynchronously afterward
+  // (ECONNRESET). A real EventEmitter throws synchronously when 'error' fires with zero listeners, and
+  // that uncaughtException took the whole process down. A passive listener attached as soon as the
+  // stream is obtained must survive that late, unrelated error.
+  it('does not crash when the stream errors again after being fully consumed', async () => {
+    const emitter = new EventEmitter();
+    const stream = Object.assign(emitter, {
+      // eslint-disable-next-line @typescript-eslint/require-await
+      async *[Symbol.asyncIterator]() {
+        yield Buffer.from('IMG');
+      },
+      destroy: jest.fn(),
+    });
+    downloadMediaMessage.mockResolvedValue(stream);
+    const { events } = build();
+
+    const incoming = await events.mapMessage(imageMessage('LATEERR', 3), 'imageMessage');
+    expect(incoming.media).toMatchObject({ mimetype: 'image/png', data: 'SU1H' });
+
+    // A bare `emitter.emit('error', ...)` with no listener throws synchronously in Node — this is the
+    // exact mechanism that escalated to the production crash. Not throwing here proves the fix.
+    expect(() => emitter.emit('error', new Error('simulated late ECONNRESET'))).not.toThrow();
   });
 });
 

@@ -22,7 +22,7 @@ export function instrucaoAudio(motivo) {
     + ' A ponte converte o seu texto em mensagem de voz — não diga que não tem voz.'
     + ' Escreva como quem fala, não como quem escreve: frases curtas, jeito de conversa ("tá", "pra", "né"), sem listas, sem "primeiro/segundo", sem emoji, markdown ou links.'
     + ' Fale no máximo uns 1000 caracteres (cerca de 1 minuto); se tiver mais, resuma na fala.'
-    + ' Tudo que for para copiar ou consultar — código, comando, link, caminho de arquivo, número (IP, id, valor), lista com vários itens ou o detalhe que não coube na fala — coloque depois de uma linha só com [TEXTO]; essa parte vai escrita logo depois do áudio.'
+    + ' A VOZ é a resposta inteira — não repita por escrito o que você falou, nem mande um resumo do áudio. Só use uma linha [TEXTO] quando houver algo que o Weriton precise COPIAR ou CONSULTAR e que não dá para ditar: código, comando, link, caminho de arquivo ou número (IP, id, valor). Nada de prosa depois do [TEXTO] — só esses itens, curtos. Sem nada para copiar, não escreva [TEXTO] nenhum: manda só o áudio.'
 }
 
 // Pedido do Weriton (28/09/2026): nenhuma mensagem pode mandar ele "dar um enter" na janela — o recado entre
@@ -51,15 +51,25 @@ export const paraFala = t => String(t)
 
 const CODIGO = /```[\s\S]*?```/g
 const LINK = /https?:\/\/\S+/g
+// Teto do texto que acompanha o áudio (pedido do Weriton, 12/10/2026): a voz é a resposta; o texto
+// ao lado é só o que precisa ser copiado/consultado. Acima disso é "textão" — o modelo repetindo a
+// fala por escrito —, então descartamos a prosa e mantemos só o essencial (código e links).
+const TEXTO_ESCRITO_MAX = 500
 // Divide a resposta de áudio em fala e parte escrita. Rede de segurança: código e links que
 // escaparam para a fala vão para a parte escrita, em vez de sumirem no áudio.
 export function separarResposta(resposta) {
   const texto = String(resposta || '')
   const i = texto.search(/\[TEXTO\]/i)
   let fala = i > -1 ? texto.slice(0, i) : texto
-  let escrito = i > -1 ? texto.slice(i).replace(/^\[TEXTO\]/i, '').trim() : ''
+  let bloco = i > -1 ? texto.slice(i).replace(/^\[TEXTO\]/i, '').trim() : ''
   const extras = [...(fala.match(CODIGO) || []), ...(fala.replace(CODIGO, '').match(LINK) || [])]
   fala = fala.replace(CODIGO, '')
-  if (extras.length) escrito = [escrito, ...extras].filter(Boolean).join('\n')
+  // Textão junto do áudio nunca mais: se o bloco [TEXTO] veio como prosa longa, fica só o essencial
+  // (código/links de dentro dele); sem essencial, o áudio vai sozinho.
+  if (bloco.length > TEXTO_ESCRITO_MAX) {
+    const essenciais = [...(bloco.match(CODIGO) || []), ...(bloco.replace(CODIGO, '').match(LINK) || [])]
+    bloco = essenciais.join('\n')
+  }
+  const escrito = extras.length ? [bloco, ...extras].filter(Boolean).join('\n') : bloco
   return { fala: paraFala(fala), escrito }
 }

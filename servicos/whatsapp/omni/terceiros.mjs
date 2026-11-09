@@ -18,13 +18,13 @@ import { turnosHumanosRecentes } from './sessao-pc.mjs'
 export const JANELA_MS = 2 * 3600_000
 export const ABERTURA = 'Aqui é o Omni, assistente do Weriton.'
 const LIVRO = () => arquivo('terceiros-ledger.jsonl')
-// "Yasmin" e "Iasmin" são a mesma pessoa escrita de dois jeitos: o y vira i dos dois lados da comparação,
+// "Yara" e "Iara" são a mesma pessoa escrita de dois jeitos: o y vira i dos dois lados da comparação,
 // então a grafia dele nunca derruba o envio. Se a troca passar a casar duas pessoas diferentes, a resolução
 // devolve as opções em vez de escolher — ambiguidade para, não erra.
 const norm = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/y/g, 'i')
 const digitos = s => String(s || '').replace(/\D/g, '')
 const instante = m => (m.timestamp > 1e12 ? m.timestamp : m.timestamp * 1000)
-const VERBO = /\b(manda|mande|mandar|envia|envie|enviar|encaminha|encaminhe|encaminhar|avisa|avise|avisar|fala|fale|falar|diz|diga|responde|responda|responder|retorna|retorne|repassa|repasse)\b/
+const VERBO = /\b(manda|mande|mandar|envia|envie|enviar|envio|enviado|enviada|envios|encaminha|encaminhe|encaminhar|encaminhado|avisa|avise|avisar|fala|fale|falar|diz|diga|responde|responda|responder|retorna|retorne|repassa|repasse)\b/
 const CONCORDA = /\b(pode|manda|envia|sim|ok|isso|beleza|fechado|bora|vai)\b/
 const VAZIAS = new Set(['de', 'da', 'do', 'das', 'dos', 'e'])
 const palavras = s => norm(s).split(/[^a-z0-9]+/).filter(p => p.length >= 2 && !VAZIAS.has(p))
@@ -90,7 +90,7 @@ export async function resolverContato(destinatario) {
   if (!pedidas.length) throw new Recusa('diga o nome ou o número de quem vai receber')
   let achados = contatos.filter(c => { const p = palavras(c.name); return pedidas.every(x => p.includes(x)) })
   // Socorro do ledger: ele costuma chamar a pessoa por um nome mais completo do que o gravado na agenda
-  // ("Yasmin Franco" para um contato salvo como "Iasmin Gr Group"). Aqui o cruzamento parcial vale, mas só
+  // ("Yara Souza" para um contato salvo como "Iara Empresa"). Aqui o cruzamento parcial vale, mas só
   // se for único e se nenhuma palavra sobrando apontar para outra pessoa do ledger — na dúvida, devolve as
   // opções em vez de escolher. Na agenda de verdade a regra segue estrita.
   if (!achados.length && contatos.length && contatos.every(c => c.doLivro)) {

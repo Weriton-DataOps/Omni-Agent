@@ -3,7 +3,7 @@
 //   · pessoal (sessao.id)     — o WhatsApp do Weriton. O Omni só LÊ.
 //   · bot     (sessao-bot.id) — o número do Omni. Canal de conversa: recebe comandos e responde,
 //                               falando só com o dono.
-import { readFileSync, appendFileSync, existsSync } from 'node:fs'
+import { readFileSync, writeFileSync, appendFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
@@ -89,17 +89,51 @@ export async function enviarAudioAoDono(ogg, citarId) {
 //   voz('transcrever', bufferDeAudio, mimetype) → texto
 //   voz('falar', texto)                         → Buffer ogg/opus
 //   voz('falar', texto, undefined, 'terceiros') → idem, com tom cordial para quem não é o Weriton
-// Falha passageira da OpenAI (demora, 429, 5xx) ganha uma segunda tentativa.
+// Falha passageira da OpenAI (demora, limite de velocidade, 5xx) ganha uma segunda tentativa.
+// Transcrição que a OpenAI não entrega cai no Whisper local (omni/transcrever-local.py), que não sai da máquina.
+// Crédito esgotado não passa sozinho: fica anotado por 30 min (vozSemCredito), a síntese falha na hora sem
+// gastar chamada e a transcrição vai direto para o local. Depois dos 30 min a OpenAI é testada de novo, então
+// a recarga volta a valer sem mexer em nada.
+const SEM_CREDITO = /créditos da conta OpenAI esgotados/
+const PAUSA_SEM_CREDITO = 30 * 60_000
+export const erroDeCredito = e => SEM_CREDITO.test(String(e?.message ?? e))
+export function vozSemCredito() {
+  try { return Date.now() < Date.parse(JSON.parse(readFileSync(arquivo('openai-sem-credito.json'), 'utf8')).ate) } catch { return false }
+}
+function anotarSemCredito() {
+  try { writeFileSync(arquivo('openai-sem-credito.json'), JSON.stringify({ ate: new Date(Date.now() + PAUSA_SEM_CREDITO).toISOString() })) } catch {}
+}
+
 export async function voz(acao, entrada, tipo = 'audio/ogg', tom = 'omni') {
+  if (vozSemCredito()) {
+    if (acao === 'transcrever') return transcreverLocal(entrada)
+    throw new Error('síntese recusada pela OpenAI: créditos da conta OpenAI esgotados')
+  }
+  try { return await vozComSegundaChance(acao, entrada, tipo, tom) } catch (e) {
+    if (erroDeCredito(e)) anotarSemCredito()
+    if (acao !== 'transcrever') throw e
+    try { return await transcreverLocal(entrada) } catch (local) { throw new Error(`${e.message}; ${local.message}`) }
+  }
+}
+async function vozComSegundaChance(acao, entrada, tipo, tom) {
   try { return await vozUmaVez(acao, entrada, tipo, tom) } catch (e) {
-    if (!/a tempo|HTTP (429|5\d\d)/.test(e.message)) throw e
+    if (erroDeCredito(e) || !/a tempo|HTTP (429|5\d\d)/.test(e.message)) throw e
     return vozUmaVez(acao, entrada, tipo, tom)
   }
 }
+
+const PYTHON_LOCAL = join(process.env.LOCALAPPDATA || '', 'omni', 'voz-local', 'venv', 'Scripts', 'python.exe')
+export function transcreverLocal(entrada) {
+  if (!existsSync(PYTHON_LOCAL)) return Promise.reject(new Error('transcrição local não instalada (%LOCALAPPDATA%\\omni\\voz-local)'))
+  return rodarVoz(PYTHON_LOCAL, [fileURLToPath(new URL('./transcrever-local.py', import.meta.url))], entrada, 'transcrever')
+}
 function vozUmaVez(acao, entrada, tipo, tom) {
   const script = fileURLToPath(new URL('./voz.ps1', import.meta.url))
+  return rodarVoz('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script, '-Acao', acao, '-Tipo', tipo, '-Tom', tom], entrada, acao)
+}
+function rodarVoz(programa, argumentos, entrada, acao) {
   return new Promise((resolve, reject) => {
-    const p = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script, '-Acao', acao, '-Tipo', tipo, '-Tom', tom], { windowsHide: true })
+    const p = spawn(programa, argumentos, { windowsHide: true })
     let saida = ''
     const limite = setTimeout(() => { p.kill(); reject(new Error('a voz passou de 3 minutos')) }, 180_000)
     p.stdout.on('data', d => { saida += d })

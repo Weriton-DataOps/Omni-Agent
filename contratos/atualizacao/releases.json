@@ -412,6 +412,14 @@
         "O espelho de memoria no 5433 acaba: o hook de contexto, o ativador de aprendizado e o validador de memoria deixam de sincronizar memorias com o Postgres; a memoria ja mora so no SQLite desde a F1.",
         "Migracao do 5433: scripts/omni-exportar-5433.ps1 exporta em transacao somente leitura (credencial do cofre, saida so com contagens) e scripts/omni-importar-5433.mjs importa no omni.db e confere linha a linha (faltando e atrasadas por tabela, codigo 1 se nao fecha)."
       ]
+    },
+    {
+      "version": "0.27.1",
+      "changes": [
+        "A main passa a trazer o que a ilha chama: scripts/omni-actions.mjs, omni-actions-despachar.mjs e omni-overcore.mjs (organizador e despacho do Actions), a visita diaria e o agendador, sem caminho fixo de usuario.",
+        "Entram o ramo do Sentinel (checagem com o cerco, triagem sem usuario de rede, DNS rapido para a midia do WhatsApp) e o trabalho do WhatsApp parado desde outubro: saude, aprovacoes, vigia de sessoes, transcricao local e os ajustes de ponte, formato, relatorio, terceiros e vigia de pedidos.",
+        "Cofre por linha de comando (cardapio de escrita com teste) e guarda de chave pela area de transferencia. A bancada da ilha sai inteira do git."
+      ]
     }
   ]
 }

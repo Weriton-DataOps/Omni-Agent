@@ -30,7 +30,9 @@ if ($ouvindo) {
         $atual = Join-Path $logs $nome
         if (Test-Path $atual) { Move-Item -Force $atual ($atual + '.anterior') }
     }
-    $p = Start-Process -FilePath $node -ArgumentList ('"' + $main + '"') -WorkingDirectory $run -WindowStyle Hidden `
+    # ipv4-primeiro.cjs: DNS da VPN mudo faz a mídia (mmg.whatsapp.net) levar 11 s pra resolver e o download desistir.
+    $dnsRapido = Join-Path $omni 'ipv4-primeiro.cjs'
+    $p = Start-Process -FilePath $node -ArgumentList ('-r "' + $dnsRapido + '" "' + $main + '"') -WorkingDirectory $run -WindowStyle Hidden `
         -RedirectStandardOutput (Join-Path $logs 'servico.out.log') -RedirectStandardError (Join-Path $logs 'servico.err.log') -PassThru
     $p.Id | Set-Content -Encoding ascii (Join-Path $run 'servico.pid')
     Anotar ('serviço iniciado PID ' + $p.Id)

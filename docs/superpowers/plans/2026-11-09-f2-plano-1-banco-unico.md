@@ -188,8 +188,8 @@ CREATE INDEX aprendizado_eventos_por_achado ON aprendizado_eventos (achado_id, e
 
 - [x] `npm run typecheck`, depois `npm test`, uma suíte por vez, e ler o total. (09/11 17h43: typecheck 0; JS 916, 912 pass, 0 fail, 4 skipped; TS 55/55.)
 - [x] `git diff --ignore-cr-at-eol --stat -- dist` vazio.
-- [ ] Commit Weriton-DataOps, push, PR, CI verde lido, merge `--merge --match-head-commit`.
-- [ ] Release 0.27.0 (versão, `releases.json`, `integridade.json`) e atualização do plugin. Depois, rodar o importador contra a casa real e ler `faltando = 0` e `atrasadas = 0`.
+- [x] Commit Weriton-DataOps, push, PR, CI verde lido, merge `--merge --match-head-commit`.
+- [x] Release 0.27.0 (versão, `releases.json`, `integridade.json`) e atualização do plugin. Depois, rodar o importador contra a casa real e ler `faltando = 0` e `atrasadas = 0`.
 
 - Lição da primeira suíte cheia: o script `check` do `package.json` ainda listava `runtime/sincronizacao-memoria-duravel.mjs`. A cobertura de entrypoints da integridade lê esse script e acusou o arquivo apagado (`missing`, status `drifted`), o que derrubou dois testes que não falam de banco: o E2E do SessionStart (`no-loaded-release-match`) e a fila da eval (`source-unverifiable`). O módulo apagado saiu do `check` e `runtime/casa/loja-operacao.mjs` entrou. Apagar módulo do runtime exige procurar o nome também no `package.json`.
 

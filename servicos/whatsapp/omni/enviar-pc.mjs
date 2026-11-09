@@ -9,7 +9,7 @@
 //
 // Uso (qualquer sessão do PC):
 //   node omni/enviar-pc.mjs --para "<nome ou numero>" --autorizacao "<texto exato do pedido dele>" --texto-arquivo <caminho.txt> [--motivo "<...>"]
-//   node omni/enviar-pc.mjs --para "62 8143-2028" --autorizacao "manda pro 62 8143-2028: o acesso tá pronto" --texto "o acesso tá pronto" --motivo "acesso DW da Iasmin"
+//   node omni/enviar-pc.mjs --para "00 0000-0000" --autorizacao "manda pro 00 0000-0000: o acesso tá pronto" --texto "o acesso tá pronto" --motivo "acesso DW da Iara"
 import { readFileSync } from 'node:fs'
 import { enviarParaContatoPC } from './terceiros.mjs'
 
