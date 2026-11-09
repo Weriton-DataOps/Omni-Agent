@@ -404,6 +404,14 @@
       "changes": [
         "Orcamento inline do hook sobe de 9.500 para 9.900 caracteres: o Claude Code troca additionalContext acima de 10.000 caracteres (String.length) por uma previa em arquivo (AUD-177), entao 9.900 deixa 100 de margem. O runtime passa a usar a mesma constante do nucleo em vez de repetir o numero, e a folga da ativacao sobe de 191 para cerca de 591 caracteres."
       ]
+    },
+    {
+      "version": "0.27.0",
+      "changes": [
+        "Banco unico: missoes, eventos de missao e o livro de aprendizado operacional saem do PostgreSQL 5433 e passam a morar no omni.db da casa (migracao v4: missoes, missao_eventos, aprendizado_achados, aprendizado_eventos). A loja replica a semantica do broker: o mais novo vence, evento de missao com id deterministico e missao podada no arquivo local e cancelada.",
+        "O espelho de memoria no 5433 acaba: o hook de contexto, o ativador de aprendizado e o validador de memoria deixam de sincronizar memorias com o Postgres; a memoria ja mora so no SQLite desde a F1.",
+        "Migracao do 5433: scripts/omni-exportar-5433.ps1 exporta em transacao somente leitura (credencial do cofre, saida so com contagens) e scripts/omni-importar-5433.mjs importa no omni.db e confere linha a linha (faltando e atrasadas por tabela, codigo 1 se nao fecha)."
+      ]
     }
   ]
 }

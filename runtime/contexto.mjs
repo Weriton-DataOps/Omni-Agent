@@ -10,7 +10,8 @@ import { lerMemoria, registrarUsoMemorias } from './memoria.mjs'
 import { lerPersistenciaContexto } from './persistencia-contexto.mjs'
 import { lerPersonalidadeAtiva } from './personalidade.mjs'
 import { ranquearMemorias } from './recuperacao.mjs'
-import { NodeAccessBrokerClient } from '../dist/adapters/windows/node-access-broker-client.js'
+import { comBancoDaCasa, registrarDegradacao } from './casa/banco.mjs'
+import { listarMissoesAtivas } from './casa/loja-operacao.mjs'
 
 const raiz = dirname(dirname(fileURLToPath(import.meta.url)))
 const caminhos = {
@@ -35,10 +36,14 @@ const construirContexto = createBuildTurnContext({
   loadOperationalCycle: async (home) => {
     const local = await lerCicloOperacional(home)
     try {
-      const missions = await new NodeAccessBrokerClient().listActiveMissions()
+      const missions = comBancoDaCasa(home, 'omni', (db) => listarMissoesAtivas(db))
       if (missions.length === 0) return local
       return { ...local, sessions: missions.map((mission) => ({ id: mission.id, state: mission.state, updatedAt: mission.updatedAt, objective: mission.objective, currentStep: typeof mission.payload.currentStep === 'string' ? mission.payload.currentStep : null })) }
-    } catch { return local }
+    } catch (erro) {
+      // Banco fora do ar não derruba o contexto: cai para o ciclo local e anota.
+      registrarDegradacao(home, 'missoes.listar', erro)
+      return local
+    }
   },
   loadShortcuts: lerAtalhos,
   loadLearnedRules: () => lerJson(caminhos.learnedRules),

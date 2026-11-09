@@ -4,7 +4,6 @@ import { casaDoOmni, lerMemoria } from '../runtime/memoria.mjs'
 import { ativarAprendizadosOperacionais, lerAutomacaoMelhorias, sincronizarAutomacaoMelhorias } from '../runtime/automacao-melhorias.mjs'
 import { aprenderResultado } from '../runtime/aprendizado-resultados.mjs'
 import { processarExperiencia } from '../runtime/pipeline-memoria.mjs'
-import { sincronizarMemoriaDuravel } from '../runtime/sincronizacao-memoria-duravel.mjs'
 import { montarContexto } from '../runtime/contexto.mjs'
 
 if (!process.argv.includes('--live')) throw new Error('Requer --live para ativar os aprendizados autorizados no Omni real.')
@@ -34,7 +33,6 @@ if (sessionId) {
     episodes.push(...result.memoryIds)
   }
 }
-const sync = await sincronizarMemoriaDuravel(casa)
 const memory = await lerMemoria(casa)
 const jobs = (await lerAutomacaoMelhorias(casa)).jobs
 const intent = workspace ? 'Como publicar GA4 no Hub, workflow, recusa de acesso, conferir deployment e evitar repetir tentativas?' : 'Conduzir solução com autonomia, conferir evidência e corrigir sem repetir tentativas.'
@@ -42,7 +40,7 @@ const context = await montarContexto(casa, { intent, projectId: workspace })
 const selected = context.projections[context.routing.selected].selected.filter(id => id.startsWith('mem-'))
 console.log(JSON.stringify({ backup, activatedMemoryIds: activated.memoryIds, episodeMemoryIds: episodes,
   priorPending: oldPending.map(id => { const job = jobs.find(job => job.id === id); return { id, state: job.state, memoryId: job.learningReceipt?.memoryId } }),
-  confirmed: memory.confirmed.length, synchronization: sync,
+  confirmed: memory.confirmed.length,
   retrieval: { route: context.routing.selected, appliedIds: selected, appliedLearnings: selected.filter(id => activated.memoryIds.includes(id) || episodes.includes(id)) }
 }, null, 2))
-if (sync.result !== 'synced' || oldPending.some(id => jobs.find(job => job.id === id)?.state === 'awaiting-release')) process.exitCode = 1
+if (oldPending.some(id => jobs.find(job => job.id === id)?.state === 'awaiting-release')) process.exitCode = 1
