@@ -16,7 +16,7 @@
 | 5 | Overcore Studio não é arquivado; a interface do Overcore nasce aos poucos e pode aproveitar peças dele (§7) | **sim** (04/11) |
 | 6 | Cofre de credenciais no Omni, gerenciado pela ilha, continuando no DPAPI | **sim** (04/11), desenho em §8 |
 | 7 | Várias sessões gravando e consultando ao mesmo tempo | respondido pela medição (§3.5) |
-| 8 | Postgres dedicado do Omni (`127.0.0.1:5433`) | **aberto**: segue ligado em F1; desligar ou não é decisão de F2 (§3.7) |
+| 8 | Postgres dedicado do Omni (`127.0.0.1:5433`) | **fechada 09/11/2026**: manter só o SQLite. Missões e aprendizado vão para o `omni.db`; o 5433 é desligado depois do §5 verde (§3.7) |
 
 ## 1. O que existe hoje (medido em 04/11, não suposto)
 
@@ -293,16 +293,22 @@ gravando, e vai sumindo conforme o cache de plugins antigos se renova:
 
 ### 3.7 O Postgres dedicado do Omni (5433)
 
-Já existe e segue ligado em F1. Pela sincronização do hook de contexto, o broker grava lá o
-espelho da memória (que agora sai do `omni.db`), o aprendizado operacional e as missões, e o
-contexto lê de volta as missões ativas. Tudo isso passa pelo `tentarComponente` do hook: broker
-fora do ar vira falha anotada, não hook quebrado.
+Já existe e segue ligado em F1. O broker grava lá três coisas: o espelho da memória (que agora
+sai do `omni.db`), o aprendizado operacional e as missões. O contexto lê de volta as missões
+ativas. Só o espelho da memória passa pelo `tentarComponente` do hook de contexto. Missões e
+aprendizado rodam na `hook-varredura` (SessionStart/Stop, assíncrona, sob o lock de manutenção).
+Broker fora do ar vira falha anotada, não hook quebrado.
 
 O executor de F2 não instala Postgres. Numa máquina limpa, essas três sincronizações apenas
-degradam. **Decisão aberta, para F2.** Recomendação: trazer as missões e o aprendizado
-operacional para o `omni.db` e desligar o 5433 depois que a instalação limpa passar na prova do
-§5. É uma dependência externa a menos, que é o pedido de origem. Até essa decisão, nada é
-desligado.
+degradam.
+
+**Decisão fechada em 09/11/2026** ("faça o recomendado para o banco, manter só o sqlite"):
+- missões e livro de aprendizado vão para o `omni.db` (v4: `missoes`, `missao_eventos`,
+  `aprendizado_achados`, `aprendizado_eventos`), com o histórico do 5433 importado;
+- o espelho da memória morre;
+- o 5433 é desligado no plano 6 da F2, depois que a instalação limpa passar na prova do §5.
+
+Até lá ele segue ligado, só leitura. Plano: `docs/superpowers/plans/2026-11-09-f2-plano-1-banco-unico.md`.
 
 ### 3.8 Estados de aprendizado e feedback no `omni.db`
 

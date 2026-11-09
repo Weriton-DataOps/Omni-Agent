@@ -178,6 +178,64 @@ CREATE TABLE _estados_no_disco (
   em TEXT NOT NULL,
   PRIMARY KEY (maquina, id)
 );`
+  },
+  // v4 (plano 1 da F2, decisão 8): missões e livro de aprendizado operacional, que moravam no
+  // Postgres 5433. missoes e aprendizado_achados são dado vivo (diário); os eventos são só de
+  // acréscimo, como usos no cofre. Mesmas restrições do PG, para o histórico importado caber
+  // sem conversão. Datas em ISO UTC com milissegundos e Z: comparar texto é comparar tempo.
+  {
+    versao: 4,
+    nome: 'missoes e livro de aprendizado operacional',
+    sql: `CREATE TABLE missoes (
+  id TEXT PRIMARY KEY CHECK (id GLOB 'mission-?*'),
+  objetivo TEXT NOT NULL CHECK (length(objetivo) BETWEEN 3 AND 800),
+  estado TEXT NOT NULL CHECK (estado IN ('open', 'in-progress', 'blocked', 'completed', 'cancelled')),
+  prioridade INTEGER NOT NULL CHECK (prioridade BETWEEN 0 AND 100),
+  corpo TEXT NOT NULL CHECK (json_valid(corpo)),
+  fechada_em TEXT,
+  ${VIVO},
+  CHECK ((estado IN ('completed', 'cancelled')) = (fechada_em IS NOT NULL))
+);
+CREATE INDEX missoes_ativas ON missoes (estado, prioridade DESC, atualizado_em DESC) WHERE apagado_em IS NULL;
+${gatilhosDeDiario('missoes')}
+CREATE TABLE missao_eventos (
+  id TEXT PRIMARY KEY CHECK (id GLOB 'mission-event-?*'),
+  missao_id TEXT NOT NULL,
+  tipo TEXT NOT NULL CHECK (tipo IN ('created', 'updated', 'blocked', 'resumed', 'completed', 'cancelled', 'reconciled')),
+  corpo TEXT NOT NULL CHECK (json_valid(corpo)),
+  em TEXT NOT NULL,
+  origem_maquina TEXT NOT NULL
+);
+CREATE INDEX missao_eventos_por_missao ON missao_eventos (missao_id, em);
+CREATE TABLE aprendizado_achados (
+  id TEXT PRIMARY KEY CHECK (id GLOB 'improvement-?*'),
+  impressao_candidato TEXT NOT NULL,
+  categoria TEXT NOT NULL,
+  destino TEXT NOT NULL,
+  estado TEXT NOT NULL,
+  ocorrencias INTEGER NOT NULL CHECK (ocorrencias BETWEEN 1 AND 1000000),
+  impressao_enunciado TEXT NOT NULL,
+  impressao_fonte TEXT NOT NULL,
+  impressao_artefato TEXT,
+  versao_release TEXT,
+  primeiro_visto_em TEXT NOT NULL,
+  ultimo_visto_em TEXT NOT NULL,
+  ${VIVO},
+  CHECK (ultimo_visto_em >= primeiro_visto_em)
+);
+${gatilhosDeDiario('aprendizado_achados')}
+CREATE TABLE aprendizado_eventos (
+  id TEXT PRIMARY KEY CHECK (id GLOB 'learning-event-?*'),
+  achado_id TEXT NOT NULL,
+  estado TEXT NOT NULL,
+  ocorrencias INTEGER NOT NULL,
+  impressao_fonte TEXT NOT NULL,
+  impressao_artefato TEXT,
+  versao_release TEXT,
+  em TEXT NOT NULL,
+  origem_maquina TEXT NOT NULL
+);
+CREATE INDEX aprendizado_eventos_por_achado ON aprendizado_eventos (achado_id, em);`
   }
 ]
 

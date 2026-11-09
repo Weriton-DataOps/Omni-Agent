@@ -24,7 +24,6 @@ import { montarContexto } from './contexto.mjs'
 import { contextoFluxosOvercore } from './overcore-task-flow.mjs'
 import { casaDoOmni } from './memoria.mjs'
 import { processarExperiencia } from './pipeline-memoria.mjs'
-import { sincronizarMemoriaDuravel } from './sincronizacao-memoria-duravel.mjs'
 import { lerPersonalidadeAtiva } from './personalidade.mjs'
 import { resumirFeedbackPersonalidade } from './feedback-personalidade.mjs'
 import { recibosAtivos, resumoParaRadar } from './recibos-evolucao.mjs'
@@ -466,7 +465,6 @@ export async function tratarHook(input, env = process.env, { contextOnly = false
     tentarComponente('auditoria-turno', () => abrirTurnoAuditoria(casa, input), falhas)
   ])
   if (!contextOnly) await tentarComponente('aprendizado-operacional', () => ativarAprendizadosOperacionais(casa), falhas)
-  const memorySync = contextOnly ? null : await tentarComponente('sincronizacao-memoria-duravel', () => sincronizarMemoriaDuravel(casa), falhas)
   // Replicação durável de missões e aprendizado operacional saiu daqui: eram ~23s de N+1 ao
   // broker/PG no caminho quente de cada UserPromptSubmit (decapitados pelo timeout de 10s do hook).
   // Agora rodam na hook-varredura (async, SessionStart/Stop), sob lock que coalesce o enxame.
@@ -554,7 +552,7 @@ export async function tratarHook(input, env = process.env, { contextOnly = false
       gallerySeed: sementeDaGaleria(input)
     }).text,
     {
-      ...(!contextOnly ? { persistence: { recorded: experiencia?.memories?.length ?? (experiencia?.memory ? 1 : 0), synchronized: ['synced', 'empty'].includes(memorySync?.result) } } : {}),
+      ...(!contextOnly ? { persistence: { recorded: experiencia?.memories?.length ?? (experiencia?.memory ? 1 : 0) } } : {}),
       memory: {
         considered: contexto?.retrieval?.considered ?? 0,
         eligible: contexto?.retrieval?.eligible ?? 0,

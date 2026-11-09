@@ -279,7 +279,7 @@ test('cada banco da casa abre com as tabelas do desenho', () => {
   const casa = casaTemporaria()
   const esperadas = {
     nucleo: ['_diario', '_migracoes', 'agentes', 'instalacoes', 'maquinas', 'sqlite_sequence'],
-    omni: ['_diario', '_documentos_no_disco', '_estados_no_disco', '_importacoes', '_migracoes', '_projecoes', 'documentos', 'estado_registros', 'estados', 'memoria_meta', 'memorias', 'sqlite_sequence'],
+    omni: ['_diario', '_documentos_no_disco', '_estados_no_disco', '_importacoes', '_migracoes', '_projecoes', 'aprendizado_achados', 'aprendizado_eventos', 'documentos', 'estado_registros', 'estados', 'memoria_meta', 'memorias', 'missao_eventos', 'missoes', 'sqlite_sequence'],
     cofre: ['_diario', '_importacoes', '_migracoes', '_projecoes', 'credenciais', 'sqlite_sequence', 'usos']
   }
   try {
@@ -362,7 +362,7 @@ test('omni.db da v1 sobe para a v2 sem perder documento e a base por maquina exi
         VALUES ('claude-projects/p/memory/a.md', 'md', 'a', 'sha-a', 1, 'pc', 't0', 't0')`)
     })
     comBancoDaCasa(casa, 'omni', (db) => {
-      assert.deepEqual(db.prepare('SELECT versao FROM _migracoes ORDER BY versao').all().map((linha) => linha.versao), [1, 2, 3])
+      assert.deepEqual(db.prepare('SELECT versao FROM _migracoes ORDER BY versao').all().map((linha) => linha.versao), [1, 2, 3, 4])
       assert.equal(db.prepare('SELECT conteudo FROM documentos WHERE id = ?').get('claude-projects/p/memory/a.md').conteudo, 'a')
       const inserir = db.prepare('INSERT INTO _documentos_no_disco (maquina, id, sha256, em) VALUES (?, ?, ?, ?)')
       inserir.run('pc', 'claude-projects/p/memory/a.md', 'sha-a', 't1')
@@ -381,7 +381,7 @@ test('omni.db da v2 sobe para a v3 sem perder documento; estado e registro vao a
         VALUES ('claude-projects/p/memory/a.md', 'md', 'a', 'sha-a', 1, 'pc', 't0', 't0')`)
     })
     comBancoDaCasa(casa, 'omni', (db) => {
-      assert.deepEqual(db.prepare('SELECT versao FROM _migracoes ORDER BY versao').all().map((linha) => linha.versao), [1, 2, 3])
+      assert.deepEqual(db.prepare('SELECT versao FROM _migracoes ORDER BY versao').all().map((linha) => linha.versao), [1, 2, 3, 4])
       assert.equal(db.prepare('SELECT conteudo FROM documentos WHERE id = ?').get('claude-projects/p/memory/a.md').conteudo, 'a')
       db.exec(`INSERT INTO estados (id, esqueleto, texto_sha256, relogio, origem_maquina, criado_em, atualizado_em)
         VALUES ('learning/shortcuts.json', '{}', 'sha-e', NULL, 'pc', 't0', 't0')`)

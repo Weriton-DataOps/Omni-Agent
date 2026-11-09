@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 
-import { NodeAccessBrokerClient } from '../dist/adapters/windows/node-access-broker-client.js'
+import { comBancoDaCasa } from './casa/banco.mjs'
+import { gravarAchados } from './casa/loja-operacao.mjs'
 import { lerCicloOperacional } from './ciclo-operacional.mjs'
 
 function hash(value) { return createHash('sha256').update(String(value), 'utf8').digest('hex') }
@@ -27,8 +28,8 @@ export function criarAchadoOperacionalSanitizado(candidate) {
 }
 
 /**
- * The operational-cycle JSON remains a local working cache. PostgreSQL receives
- * only the durable, sanitized ledger required to audit learning and releases.
+ * O ciclo local (runs/operational-cycle.json) é o cache de trabalho. O omni.db recebe só o livro
+ * sanitizado (ids e impressões), necessário para auditar aprendizado e releases.
  */
 export async function sincronizarAprendizadoOperacional(casa) {
   const cycle = await lerCicloOperacional(casa)
@@ -36,11 +37,7 @@ export async function sincronizarAprendizadoOperacional(casa) {
     .filter((candidate) => candidate?.lifecycleVersion === 2)
     .sort((left, right) => left.id.localeCompare(right.id))
   if (candidates.length === 0) return { result: 'empty', findings: 0 }
-  const broker = new NodeAccessBrokerClient()
-  let findings = 0
-  for (const candidate of candidates) {
-    await broker.recordOperationalLearningFinding(criarAchadoOperacionalSanitizado(candidate))
-    findings += 1
-  }
-  return { result: 'synced', findings }
+  const achados = candidates.map(criarAchadoOperacionalSanitizado)
+  const contagem = comBancoDaCasa(casa, 'omni', (db) => gravarAchados(db, achados))
+  return { result: 'synced', findings: achados.length, ...contagem }
 }
