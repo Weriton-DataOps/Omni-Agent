@@ -21,7 +21,7 @@ import { basename, join, extname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { arquivo, sessaoBot, dono, donoJid, api, usuario, livro, anotar, enviarAoDono, enviarAudioAoDono, voz } from './config.mjs'
+import { arquivo, sessaoBot, dono, donoJid, api, usuario, livro, anotar, enviarAoDono, enviarAudioAoDono, voz, vozSemCredito, erroDeCredito } from './config.mjs'
 import { escolherFormato, instrucaoAudio, separarResposta, cortarPedidoDeEnter } from './formato.mjs'
 import { destinatarioConhecido, responderInformativo } from './terceiros.mjs'
 import { ehDocumento, pareceAudio, descreverDocumento, nomeNaMidia, notaDoArquivo } from './documento.mjs'
@@ -100,6 +100,22 @@ async function obterMidia(m) {
   return r
 }
 const EXTENSOES = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' }
+const EXTENSOES_AUDIO = { 'audio/mpeg': 'mp3', 'audio/mp3': 'mp3', 'audio/mp4': 'm4a', 'audio/aac': 'aac', 'audio/wav': 'wav', 'audio/x-wav': 'wav', 'audio/webm': 'webm', 'audio/ogg': 'ogg' }
+
+// Áudio encaminhado (música, recado de outra pessoa) guarda os BYTES, não só a transcrição: para uma
+// música o texto é inútil e o arquivo é o pedido. Devolve o caminho salvo, ou '' se não der para gravar.
+function salvarAudioEncaminhado(m, buffer, tipo, transcricao) {
+  try {
+    const ext = EXTENSOES_AUDIO[String(tipo).split(';')[0].trim().toLowerCase()] || 'ogg'
+    const caminho = join(MIDIA, `${String(m.waMessageId).replace(/[^\w-]/g, '')}.${ext}`)
+    writeFileSync(caminho, buffer)
+    if (transcricao) writeFileSync(`${caminho}.transcricao.txt`, transcricao)
+    return caminho
+  } catch (e) {
+    log(`✘ guardar áudio encaminhado ${m.waMessageId}: ${e.message}`)
+    return ''
+  }
+}
 
 function semPedidoDeEnter(texto) {
   const { texto: limpo, cortadas } = cortarPedidoDeEnter(texto)
@@ -125,7 +141,8 @@ async function montarPedido(grupo) {
         partes.push(grupo.length > 1 ? `(áudio dele, transcrito) ${t}` : t)
         falaDele.push(t); autorizacoes.push(m.waMessageId)
       } else {
-        partes.push(`(áudio encaminhado ou arquivo de áudio — NÃO é fala dele, é conteúdo para você analisar; transcrição) "${t}"`)
+        const caminho = salvarAudioEncaminhado(m, buffer, tipo || 'audio/ogg', t)
+        partes.push(`(áudio encaminhado ou arquivo de áudio — NÃO é fala dele, é conteúdo para você analisar${caminho ? `; o arquivo está em ${caminho} (use-o quando o som importar, ex.: música para trilha)` : ''}; transcrição) "${t}"`)
       }
     } else if (ehImagem(m)) {
       const { buffer, tipo } = await obterMidia(m)
@@ -187,7 +204,9 @@ async function tratar(grupo) {
     args = estado.centralCriada ? ['--resume', estado.central] : ['--session-id', estado.central]
   }
   // Formato decidido só pela fala dele: um áudio encaminhado não pede áudio nem espelha.
-  const { formato: formatoAlvo, motivo } = escolherFormato(falaDele, veioDeVoz)
+  // Sem crédito na OpenAI não há síntese: a resposta vai escrita até a recarga (decisão do Weriton, 29/09/2026).
+  let { formato: formatoAlvo, motivo } = escolherFormato(falaDele, veioDeVoz)
+  if (formatoAlvo === 'audio' && vozSemCredito()) { formatoAlvo = 'texto'; motivo = `${motivo}, voz sem crédito` }
   const prompt = `[WhatsApp · Weriton${origem}] ${texto || '(sem texto)'}`
     + imagens.map(i => `\n\n(Ele mandou uma imagem, salva em ${i}. Abra com a ferramenta Read.)`).join('')
     + (citada?.body ? `\n\n(Ele está respondendo a esta mensagem: "${String(citada.body).slice(0, 500)}")` : '')
@@ -229,7 +248,9 @@ async function tratar(grupo) {
         partes.push(`áudio ${fala.length}`)
       } catch (e) {
         log(`✘ áudio da resposta: ${e.message}`)
-        waId = registrar(await enviarAoDono(`${cabecalho}\n\n${fala.slice(0, 4000)}\n\n(não consegui gerar o áudio: ${e.message})`, m.waMessageId))
+        // Crédito esgotado já é sabido e combinado (resposta escrita); qualquer outra falha ele precisa ver.
+        const nota = erroDeCredito(e) ? '' : `\n\n(não consegui gerar o áudio: ${e.message})`
+        waId = registrar(await enviarAoDono(`${cabecalho}\n\n${fala.slice(0, 4000)}${nota}`, m.waMessageId))
         partes.push(`texto ${fala.length} (áudio falhou)`)
       }
     }

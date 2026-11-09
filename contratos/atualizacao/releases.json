@@ -377,6 +377,20 @@
         "Hook PostToolUse so emite contexto quando ha sinal novo (automacao pendente ou degradacao); a ancora de personalidade fica no SessionStart e na recompactacao, em vez de ~1,6 KB gravados na transcricao a cada chamada de ferramenta.",
         "Observador reconhece agent-message como involucro nao-dono: relato de subagente deixa de virar correcao do dono e de realimentar a automacao de falhas (padrao 99c6, ~25 geracoes de ~100k tokens cada)."
       ]
+    },
+    {
+      "version": "0.26.0",
+      "changes": [
+        "Casa SQLite do Omni (F1): runtime/casa abre os bancos embutidos (node:sqlite) com WAL, busy_timeout e BEGIN IMMEDIATE; omni.db passa a ser a fonte da memoria, e memory.json e os .md da memoria do Claude Code viram projecoes dele. Migracoes versionadas e recusadas se editadas depois de aplicadas.",
+        "Estados de aprendizado e feedback (os oito JSON de learning/ e feedback/) entram no omni.db pela migracao v3, com importador que nao apaga a origem.",
+        "Cofre (cofre.db): importa os .dpapi sem apagar nada, inventaria so os nomes do Credential Manager, sela por DPAPI e exporta e importa em pacote scrypt + AES-256-GCM; CLI runtime/cofre.mjs e card Cofre na ilha falando por ela.",
+        "Nucleo (nucleo.db): catalogo de agentes, instalacoes e maquinas, com a loja runtime/casa/loja-nucleo.mjs e a CLI runtime/nucleo.mjs.",
+        "Diagnostico ganha o campo degradacoes: le so a cauda (ate 256 KiB) do degradacoes.jsonl da casa e resume por operacao, sem abrir o banco nem criar pasta.",
+        "Memoria e feedback de personalidade ganham fila no processo antes da trava de arquivo, e a varredura diaria nao cancela mais quando o placar cai.",
+        "Ilha: versionada no repositorio (bancada de fora), vigia do topo reafirma o always-on-top a cada 2 s, e a janela do Actions deixa de abrir vazia.",
+        "WhatsApp: a ponte guarda o arquivo de audio encaminhado, a vigia religa o servico, pedido parado avisa sozinho e envio a terceiros autorizado por sessao do PC fica ancorado no transcript.",
+        "Despacho: o portao de sessao viva impede o executor de nascer no turno do dono; a vassoura de worktrees passa a ser versionada e poupa trabalho em curso."
+      ]
     }
   ]
 }

@@ -1,0 +1,66 @@
+{
+  "sigilo": {
+    "centroMenos": [
+      571.74,
+      574.15
+    ],
+    "centroZero": [
+      610.15,
+      574.04
+    ],
+    "centroMais": [
+      648.69,
+      574.14
+    ],
+    "andaPx": 76.95,
+    "andaX": 76.95
+  },
+  "silhueta": {
+    "hausdorffPx": 22.4,
+    "contornoMedioPx": 4.91,
+    "contornoP95Px": 19.65,
+    "piorPonto": [
+      558,
+      892
+    ],
+    "porLinha": {
+      "linhas": 475,
+      "bordaEsqMediaPx": 7.09,
+      "bordaDirMediaPx": 7.15,
+      "bordaMaxPx": 44,
+      "bordaP95Px": 36,
+      "centroMedioPx": 7.12,
+      "centroMaxPx": 44
+    }
+  },
+  "bochecha": {
+    "yawMais_ladoDireito": {
+      "ponto": [
+        700,
+        728
+      ],
+      "vertice": [
+        699.5,
+        726.5
+      ],
+      "escala": 0.5782,
+      "escalaMax3x3": 0.7282
+    },
+    "yawMenos_ladoEsquerdo": {
+      "ponto": [
+        524,
+        728
+      ],
+      "vertice": [
+        528.5,
+        726.5
+      ],
+      "escala": 0.5999,
+      "escalaMax3x3": 0.7646
+    }
+  },
+  "passou": true,
+  "criterio": "sigilo anda >= 70 px entre yaw -1 e +1; silhueta do rosto anda <= 24 px (Hausdorff sim�trico entre os contornos, pior ponto; a r�gua por linha vai junto em porLinha); escala local da bochecha do lado do giro <= 0,85",
+  "yawGraus": 22,
+  "medidoEm": "2026-10-19T16:37:59.092Z"
+}

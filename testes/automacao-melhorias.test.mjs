@@ -672,6 +672,41 @@ test('falha nova nao atropela melhoria ja exposta no PostToolUseFailure', async 
   }
 })
 
+test('portão de sessão viva adia o despacho autônomo e não faz nascer executor', async () => {
+  const { casa, repo } = await fixture()
+  const sessionId = 'automation-interactive-owner-gate-session'
+  try {
+    await abrirTurnoAuditoria(casa, {
+      session_id: sessionId,
+      prompt: 'durante a sessao viva do dono o loop nao faz nascer executor de fundo'
+    })
+    const failure = {
+      agent: 'omni',
+      action: 'executar Bash',
+      failureClass: 'permission',
+      signature: 'permission denied durante a sessao viva do dono'
+    }
+    for (let index = 1; index <= 3; index += 1) {
+      await registrarFalha(casa, { ...failure, evidenceId: `interactive-owner-gate-${index}` })
+    }
+    // Sem o portão este estado despacharia (kind 'failure', cria delegação + briefing e
+    // faz nascer o executor de fundo que roda a suíte). Com interactiveOwnerSession o loop
+    // adia: nada nasce no meio do turno do dono. O teste da linha ~700 fixa o caminho
+    // não-portado (default false) continuando a despachar — este fixa o portado.
+    const gated = await contextoProximaAutomacaoClaude(casa, {
+      sessionId,
+      hookEventName: 'PostToolUseFailure',
+      interactiveOwnerSession: true
+    })
+    assert.equal(gated.kind, 'deferred-interactive-session')
+    assert.equal(gated.context, null)
+    assert.equal((await lerCicloOperacional(casa)).delegations.length, 0)
+  } finally {
+    await rm(casa, { recursive: true, force: true })
+    await rm(repo, { recursive: true, force: true })
+  }
+})
+
 test('arbitro recupera dois despachos legados simultaneos e adia a melhoria com trilha auditavel', async () => {
   const { casa, repo } = await fixture()
   const sessionId = 'automation-legacy-double-dispatch-session'

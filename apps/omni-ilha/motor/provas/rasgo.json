@@ -1,0 +1,470 @@
+{
+  "graus": 22,
+  "trianguloComTinta": 9390,
+  "triangulos": 18050,
+  "resumo": {
+    "razaoMax": 1.5562,
+    "razaoMin": 0.3248,
+    "invertidos": 0,
+    "pixelsRasgo": 0,
+    "passou": true,
+    "dinamico": {
+      "giro": {
+        "quadros": 240,
+        "razaoMax": 1.3765,
+        "razaoMin": 0.4998,
+        "invertidos": 0,
+        "quadroPior": 29
+      },
+      "idle": {
+        "quadros": 300,
+        "razaoMax": 1.1654,
+        "razaoMin": 0.8135,
+        "invertidos": 0,
+        "quadroPior": 254
+      }
+    },
+    "passouDinamico": true
+  },
+  "poses": [
+    {
+      "pose": {
+        "AnguloX": -1,
+        "AnguloY": -1,
+        "AnguloZ": -1
+      },
+      "razaoMax": 1.5562,
+      "razaoMin": 0.3314,
+      "invertidos": 0,
+      "pixelsDentro": 607331,
+      "pixelsRasgo": 0,
+      "triPiorCentro": [
+        893.2,
+        827.2
+      ]
+    },
+    {
+      "pose": {
+        "AnguloX": -1,
+        "AnguloY": -1,
+        "AnguloZ": 0
+      },
+      "razaoMax": 1.4745,
+      "razaoMin": 0.3503,
+      "invertidos": 0,
+      "pixelsDentro": 605010,
+      "pixelsRasgo": 0,
+      "triPiorCentro": [
+        669.2,
+        801.2
+      ]
+    },
+    {
+      "pose": {
+        "AnguloX": -1,
+        "AnguloY": -1,
+        "AnguloZ": 1
+      },
+      "razaoMax": 1.4745,
+      "razaoMin": 0.3503,
+      "invertidos": 0,
+      "pixelsDentro": 602714,
+      "pixelsRasgo": 0,
+      "triPiorCentro": [
+        669.2,
+        801.2
+      ]
+    },
+    {
+      "pose": {
+        "AnguloX": -1,
+        "AnguloY": 0,
+        "AnguloZ": -1
+      },
+      "razaoMax": 1.4839,
+      "razaoMin": 0.4853,
+      "invertidos": 0,
+      "pixelsDentro": 632716,
+      "pixelsRasgo": 0,
+      "triPiorCentro": [
+        735.2,
+        933.2
+      ]
+    },
+    {
+      "pose": {
+        "AnguloX": -1,
+        "AnguloY": 0,
+        "AnguloZ": 0
+      },
+      "razaoMax": 1.3846,
+      "razaoMin": 0.4961,
+      "invertidos": 0,
+      "pixelsDentro": 630444,
+      "pixelsRasgo": 0,
+      "triPiorCentro": [
+        721.8,
+        933.2
+      ]
+    },
+    {
+      "pose": {
+        "AnguloX": -1,
+        "AnguloY": 0,
+        "AnguloZ": 1
+      },
+      "razaoMax": 1.3581,
+      "razaoMin": 0.4961,
+      "invertidos": 0,
+      "pixelsDentro": 628409,
+      "pixelsRasgo": 0,
+      "triPiorCentro": [
+        730.8,
+        690.8
+      ]
+    },
+    {
+      "pose": {
+        "AnguloX": -1,
+        "AnguloY": 1,
+        "AnguloZ": -1
+      },
+      "razaoMax": 1.464,
+      "razaoMin": 0.3664,
+      "invertidos": 0,
+      "pixelsDentro": 636124,
+      "pixelsRasgo": 0,
+      "triPiorCentro": [
+        708.2,
+        893.2
+      ]
+    },
+    {
+      "pose": {
+        "AnguloX": -1,
+        "AnguloY": 1,
+        "AnguloZ": 0
+      },
+      "razaoMax": 1.4255,
+      "razaoMin": 0.3664,
+      "invertidos": 0,
+      "pixelsDentro": 634233,
+      "pixelsRasgo": 0,
+      "triPiorCentro": [
+        748.2,
+        523.8
+      ]
+    },
+    {
+      "pose": {
+        "AnguloX": -1,
+        "AnguloY": 1,
+        "AnguloZ": 1
+      },
+      "razaoMax": 1.4801,
+      "razaoMin": 0.3664,
+      "invertidos": 0,
+      "pixelsDentro": 632134,
+      "pixelsRasgo": 0,
+      "triPiorCentro": [
+        347.8,
+        875.8
+      ]
+    },
+    {
+      "pose": {
+        "AnguloX": 0,
+        "AnguloY": -1,
+        "AnguloZ": -1
+      },
+      "razaoMax": 1.3126,
+      "razaoMin": 0.5706,
+      "invertidos": 0,
+      "pixelsDentro": 630473,
+      "pixelsRasgo": 0,
+      "triPiorCentro": [
+        919.8,
+        840.2
+      ]
+    },
+    {
+      "pose": {
+        "AnguloX": 0,
+        "AnguloY": -1,
+        "AnguloZ": 0
+      },
+      "razaoMax": 1.2106,
+      "razaoMin": 0.692,
+      "invertidos": 0,
+      "pixelsDentro": 629105,
+      "pixelsRasgo": 0,
+      "triPiorCentro": [
+        603.2,
+        999.2
+      ]
+    },
+    {
+      "pose": {
+        "AnguloX": 0,
+        "AnguloY": -1,
+        "AnguloZ": 1
+      },
+      "razaoMax": 1.3296,
+      "razaoMin": 0.5464,
+      "invertidos": 0,
+      "pixelsDentro": 627847,
+      "pixelsRasgo": 0,
+      "triPiorCentro": [
+        492.8,
+        1007.8
+      ]
+    },
+    {
+      "pose": {
+        "AnguloX": 0,
+        "AnguloY": 0,
+        "AnguloZ": -1
+      },
+      "razaoMax": 1.3838,
+      "razaoMin": 0.6381,
+      "invertidos": 0,
+      "pixelsDentro": 657359,
+      "pixelsRasgo": 0,
+      "triPiorCentro": [
+        919.8,
+        840.2
+      ]
+    },
+    {
+      "pose": {
+        "AnguloX": 0,
+        "AnguloY": 0,
+        "AnguloZ": 0
+      },
+      "razaoMax": 1,
+      "razaoMin": 1,
+      "invertidos": 0,
+      "pixelsDentro": 656105,
+      "pixelsRasgo": 0,
+      "triPiorCentro": [
+        743.8,
+        17.8
+      ]
+    },
+    {
+      "pose": {
+        "AnguloX": 0,
+        "AnguloY": 0,
+        "AnguloZ": 1
+      },
+      "razaoMax": 1.3649,
+      "razaoMin": 0.6137,
+      "invertidos": 0,
+      "pixelsDentro": 654845,
+      "pixelsRasgo": 0,
+      "triPiorCentro": [
+        307.8,
+        835.8
+      ]
+    },
+    {
+      "pose": {
+        "AnguloX": 0,
+        "AnguloY": 1,
+        "AnguloZ": -1
+      },
+      "razaoMax": 1.4154,
+      "razaoMin": 0.6485,
+      "invertidos": 0,
+      "pixelsDentro": 660860,
+      "pixelsRasgo": 0,
+      "triPiorCentro": [
+        919.8,
+        853.8
+      ]
+    },
+    {
+      "pose": {
+        "AnguloX": 0,
+        "AnguloY": 1,
+        "AnguloZ": 0
+      },
+      "razaoMax": 1.2486,
+      "razaoMin": 0.7761,
+      "invertidos": 0,
+      "pixelsDentro": 659477,
+      "pixelsRasgo": 0,
+      "triPiorCentro": [
+        603.2,
+        471.2
+      ]
+    },
+    {
+      "pose": {
+        "AnguloX": 0,
+        "AnguloY": 1,
+        "AnguloZ": 1
+      },
+      "razaoMax": 1.4025,
+      "razaoMin": 0.6102,
+      "invertidos": 0,
+      "pixelsDentro": 658234,
+      "pixelsRasgo": 0,
+      "triPiorCentro": [
+        321.2,
+        849.2
+      ]
+    },
+    {
+      "pose": {
+        "AnguloX": 1,
+        "AnguloY": -1,
+        "AnguloZ": -1
+      },
+      "razaoMax": 1.4329,
+      "razaoMin": 0.3738,
+      "invertidos": 0,
+      "pixelsDentro": 598699,
+      "pixelsRasgo": 0,
+      "triPiorCentro": [
+        550.2,
+        827.2
+      ]
+    },
+    {
+      "pose": {
+        "AnguloX": 1,
+        "AnguloY": -1,
+        "AnguloZ": 0
+      },
+      "razaoMax": 1.4329,
+      "razaoMin": 0.3738,
+      "invertidos": 0,
+      "pixelsDentro": 598436,
+      "pixelsRasgo": 0,
+      "triPiorCentro": [
+        550.2,
+        827.2
+      ]
+    },
+    {
+      "pose": {
+        "AnguloX": 1,
+        "AnguloY": -1,
+        "AnguloZ": 1
+      },
+      "razaoMax": 1.5091,
+      "razaoMin": 0.3407,
+      "invertidos": 0,
+      "pixelsDentro": 598148,
+      "pixelsRasgo": 0,
+      "triPiorCentro": [
+        334.8,
+        835.8
+      ]
+    },
+    {
+      "pose": {
+        "AnguloX": 1,
+        "AnguloY": 0,
+        "AnguloZ": -1
+      },
+      "razaoMax": 1.3638,
+      "razaoMin": 0.4963,
+      "invertidos": 0,
+      "pixelsDentro": 625079,
+      "pixelsRasgo": 0,
+      "triPiorCentro": [
+        862.8,
+        888.8
+      ]
+    },
+    {
+      "pose": {
+        "AnguloX": 1,
+        "AnguloY": 0,
+        "AnguloZ": 0
+      },
+      "razaoMax": 1.3823,
+      "razaoMin": 0.4963,
+      "invertidos": 0,
+      "pixelsDentro": 624582,
+      "pixelsRasgo": 0,
+      "triPiorCentro": [
+        497.2,
+        933.2
+      ]
+    },
+    {
+      "pose": {
+        "AnguloX": 1,
+        "AnguloY": 0,
+        "AnguloZ": 1
+      },
+      "razaoMax": 1.485,
+      "razaoMin": 0.4908,
+      "invertidos": 0,
+      "pixelsDentro": 624270,
+      "pixelsRasgo": 0,
+      "triPiorCentro": [
+        492.8,
+        928.8
+      ]
+    },
+    {
+      "pose": {
+        "AnguloX": 1,
+        "AnguloY": 1,
+        "AnguloZ": -1
+      },
+      "razaoMax": 1.5198,
+      "razaoMin": 0.3248,
+      "invertidos": 0,
+      "pixelsDentro": 629863,
+      "pixelsRasgo": 0,
+      "triPiorCentro": [
+        893.2,
+        853.8
+      ]
+    },
+    {
+      "pose": {
+        "AnguloX": 1,
+        "AnguloY": 1,
+        "AnguloZ": 0
+      },
+      "razaoMax": 1.4513,
+      "razaoMin": 0.3248,
+      "invertidos": 0,
+      "pixelsDentro": 629258,
+      "pixelsRasgo": 0,
+      "triPiorCentro": [
+        519.2,
+        901.8
+      ]
+    },
+    {
+      "pose": {
+        "AnguloX": 1,
+        "AnguloY": 1,
+        "AnguloZ": 1
+      },
+      "razaoMax": 1.5185,
+      "razaoMin": 0.3248,
+      "invertidos": 0,
+      "pixelsDentro": 628740,
+      "pixelsRasgo": 0,
+      "triPiorCentro": [
+        505.8,
+        888.8
+      ]
+    }
+  ],
+  "criterio": "zero pixels com alfa < 200 dentro da fonte opaca (alfa >= 200) deformada e erodida 4 px; raz�o de �rea <= 1,6 nos tri�ngulos com tinta (alfa >= 16), nas 27 poses {-1,0,1}^3",
+  "faixaGraus": {
+    "AnguloX": 22,
+    "AnguloY": 14,
+    "AnguloZ": 12
+  },
+  "medidoEm": "2026-10-19T16:37:58.126Z"
+}

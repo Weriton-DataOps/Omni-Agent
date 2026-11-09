@@ -1,0 +1,719 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:">
+<title>Omni · ilha</title>
+<style>
+/* 19/10, tarde: a ilha troca o Skeu com vidro pela linguagem do notch do Coucou (github.com/Louis-CFM/coucou,
+   código MIT; o personagem e a arte de lá NÃO vêm junto, o mascote daqui é nosso). A gramática:
+   corpo preto que emenda com a borda da tela, cabeçalho de 40 px com abas à esquerda e ações à direita,
+   cards #141518 de raio 20 com fio quase invisível, mascote à esquerda do card (o texto começa depois
+   dele), números em mono, cor só em ponto, pílula e lavagem radial de baixo para cima.
+   A janela continua com tamanho fixo: quem anima é a .casca (renderer.js). O .conteudo tem largura fixa e
+   fica parado; o poço só o recorta. Cada vista tem a própria altura e trocar de aba anima a altura. */
+:root {
+  /* o poço é preto puro: lido também pela faixa (renderer.js), que emenda sem degrau */
+  --poco-topo: #000;
+  --poco-fundo: #000;
+  --poco-altura: 260px;
+  --ink: #f5f6f8;
+  --dim: #9398a1;
+  --dim-2: #8e939c;
+  --dim-3: #6b7079;
+  --card: #141518;
+  --card-flat: #0e0f11;
+  --hairline: rgba(255, 255, 255, .035);
+  --tab-on: #1d1f23;
+  --verde: #22c55e;
+  --vermelho: #f4505e;
+  --ambar: #f5a524;
+  --ciano: #22d3ee;
+  --indigo: #6366f1;
+  --laranja: #f58349;
+  --azul: #8fb8f6;
+  --violeta: #a78bfa;
+  --cofre: #74d4c0; /* verde-água do cofre, o mesmo da janela dele (T6) */
+  --mono: "Cascadia Mono", "Cascadia Code", Consolas, monospace;
+  --faixa: 180px;          /* o renderer sobrescreve com o valor do main.js */
+  --largura-aberta: 640px; /* idem */
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
+body {
+  font: 400 13px/1.35 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  color: var(--ink); user-select: none; cursor: default;
+  position: relative;
+  -webkit-font-smoothing: antialiased;
+}
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+
+/* ── a casca: a forma que anima. Os valores abaixo são só o primeiro quadro (recolhida) ─ */
+.casca { position: absolute; top: 0; left: calc(50% - 18px); width: 36px; height: 34px; }
+
+/* ── o poço: preto, sem fio nem brilho; só uma sombra de apoio para baixo ─ */
+.ilha {
+  position: absolute; inset: 0;
+  background: #000;
+  border-radius: 0 0 var(--raio, 20px) var(--raio, 20px);
+  overflow: hidden;
+  box-shadow: 0 16px 28px -14px rgba(0, 0, 0, .7), 0 3px 8px rgba(0, 0, 0, calc(.5 * var(--clara, 0)));
+}
+/* recolhida, o poço vira grafite com fio de luz embaixo, para a face ter de onde saltar; o renderer
+   apaga isso (--clara 1 → 0) enquanto ele alarga, e aberto volta ao preto */
+.ilha::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none; border-radius: inherit;
+  background: linear-gradient(180deg, #1c1f26, #2b2f38);
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, .14), inset 0 -6px 10px -6px rgba(143, 184, 246, .18);
+  opacity: var(--clara, 0);
+}
+/* a faixa: a película que escorre pela borda de cima da tela, desenhada pelo renderer (SVG) */
+.faixa { position: absolute; top: 0; width: var(--faixa); height: 24px; z-index: 2; pointer-events: none; overflow: visible; }
+.faixa.esq { right: 100%; }
+.faixa.dir { left: 100%; transform: scaleX(-1); }
+
+/* ── o conteúdo: largura fixa, centrado na casca, parado na tela ─ */
+.conteudo {
+  position: absolute; top: 0;
+  left: calc(50% - var(--largura-aberta) / 2);
+  width: var(--largura-aberta);
+}
+
+/* ── cabeçalho: abas | (a chama, no centro) | ações ─ */
+.topo { position: relative; height: 40px; display: flex; align-items: center; }
+.aba { position: absolute; top: 0; left: calc(50% - 18px); width: 36px; height: 34px; }
+/* a face do notch mora na casca, por cima do poço, e cabe inteira dentro dele: 32 px num bico justo de
+   36×34 (21/10: o de 44×40 sobrava em volta; a versão que passava da borda também saiu). A âncora guarda
+   o lugar dela no sistema do .conteudo, para o voo saber onde decolar e pousar. */
+.ancora-notch { position: absolute; left: 2px; top: 1px; width: 32px; height: 32px; }
+.face-notch {
+  position: absolute; left: calc(50% - 16px); top: 1px; width: 32px; height: 32px; z-index: 4;
+  object-fit: contain; pointer-events: none;
+  filter: drop-shadow(0 2px 2px rgba(0, 0, 0, .6)) drop-shadow(0 0 5px rgba(143, 184, 246, .35));
+}
+.abas { display: flex; gap: 5px; padding-left: 14px; }
+.acoes { margin-left: auto; display: flex; gap: 6px; padding-right: 12px; }
+.tab {
+  width: 30px; height: 22px; border-radius: 11px;
+  display: grid; place-items: center; color: var(--dim-2);
+  transition: background-color .15s, color .15s, transform .08s;
+}
+.tab svg { width: 14px; height: 14px; }
+.tab:hover { background: rgba(255, 255, 255, .07); color: var(--ink); }
+.tab.on { background: var(--tab-on); color: var(--ink); }
+.tab:active { transform: scale(.92); }
+/* cabeçalho entra e sai junto com as vistas */
+.topo .abas, .topo .acoes { opacity: 0; transition: opacity .12s ease-in; pointer-events: none; }
+.ilha.revelada .topo .abas, .ilha.revelada .topo .acoes { opacity: 1; transition: opacity .25s ease-out .06s; pointer-events: auto; }
+
+/* ── vistas: uma por aba, empilhadas; a ligada aparece com fade e escala que passa do ponto ─ */
+.vistas { position: relative; margin: 0 10px; }
+.vista {
+  position: absolute; top: 0; left: 0; right: 0;
+  opacity: 0; transform: scale(.97); transform-origin: 50% 0;
+  pointer-events: none;
+  transition: opacity .12s ease-in, transform .12s ease-in;
+}
+.ilha.revelada .vista.on {
+  opacity: 1; transform: none; pointer-events: auto;
+  transition: opacity .3s ease-out .08s, transform .34s cubic-bezier(.3, 1.2, .4, 1) .08s;
+}
+
+/* ── card ─ */
+.card {
+  position: relative; overflow: hidden;
+  border-radius: 20px; background: var(--card);
+  box-shadow: inset 0 0 0 1px var(--hairline);
+}
+/* lavagem: um brilho radial que sobe de baixo, na cor do card */
+.card.lava::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(300px 220px at 50% 135%, var(--lava, rgba(99, 102, 241, .22)), transparent 70%);
+}
+.card > * { position: relative; z-index: 1; }
+
+/* ── o ícone de cada card (21/10: a fagulha com olhos saiu; a face fica só para o Omni). Uma placa de
+   cantos redondos na cor do card com o glifo do que ele é: caixa (Actions), balão (WhatsApp), prompt
+   (sessão). Quem "vive" é o glifo: as reticências digitam e o cursor pisca, mais rápido quando agitado ─ */
+.lugar-icone { position: absolute; left: 0; top: 0; bottom: 0; width: 100px; display: grid; place-items: center; z-index: 1; }
+.icone { width: 62px; height: 62px; overflow: visible; filter: drop-shadow(0 0 12px var(--brilho, rgba(143, 184, 246, .35))); }
+.icone .placa { fill: var(--tom, var(--azul)); fill-opacity: .14; stroke: var(--tom, var(--azul)); stroke-opacity: .5; stroke-width: 1.5; }
+.icone .glifo { fill: none; stroke: var(--tom, var(--azul)); stroke-width: 4.5; stroke-linecap: round; stroke-linejoin: round; }
+.icone .cheio { fill: var(--tom, var(--azul)); stroke: none; }
+.icone .cursor { animation: pisca 1.1s steps(1) infinite; }
+.icone.agitado .cursor { animation-duration: .55s; }
+.icone.agitado .digita { animation: digita 1.2s ease-in-out infinite; }
+.icone.agitado .digita:nth-of-type(2) { animation-delay: .15s; }
+.icone.agitado .digita:nth-of-type(3) { animation-delay: .3s; }
+@keyframes pisca { 0%, 55% { opacity: 1; } 56%, 100% { opacity: 0; } }
+@keyframes digita { 0%, 60%, 100% { opacity: .35; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-2px); } }
+.tom-rodando { --tom: #2dd4bf; --brilho: rgba(45, 212, 191, .4); }
+.tom-espera { --tom: var(--ambar); --brilho: rgba(245, 165, 36, .4); }
+.tom-concluiu { --tom: var(--azul); --brilho: rgba(143, 184, 246, .38); }
+.tom-ociosa { --tom: #5f6573; --brilho: rgba(95, 101, 115, .25); }
+.tom-actions { --tom: var(--laranja); --brilho: rgba(245, 131, 73, .38); }
+.tom-whats { --tom: var(--verde); --brilho: rgba(34, 197, 94, .4); }
+.tom-oracle { --tom: var(--violeta); --brilho: rgba(167, 139, 250, .4); }
+.tom-cofre { --tom: var(--cofre); --brilho: rgba(116, 212, 192, .38); }
+
+/* ══ vista Início: três colunas de altura fixa; o que não cabe rola dentro da coluna ══════ */
+.inicio { display: grid; grid-template-columns: 290px 1fr 1fr 1fr; gap: 10px; height: 300px; }
+.coluna {
+  min-width: 0; min-height: 0; overflow-y: auto; overflow-x: hidden;
+  display: flex; flex-direction: column; gap: 10px;
+  border-radius: 20px; overscroll-behavior: contain;
+  scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, .14) transparent;
+}
+.coluna::-webkit-scrollbar { width: 4px; }
+.coluna::-webkit-scrollbar-track { background: transparent; }
+.coluna::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, .14); border-radius: 2px; }
+.coluna::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, .26); }
+/* o card que é a coluna inteira enche a altura e cresce além dela se precisar (aí a coluna rola) */
+.coluna > .card-espaco, .coluna > .card-sessoes { flex: 1 0 auto; }
+
+/* coluna esquerda: a máquina, num pedaço de céu. Nebulosa índigo em cima e o mesmo calor laranja do
+   card Actions subindo de baixo; as estrelas são do ceu.js (canvas atrás de tudo) */
+/* cabe nos 300 px da coluna sem rolar (21/10): espaçamento apertado e o card nunca passa da altura */
+.coluna-maquina { overflow: hidden; }
+.coluna-maquina > .card-espaco { flex: 1 1 0; min-height: 0; }
+/* o card do cofre (F1, plano 5, T7): altura fixa embaixo do Omni, no molde dos cards de integração; tocar abre a janela */
+.coluna-maquina > .card-cofre { flex: none; height: 108px; cursor: pointer; transition: transform .12s, filter .12s; }
+.card-cofre .lugar-icone { width: 64px; }
+.card-cofre .icone { width: 40px; height: 40px; }
+.card-cofre .int { padding: 9px 14px 8px 64px; height: 100%; }
+.card-cofre .int-linhas { overflow: hidden; padding-top: 4px; }
+/* a regra e o erro são o recado do card: tons que passam de 4,5:1 sobre o card (o --dim-3 dá 3,7) */
+.card-cofre .int-quando { color: var(--dim-2); }
+.card-cofre .int-vazio { color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card-cofre:hover { filter: brightness(1.08); }
+.card-cofre:active { transform: scale(.985); }
+.card-cofre:hover .abre { color: var(--ink); translate: 1px -1px; }
+.card-cofre.alerta #cofre-detalhe { color: var(--ambar); }
+.card-cofre.erro #cofre-detalhe { color: var(--vermelho); }
+.card-espaco {
+  padding: 10px 14px 10px; display: flex; flex-direction: column; gap: 6px;
+  background:
+    radial-gradient(240px 170px at 88% -8%, rgba(99, 102, 241, .30), transparent 70%),
+    radial-gradient(200px 140px at 0% 45%, rgba(34, 211, 238, .07), transparent 70%),
+    radial-gradient(320px 200px at 40% 118%, rgba(245, 131, 73, .20), transparent 70%),
+    linear-gradient(180deg, #0a0c18 0%, #0f0d1b 60%, #150f17 100%);
+}
+.card > .ceu { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; }
+.espaco-cab { display: flex; align-items: center; gap: 12px; }
+.face {
+  /* 28/10: um tanto maior (era 62), pedido dele; o voo pousa no tamanho que estiver aqui */
+  width: 80px; height: 80px; flex: none; object-fit: contain;
+  filter: drop-shadow(0 0 16px rgba(143, 184, 246, .38));
+  animation: flutua 6s ease-in-out infinite;
+}
+@keyframes flutua { 0%, 100% { transform: translateY(0) rotate(-1deg); } 50% { transform: translateY(-3px) rotate(1deg); } }
+/* a face é uma só (21/10): a que não está "em casa" fica escondida, e durante o voo as duas ficam */
+.face.fora, .face-notch.fora { visibility: hidden; }
+
+/* ── o voo: um clone da face por cima das vistas, que o renderer anima do notch à coluna e de volta.
+   O vento é um feixe preso ao centro dele, girado para trás do movimento; o pouso é anel + faíscas ─ */
+.voo { position: absolute; left: 0; top: 0; width: 62px; height: 62px; z-index: 5; pointer-events: none; display: none; }
+.voo.on { display: block; }
+.voo-face { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 0 14px rgba(143, 184, 246, .5)); }
+.vento { position: absolute; left: 31px; top: 31px; width: 0; height: 0; }
+.vento-giro { position: absolute; left: 0; top: -22px; width: 110px; height: 44px; transform-origin: 0 50%; opacity: 0; }
+.vento-giro b {
+  position: absolute; left: 8px; top: 7px; width: 86px; height: 30px; border-radius: 50%; filter: blur(2px);
+  background: radial-gradient(closest-side at 18% 50%, rgba(170, 202, 255, .62), rgba(99, 102, 241, .26) 60%, transparent);
+}
+.vento-giro i {
+  position: absolute; height: 3px; border-radius: 2px; animation: sopro .26s linear infinite;
+  background: linear-gradient(90deg, #fff, rgba(170, 202, 255, .7) 45%, rgba(143, 184, 246, 0));
+  box-shadow: 0 0 5px rgba(143, 184, 246, .75);
+}
+.vento-giro i:nth-of-type(1) { left: 20px; top: 8px; width: 48px; animation-delay: -.04s; }
+.vento-giro i:nth-of-type(2) { left: 24px; top: 17px; width: 78px; animation-delay: -.17s; }
+.vento-giro i:nth-of-type(3) { left: 20px; top: 26px; width: 60px; animation-delay: -.09s; }
+.vento-giro i:nth-of-type(4) { left: 30px; top: 35px; width: 38px; animation-delay: -.21s; }
+.vento-giro i:nth-of-type(5) { left: 34px; top: 21px; width: 44px; animation-delay: -.12s; height: 2px; }
+@keyframes sopro { 0% { transform: translateX(-8px) scaleX(.6); opacity: 0; } 25% { opacity: 1; } 100% { transform: translateX(22px); opacity: 0; } }
+.pouso { position: absolute; width: 0; height: 0; z-index: 3; pointer-events: none; }
+.pouso .anel {
+  position: absolute; left: -32px; top: -32px; width: 64px; height: 64px; border-radius: 50%;
+  border: 2px solid rgba(170, 202, 255, .9); box-shadow: 0 0 12px rgba(143, 184, 246, .6), inset 0 0 10px rgba(143, 184, 246, .35);
+}
+.pouso .faisca { position: absolute; left: -2px; top: -2px; width: 4px; height: 4px; border-radius: 50%; background: #dce8ff; box-shadow: 0 0 6px rgba(143, 184, 246, .9); }
+.espaco-quem { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.espaco-nome { display: flex; align-items: baseline; gap: 6px; white-space: nowrap; min-width: 0; }
+.espaco-nome b { font-weight: 600; font-size: 13px; }
+.espaco-nome span { font: 500 10.5px/1 var(--mono); color: var(--dim-2); overflow: hidden; text-overflow: ellipsis; }
+.espaco-sub { font-size: 11px; color: var(--dim-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.medidor { display: flex; flex-direction: column; gap: 5px; }
+.med-cab { display: flex; align-items: baseline; gap: 6px; white-space: nowrap; }
+.med-cab i { font-weight: 600; font-size: 9px; line-height: 1; font-style: normal; letter-spacing: .08em; color: var(--dim-3); }
+.med-cab span { font: 500 10.5px/1 var(--mono); color: var(--dim-2); margin-left: auto; }
+.med-cab b { font: 700 12.5px/1 var(--mono); min-width: 34px; text-align: right; }
+.barra { height: 4px; border-radius: 2px; background: rgba(255, 255, 255, .08); overflow: hidden; }
+.barra i { display: block; height: 100%; width: 0; border-radius: inherit; background: var(--cor-barra, var(--azul)); transition: width .6s cubic-bezier(.3, 1.2, .4, 1), background-color .3s; }
+.barra.alta { --cor-barra: var(--ambar); }
+.barra.critica { --cor-barra: var(--vermelho); }
+.linha-cpu { display: block; width: 100%; height: 22px; overflow: visible; }
+.linha-cpu polyline { fill: none; stroke: var(--ciano); stroke-width: 1.3; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.linha-cpu polyline.area { fill: rgba(34, 211, 238, .12); stroke: none; }
+/* memória + quem come: um bloco, com uma moldura leve que diz "isto é um assunto só" */
+.bloco-ram {
+  display: flex; flex-direction: column; gap: 6px; padding: 7px 8px 7px; margin: 0 -8px;
+  border-radius: 12px; background: rgba(255, 255, 255, .035); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .05);
+}
+.pesados { display: flex; flex-direction: column; gap: 3px; }
+.pesados .med-cab { margin-bottom: 1px; }
+.med-cab.sub i { font-size: 8.5px; color: var(--dim-3); opacity: .85; }
+.pesado {
+  display: flex; align-items: center; gap: 6px; padding: 3px 7px; border-radius: 6px; font-size: 11px;
+  background: linear-gradient(90deg, rgba(99, 102, 241, .2) var(--p, 0%), rgba(255, 255, 255, .03) var(--p, 0%));
+}
+.pesado .nm { flex: 1; min-width: 0; color: #c5c8cd; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pesado .n { font: 500 10px/1 var(--mono); color: var(--dim-3); }
+.pesado .mb { font: 500 10.5px/1 var(--mono); color: var(--dim-2); flex: none; }
+
+/* coluna do meio: cards no molde do de integração, com o ícone mais estreito para caber. Altura
+   padronizada (21/10): cada card é metade da coluna e mostra no máximo 3 linhas; o resto vai no title */
+.coluna-cards .card { flex: 1 1 0; min-height: 0; }
+.coluna-cards .lugar-icone { width: 64px; }
+.coluna-cards .icone { width: 40px; height: 40px; }
+.coluna-cards .int { padding: 9px 14px 8px 64px; }
+/* dois cards na coluna (27/10: o Oracle saiu para a coluna dele): cada um mostra no máximo 3 linhas; o resto vai no title */
+.coluna-cards .int-linhas { overflow: hidden; padding-top: 4px; }
+.coluna-cards .int-linha:nth-child(n+4) { display: none; }
+
+/* card Actions, no molde do card de integração: ícone | cabeçalho, número grande, linhas */
+.card-actions { cursor: pointer; transition: transform .12s, filter .12s; }
+.card-actions:hover { filter: brightness(1.08); }
+.card-actions:active { transform: scale(.985); }
+/* decisão esperando por ele: o card acende (só nesse caso; ponto que andou sozinho não acende nada) */
+.card-actions.pede { box-shadow: inset 0 0 0 1px rgba(245, 163, 95, .45), 0 0 18px rgba(245, 163, 95, .18); }
+.card-actions.pede #actions-rotulo { color: var(--ambar); }
+.int { padding: 12px 14px 0 100px; display: flex; flex-direction: column; }
+.int-cab { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.int-cab .bolinha { width: 6px; height: 6px; border-radius: 50%; background: var(--ink); flex: none; }
+.int-cab b { font-weight: 600; font-size: 12px; }
+.int-cab > span { font-size: 11px; color: var(--dim-2); }
+.int-cab .abre { margin-left: auto; color: var(--dim-3); font-size: 12px; transition: color .12s, translate .12s; }
+.card-actions:hover .abre { color: var(--ink); translate: 1px -1px; }
+.int-saldo { display: flex; align-items: baseline; gap: 5px; margin-top: 4px; }
+.int-saldo span { font: 700 20px/1.1 var(--mono); letter-spacing: -.02em; }
+.int-saldo i { font-weight: 600; font-size: 9px; line-height: 1; font-style: normal; letter-spacing: .08em; color: var(--dim-3); }
+.int-saldo em { margin-left: auto; font: 500 10.5px/1 var(--mono); font-style: normal; color: var(--dim-2); white-space: nowrap; }
+.int-linhas { display: flex; flex-direction: column; gap: 2px; padding-top: 6px; margin: 0 -8px; }
+.int-linha { display: flex; align-items: center; gap: 6px; padding: 3px 8px; border-radius: 6px; min-width: 0; }
+.int-linha .pt { width: 5px; height: 5px; border-radius: 50%; flex: none; background: var(--cor, var(--dim-3)); }
+.int-linha .pt.pulsa { animation: pulsa 1.8s ease-in-out infinite; box-shadow: 0 0 6px var(--cor); }
+.int-nome { font-weight: 500; font-size: 11px; line-height: 1.25; color: #9398a1; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.int-linha:first-child .int-nome { color: #c5c8cd; }
+.int-quando { font: 500 10.5px/1 var(--mono); color: var(--dim-3); flex: none; }
+.int-vazio { font-size: 11px; color: var(--dim-3); padding: 3px 8px; }
+@keyframes pulsa { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+.st-andamento { --cor: var(--verde); }
+.st-espera { --cor: var(--ambar); }
+.st-captura { --cor: var(--ciano); }
+.st-pronto { --cor: var(--azul); }
+.st-parado { --cor: var(--dim-3); }
+.st-outro { --cor: var(--indigo); }
+
+/* card Oracle (27/10, no lugar do Overcore): violeta quando a vigia está fresca, cinza quando parou */
+.card-oracle { --cor: var(--dim-3); }
+.card-oracle.vigiando { --cor: var(--violeta); }
+.card-oracle .bolinha { width: 6px; height: 6px; border-radius: 50%; flex: none; background: var(--cor); box-shadow: 0 0 6px var(--cor); }
+.card-oracle.vigiando .bolinha { animation: pulsa 2.4s ease-in-out infinite; }
+/* a coluna do Oracle (27/10): espaço verde-água (a cor do globo), o olho no canto e a lista inteira de projetos rolando por dentro */
+.coluna-oracle > .card-oracle { flex: 1 1 0; min-height: 0; }
+.card-oracle {
+  display: flex; flex-direction: column; padding: 10px 12px 10px; min-width: 0;
+  background:
+    radial-gradient(270px 200px at 88% -8%, rgba(45, 212, 180, .36), transparent 70%),
+    radial-gradient(220px 160px at 0% 50%, rgba(45, 212, 180, .12), transparent 70%),
+    radial-gradient(320px 200px at 40% 118%, rgba(34, 180, 150, .20), transparent 70%),
+    linear-gradient(180deg, #08110f 0%, #0a0f10 60%, #0b0e12 100%);
+}
+.card-oracle > :not(.ceu) { position: relative; z-index: 1; }
+.or-cab { display: flex; align-items: center; gap: 8px; margin: -6px 0 4px -6px; }
+/* o olho (27/10): vídeo com alfa tocado pelo olho.js; se não carregar, fica a arte parada */
+.or-palco { position: relative; flex: none; width: 54px; height: 54px; margin: 0 6px 0 8px; }
+.or-palco video { position: relative; z-index: 2; width: 100%; height: 100%; display: block; object-fit: contain; }
+.or-palco.parado { background: url(oraculo/oracle-virado.png) center / contain no-repeat; }
+/* profundidade: o globo paira longe do fundo. A parede distante só recebe uma poça larga e difusa da luz
+   verde e uma sombra pequena, borrada e bem deslocada; o globo flutua devagar e a sombra respira junto */
+.or-palco::before, .or-palco::after { content: ''; position: absolute; pointer-events: none; z-index: 1; border-radius: 50%; }
+.or-palco::before { inset: -18px; background: radial-gradient(closest-side, rgba(70, 230, 195, .16), transparent); }
+.or-palco::after { left: 30%; top: 78%; width: 58%; height: 22%; background: radial-gradient(closest-side, rgba(0, 0, 0, .7), transparent); filter: blur(4px); transform: translate(9px, 14px); }
+@media (prefers-reduced-motion: no-preference) {
+  .or-palco video { animation: or-paira 7s ease-in-out infinite; }
+  .or-palco::after { animation: or-sombra 7s ease-in-out infinite; }
+}
+@keyframes or-paira { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+@keyframes or-sombra { 0%, 100% { transform: translate(9px, 14px) scale(1); opacity: 1; } 50% { transform: translate(10px, 16px) scale(.86); opacity: .7; } }
+.or-quem { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.or-nome { display: flex; align-items: center; gap: 6px; white-space: nowrap; min-width: 0; }
+.or-nome b { font-weight: 600; font-size: 13px; }
+.or-nome span { margin-left: auto; font-weight: 600; font-size: 9px; letter-spacing: .08em; color: var(--cor); }
+.or-saldo { display: flex; align-items: baseline; gap: 5px; }
+.or-saldo span { font: 700 20px/1.1 var(--mono); letter-spacing: -.02em; }
+.or-saldo i { font-weight: 600; font-size: 9px; line-height: 1; font-style: normal; letter-spacing: .08em; color: var(--dim-3); }
+.card-oracle .int-linhas { margin: 0 -6px; padding-top: 2px; overflow-y: auto; min-height: 0; scrollbar-width: none; flex: 1 1 0; }
+/* 27/10: o topo (olho, nome, números) é todo do Oracle, na largura inteira. Embaixo o corpo se divide na
+   vertical: os projetos rolando na metade esquerda, a máquina (disco, CPU, RAM, veio do card do Omni) na direita */
+.or-corpo { flex: 1 1 0; min-height: 0; display: flex; gap: 10px; }
+.or-corpo > .int-linhas { flex: 1 1 0; min-width: 0; }
+.or-maquina {
+  flex: 1 1 0; min-width: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 5px;
+  padding: 0 0 0 10px; border-left: 1px solid rgba(45, 212, 180, .14);
+}
+/* coluna estreita: o rótulo sozinho em cima; embaixo, o valor à esquerda e o % à direita, rente à barra */
+.or-maquina .med-cab { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; row-gap: 3px; column-gap: 6px; }
+.or-maquina .med-cab i { grid-column: 1 / -1; }
+.or-maquina .med-cab span { grid-column: 1; margin-left: 0; overflow: hidden; text-overflow: ellipsis; }
+.or-maquina .med-cab b { grid-column: 2; min-width: 0; }
+.or-maquina .med-cab.sub { display: flex; }
+/* topo espalhado na largura: nome e estado à esquerda, o total e a última vigia no vão da direita */
+.or-nome span { margin-left: 4px; }
+.or-numeros { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 3px; padding-right: 4px; }
+.or-numeros .or-saldo span { font-size: 24px; }
+/* com o topo espalhado na largura, cabem os quatro de quem come a RAM; um quinto nunca */
+.or-maquina .pesado:nth-child(n+5) { display: none; }
+.or-maquina .medidor { gap: 4px; }
+.or-maquina .linha-cpu { height: 14px; }
+.or-maquina .bloco-ram { margin: 0 -6px; padding: 5px 7px; gap: 4px; }
+.or-maquina .pesados { gap: 3px; }
+.or-maquina .pesado { padding: 2px 6px; font-size: 10.5px; gap: 4px; }
+.or-maquina .pesado { background: linear-gradient(90deg, rgba(45, 212, 180, .2) var(--p, 0%), rgba(255, 255, 255, .03) var(--p, 0%)); }
+/* card WhatsApp: a bolinha e o estado na cor do que está acontecendo com o serviço e a ponte */
+.card-whats { --cor: var(--dim-3); }
+.card-whats.ligada { --cor: var(--verde); }
+.card-whats.pausada { --cor: var(--ambar); }
+.card-whats.parada { --cor: var(--vermelho); }
+.card-whats .int-cab .bolinha { background: var(--cor); box-shadow: 0 0 6px var(--cor); }
+.card-whats.ligada .int-cab .bolinha { animation: pulsa 2.4s ease-in-out infinite; }
+.int-estado { margin-left: auto; font-weight: 600; font-size: 9px; letter-spacing: .08em; color: var(--cor) !important; }
+.int-linha .rotulo { font-size: 11px; color: var(--dim); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.int-linha .valor { font: 500 10.5px/1 var(--mono); color: #c5c8cd; flex: none; }
+.int-linha.aviso .rotulo, .int-linha.aviso .valor { color: var(--ambar); }
+/* as duas conexões do WhatsApp, fixas na primeira linha: o número do Omni e o dele, o ponto na cor do estado.
+   Leitura velha da sonda apaga a linha: verde de ontem não é verde */
+.int-linha.conexoes { gap: 14px; }
+.int-linha.conexoes.velha { opacity: .45; }
+.conexao { display: flex; align-items: center; gap: 5px; min-width: 0; font-size: 11px; white-space: nowrap; }
+.conexao b { font-weight: 500; color: #c5c8cd; }
+.conexao .fone { font: 500 10.5px/1 var(--mono); color: var(--dim-2); }
+.conexao .est { font: 600 10px/1 var(--mono); color: var(--cor); }
+.conexao.c-ok { --cor: var(--verde); }
+.conexao.c-espera { --cor: var(--ambar); }
+.conexao.c-caiu { --cor: var(--vermelho); }
+.conexao.c-nada { --cor: var(--dim-3); }
+.conexao.c-ok .pt { box-shadow: 0 0 6px var(--cor); }
+
+/* card Sessões: cabeçalho curto e uma lista de pílulas, uma por sessão viva */
+.card-sessoes { min-width: 0; display: flex; flex-direction: column; padding: 11px 10px 10px; }
+.ses-cab { display: flex; align-items: baseline; gap: 6px; padding: 0 4px 8px; white-space: nowrap; }
+.ses-cab b { font-weight: 600; font-size: 12px; }
+.ses-cab span { font-size: 11px; color: var(--dim-2); }
+.pilulas { display: grid; grid-template-columns: 1fr; grid-auto-rows: 28px; gap: 5px; align-content: start; }
+.pilula .faz { font-size: 10px; color: var(--dim-3); flex: 0 1 auto; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pilula {
+  position: relative; display: flex; align-items: center; gap: 6px; min-width: 0;
+  height: 28px; border-radius: 999px; padding: 0 10px 0 4px;
+  background: var(--card-flat); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .1);
+  transition: transform .15s cubic-bezier(.3, 1.2, .4, 1), filter .15s, box-shadow .15s;
+  text-align: left;
+}
+.pilula:hover { transform: scale(1.04); filter: brightness(1.12); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .18); }
+.pilula:active { transform: scale(.96); }
+.pilula .rosto { width: 26px; height: 22px; flex: none; display: grid; place-items: center; }
+.pilula .rosto .icone { width: 20px; height: 20px; filter: drop-shadow(0 0 4px var(--brilho)); }
+.pilula .rot { font-weight: 600; font-size: 10.5px; line-height: 1; color: var(--dim); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pilula .pt { width: 5px; height: 5px; border-radius: 50%; background: var(--tom); flex: none; }
+.pilula.espera .pt { animation: pulsa 1.2s ease-in-out infinite; }
+.pilula.vazia { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .05); background: none; pointer-events: none; }
+.pilula.vazia .rot { color: var(--dim-3); font-weight: 500; padding-left: 8px; }
+/* a coluna da direita com dois cards: cada um fica com metade e rola por dentro */
+.coluna-sessoes > .card-sessoes { flex: 1 1 0; min-height: 0; }
+.coluna-sessoes .pilulas { overflow-y: auto; min-height: 0; scrollbar-width: none; padding: 2px 3px; margin: -2px -3px; }
+/* o card do Overcore: a bolinha diz se ele está no ar, o ⤢ abre a janela inteira */
+.card-oc { --cor: var(--dim-3); }
+.card-oc.no-ar { --cor: var(--azul); }
+.card-oc.pede { --cor: var(--ambar); box-shadow: inset 0 0 0 1px rgba(245, 163, 95, .24), 0 0 14px rgba(245, 163, 95, .07); }
+/* o núcleo (27/10): o buraco negro do Overcore, desenhado pelo nucleo.js; o calor dourado do disco
+   vaza de leve pro card */
+/* 27/10, 2ª volta: o card é um pedaço de espaço como o do Omni, mas em brasa (estrelas do ceu.js com
+   data-ceu="brasa"); o núcleo fica no canto de cima e os números ao lado, no molde da face do Omni */
+.card-oc {
+  background:
+    radial-gradient(270px 200px at 12% -8%, rgba(245, 140, 60, .32), transparent 70%),
+    radial-gradient(220px 160px at 100% 50%, rgba(235, 115, 50, .12), transparent 70%),
+    radial-gradient(320px 200px at 60% 118%, rgba(210, 95, 50, .20), transparent 70%),
+    linear-gradient(180deg, #150d09 0%, #110b0a 60%, #0f0a0b 100%);
+}
+.card-oc > :not(.ceu) { position: relative; z-index: 1; }
+.oc-cab { display: flex; align-items: center; gap: 8px; margin: -6px 0 8px -6px; }
+/* 27/10, 5ª volta: o núcleo virou vídeo com alfa (os planetas orbitando o buraco), tocado pelo nucleo.js no
+   molde do olho do Oracle; o disco é largo, então o palco também */
+.oc-palco { position: relative; flex: none; width: 124px; height: 58px; margin-right: 2px; }
+.oc-palco video { position: absolute; inset: 0; width: 100%; height: 100%; display: block; object-fit: contain; }
+.oc-palco.parado { background: url(nucleo/overcore-girando.png) center / contain no-repeat; }
+.oc-quem { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; padding-top: 4px; }
+.oc-nome { display: flex; align-items: center; gap: 6px; white-space: nowrap; min-width: 0; }
+.oc-nome b { font-weight: 600; font-size: 13px; }
+.oc-nome span { font: 500 10.5px/1 var(--mono); color: var(--dim-2); overflow: hidden; text-overflow: ellipsis; }
+.card-oc .oc-nome .bolinha { width: 6px; height: 6px; border-radius: 50%; flex: none; background: var(--cor); box-shadow: 0 0 6px var(--cor); }
+.card-oc .oc-nome .expandir { margin-top: -2px; }
+.expandir {
+  margin-left: auto; width: 22px; height: 22px; border-radius: 7px; flex: none;
+  display: grid; place-items: center; color: var(--dim-2);
+  transition: background-color .15s, color .15s, transform .08s;
+}
+.expandir svg { width: 13px; height: 13px; }
+.expandir:hover { background: rgba(255, 255, 255, .08); color: var(--ink); }
+.expandir:active { transform: scale(.9); }
+
+/* ══ vista Chat ════════════════════════════════════════════ */
+.chat { height: 200px; display: grid; grid-template-columns: 268px 1fr; grid-template-rows: 1fr 44px; }
+.chat .lugar-icone { width: 84px; bottom: 44px; }
+.chat .lugar-icone .icone { width: 50px; height: 50px; }
+.quem { grid-column: 1; grid-row: 1; padding: 14px 10px 0 84px; min-width: 0; display: flex; flex-direction: column; }
+.quem-linha { display: flex; align-items: baseline; gap: 6px; white-space: nowrap; min-width: 0; }
+.quem-linha b { font-weight: 600; font-size: 12px; }
+.quem-linha .proj { font-size: 11px; color: var(--dim-2); overflow: hidden; text-overflow: ellipsis; }
+.quem-linha .troca { margin-left: auto; font: 500 10px/1 var(--mono); color: var(--dim-3); padding: 3px 6px; border-radius: 6px; }
+.quem-linha .troca:hover { background: rgba(255, 255, 255, .07); color: var(--ink); }
+.fazendo { font-size: 11px; color: var(--dim-2); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.passos { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.passo { display: flex; align-items: center; gap: 7px; font-size: 11px; color: var(--dim); white-space: nowrap; min-width: 0; }
+.passo b { font-weight: 600; color: #c5c8cd; }
+.passo .alvo { overflow: hidden; text-overflow: ellipsis; min-width: 0; color: var(--dim-2); }
+.passo .ic { width: 14px; height: 14px; flex: none; display: grid; place-items: center; font-size: 10px; line-height: 1; }
+.passo.feito .ic { color: var(--verde); }
+.passo.erro .ic { color: var(--vermelho); }
+.passo.espera .ic { color: var(--ambar); }
+.passo.parado .ic { color: var(--dim-3); }
+.passo.agora b { color: var(--ink); }
+.passo.agora .ic::before {
+  content: ""; width: 9px; height: 9px; border-radius: 50%;
+  border: 1.5px solid rgba(255, 255, 255, .16); border-top-color: var(--ink);
+  animation: gira .8s linear infinite;
+}
+.passo.pronto b { color: var(--verde); }
+@keyframes gira { to { transform: rotate(360deg); } }
+.brilho-texto {
+  background: linear-gradient(90deg, var(--dim) 0%, var(--ink) 50%, var(--dim) 100%) 0 0 / 200% 100%;
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  animation: varre 2.2s linear infinite;
+}
+@keyframes varre { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+
+/* painel de código: aba do arquivo, +N −M e as linhas trocadas */
+.codigo {
+  grid-column: 2; grid-row: 1; margin: 10px 10px 0 0; min-width: 0;
+  border-radius: 12px; background: var(--card-flat); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .06);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.codigo-cab { flex: none; height: 28px; display: flex; align-items: center; gap: 8px; padding: 0 10px 0 6px; border-bottom: 1px solid rgba(255, 255, 255, .05); }
+.arq { display: flex; align-items: center; gap: 6px; height: 20px; padding: 0 8px; border-radius: 6px; background: rgba(255, 255, 255, .06); font: 500 10.5px/1 var(--mono); color: #c5c8cd; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.arq::before { content: ""; width: 6px; height: 6px; border-radius: 2px; background: var(--indigo); flex: none; }
+.cont-mais { font: 600 10.5px/1 var(--mono); color: var(--verde); margin-left: auto; }
+.cont-menos { font: 600 10.5px/1 var(--mono); color: var(--vermelho); }
+.cont-hora { font: 500 10px/1 var(--mono); color: var(--dim-3); }
+.codigo-corpo { flex: 1; overflow: hidden; padding: 4px 0; }
+.dl { display: flex; font: 400 10.5px/1.4 var(--mono); color: var(--dim-3); white-space: pre; padding: 0 10px 0 4px; }
+.dl .sim { width: 14px; flex: none; text-align: center; }
+.dl .tx { overflow: hidden; text-overflow: ellipsis; }
+.dl.mais { background: rgba(34, 197, 94, .12); color: #86efac; }
+.dl.menos { background: rgba(244, 80, 94, .12); color: #fca5a5; }
+.codigo-vazio { flex: 1; display: grid; place-items: center; font-size: 11px; color: var(--dim-3); text-align: center; padding: 0 16px; }
+
+/* barra de mensagem (por enquanto só a forma: a ilha não pega foco e o envio ainda não tem destino) */
+.chat-barra {
+  grid-column: 1 / -1; grid-row: 2; margin: 0 10px 10px 84px;
+  display: flex; align-items: center; gap: 8px; padding: 0 5px 0 12px;
+  border-radius: 12px; background: rgba(255, 255, 255, .07);
+}
+.chat-barra .entrada { flex: 1; font-size: 12.5px; color: var(--dim-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chat-barra .enviar { width: 26px; height: 26px; border-radius: 50%; background: var(--ink); color: #0b0c0e; display: grid; place-items: center; opacity: .3; cursor: default; }
+.chat-barra .enviar svg { width: 12px; height: 12px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .vista, .ilha.revelada .vista.on { transform: none; transition-delay: 0s; }
+  .icone .cursor, .icone .digita, .brilho-texto, .pt.pulsa, .face, .card-whats .int-cab .bolinha { animation: none; }
+}
+</style>
+</head>
+<body>
+<div class="casca" id="casca">
+  <svg class="faixa esq" id="faixa-esq" aria-hidden="true"></svg>
+  <svg class="faixa dir" id="faixa-dir" aria-hidden="true"></svg>
+  <img class="face-notch" src="giro/g_8_4.png" alt="" draggable="false">  <div class="ilha" id="ilha">
+    <div class="conteudo" id="conteudo">
+      <header class="topo">
+        <nav class="abas" id="abas">
+          <button class="tab on" data-vista="inicio" title="Início" tabindex="-1">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M2.5 7.2 8 2.8l5.5 4.4V13a.7.7 0 0 1-.7.7H9.6V10H6.4v3.7H3.2a.7.7 0 0 1-.7-.7z"/></svg>
+          </button>
+          <button class="tab" id="abrir-chat" title="Conversar com o Omni" tabindex="-1">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M3 3.2h10a1 1 0 0 1 1 1V10a1 1 0 0 1-1 1H7.2L4.4 13.3V11H3a1 1 0 0 1-1-1V4.2a1 1 0 0 1 1-1z"/></svg>
+          </button>
+        </nav>
+        <div class="aba"><span class="ancora-notch"></span></div>
+        <div class="acoes">
+          <button class="tab" id="fechar" title="Encerrar a ilha" tabindex="-1">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/></svg>
+          </button>
+        </div>
+      </header>
+
+      <div class="vistas" id="vistas">
+        <!-- Início (21/10): três colunas. Esquerda: a máquina, com a face do Omni no céu estrelado. Meio: os
+             cards (Actions, WhatsApp e os que vierem). Direita: as sessões vivas. Cada coluna rola sozinha. -->
+        <section class="vista on" id="vista-inicio" data-vista="inicio">
+          <div class="inicio">
+            <div class="coluna coluna-maquina">
+              <div class="card card-espaco">
+                <canvas class="ceu" id="ceu" aria-hidden="true"></canvas>
+                <div class="espaco-cab">
+                  <img class="face fora" src="giro/g_8_4.png" alt="Omni" draggable="false">
+                  <div class="espaco-quem">
+                    <div class="espaco-nome"><b>Omni</b><span id="sis-maquina">–</span></div>
+                    <div class="espaco-sub" id="sis-ligada">–</div>
+                    <div class="espaco-sub" id="sis-proc">–</div>
+                  </div>
+                </div>
+                <!-- 27/10: disco, CPU e RAM foram para a metade de baixo do card do Oracle (pedido dele) -->
+              </div>
+              <!-- F1, plano 5, T7: o cofre das credenciais; tocar abre a janela dele -->
+              <div class="card lava card-cofre" id="card-cofre" style="--lava: rgba(116, 212, 192, .13)" title="Abrir o cofre">
+                <div class="lugar-icone" data-icone="cofre"></div>
+                <div class="int">
+                  <div class="int-cab"><i class="bolinha"></i><b>Cofre</b><span>Credenciais</span><span class="abre">↗</span></div>
+                  <div class="int-saldo"><span id="cofre-total">–</span><i id="cofre-rotulo">CREDENCIAIS</i><em id="cofre-detalhe"></em></div>
+                  <div class="int-linhas" id="cofre-linhas"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 27/10, 4ª volta: o Overcore veio para o lugar do Actions e do WhatsApp (pedido dele); só as
+                 sessões do Overcore, no molde das pílulas de sessão; o ⤢ abre a janela inteira do Overcore -->
+            <div class="coluna coluna-sessoes">
+              <div class="card card-sessoes card-oc" id="card-oc">
+                <canvas class="ceu" data-ceu="brasa" aria-hidden="true"></canvas>
+                <div class="oc-cab">
+                  <div class="oc-palco"><video id="oc-nucleo" src="nucleo/overcore-girando.webm" poster="nucleo/overcore-girando.png" muted loop playsinline preload="auto" aria-hidden="true"></video></div>
+                  <div class="oc-quem">
+                    <div class="oc-nome"><i class="bolinha"></i><b>Overcore</b><span id="oc-estado">–</span>
+                      <button class="expandir" id="oc-expandir" title="Abrir o Overcore inteiro" tabindex="-1">
+                        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3H4a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V9"/><path d="M9.5 2.5h4v4M13.5 2.5 8 8"/></svg>
+                      </button>
+                    </div>
+                    <div class="espaco-sub" id="oc-resumo">–</div>
+                    <div class="espaco-sub" id="oc-total">–</div>
+                    <div class="espaco-sub" id="oc-ultima">–</div>
+                  </div>
+                </div>
+                <div class="pilulas" id="oc-pilulas"></div>
+              </div>
+            </div>
+
+            <!-- 27/10, 3ª volta: o Oracle ganhou coluna própria, um pedaço de espaço violeta como o do Omni e o
+                 do Overcore; o olho no canto, os números ao lado e todos os projetos embaixo -->
+            <div class="coluna coluna-oracle">
+              <div class="card card-oracle" id="card-oracle">
+                <canvas class="ceu" data-ceu="agua" aria-hidden="true"></canvas>
+                <div class="or-cab">
+                  <div class="or-palco"><video id="or-olho" src="oraculo/oracle-olhando.webm" poster="oraculo/oracle-virado.png" muted loop playsinline preload="auto" aria-hidden="true"></video></div>
+                  <div class="or-quem">
+                    <div class="or-nome"><i class="bolinha"></i><b>Oracle</b><span id="oracle-estado">–</span></div>
+                    <div class="espaco-sub">Operação · Dados</div>
+                  </div>
+                  <!-- os números ocupam o vão da direita do topo -->
+                  <div class="or-numeros">
+                    <div class="or-saldo"><span id="oracle-total">–</span><i id="oracle-rotulo">PROJETOS</i></div>
+                    <div class="espaco-sub" id="oracle-detalhe">–</div>
+                  </div>
+                </div>
+                <!-- 27/10: o topo é todo do Oracle; embaixo, os projetos na metade esquerda e a máquina (veio do card do Omni) na direita -->
+                <div class="or-corpo">
+                <div class="int-linhas" id="oracle-linhas"></div>
+                <div class="or-maquina">
+                  <div class="medidor">
+                    <div class="med-cab"><i id="disco-rot">DISCO</i><span id="disco-valor">–</span><b id="disco-pct">–</b></div>
+                    <div class="barra"><i id="disco-barra"></i></div>
+                  </div>
+                  <div class="medidor">
+                    <div class="med-cab"><i>CPU</i><span id="cpu-nucleos">–</span><b id="cpu-valor">–</b></div>
+                    <svg class="linha-cpu" viewBox="0 0 100 22" preserveAspectRatio="none" aria-hidden="true"><polyline id="cpu-area" class="area" points=""/><polyline id="cpu-linha" points=""/></svg>
+                  </div>
+                  <!-- a RAM é um assunto só: o total e, logo abaixo, quem está comendo -->
+                  <div class="bloco-ram">
+                    <div class="medidor">
+                      <div class="med-cab"><i>MEMÓRIA</i><span id="mem-valor">–</span><b id="mem-pct">–</b></div>
+                      <div class="barra"><i id="mem-barra"></i></div>
+                    </div>
+                    <div class="pesados">
+                      <div class="med-cab sub"><i>QUEM COME A RAM</i></div>
+                      <div id="pesados"></div>
+                    </div>
+                  </div>
+                </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- direita (27/10, 4ª volta: trocou de lugar com o Overcore, pedido dele): Actions e WhatsApp -->
+            <div class="coluna coluna-cards">
+              <div class="card lava card-actions tom-actions" id="card-actions" style="--lava: rgba(245, 131, 73, .16)" title="Abrir o Actions">
+                <div class="lugar-icone" data-icone="actions"></div>
+                <div class="int">
+                  <div class="int-cab"><i class="bolinha"></i><b>Actions</b><span>Depósito</span><span class="abre">↗</span></div>
+                  <div class="int-saldo"><span id="actions-total">–</span><i id="actions-rotulo">PONTOS</i></div>
+                  <div class="int-linhas" id="actions-linhas"></div>
+                </div>
+              </div>
+              <div class="card lava card-whats" id="card-whats" style="--lava: rgba(34, 197, 94, .13)">
+                <div class="lugar-icone" id="whats-icone" data-icone="whats"></div>
+                <div class="int">
+                  <div class="int-cab"><i class="bolinha" id="whats-bolinha"></i><b>WhatsApp</b><span>Omni</span><span class="int-estado" id="whats-estado">–</span></div>
+                  <div class="int-saldo"><span id="whats-total">–</span><i>HOJE</i><em id="whats-detalhe"></em></div>
+                  <div class="int-linhas" id="whats-linhas"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Chat: quem, o passo a passo, a última edição e a barra de mensagem -->
+        <section class="vista" id="vista-chat" data-vista="chat">
+          <div class="card lava chat" style="--lava: rgba(99, 102, 241, .2)">
+            <div class="lugar-icone" id="chat-icone" data-icone="sessao"></div>
+            <div class="quem">
+              <div class="quem-linha"><b>Omni</b><span class="proj" id="chat-proj">sem sessão</span><button class="troca" id="chat-troca" title="Próxima sessão" tabindex="-1">1/1 ›</button></div>
+              <div class="fazendo" id="chat-fazendo"></div>
+              <ol class="passos" id="chat-passos"></ol>
+            </div>
+            <div class="codigo" id="chat-codigo">
+              <div class="codigo-vazio">nenhuma edição recente</div>
+            </div>
+            <div class="chat-barra" title="Enviar daqui ainda não está ligado: falta decidir se a mensagem vai para a sessão ou abre uma nova">
+              <span class="entrada" id="chat-entrada">Responder à sessão…</span>
+              <span class="enviar"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 10V2M2.5 5.5 6 2l3.5 3.5"/></svg></span>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- a face em voo (notch ⇄ coluna da máquina); o renderer liga e anima -->
+      <div class="voo" id="voo" aria-hidden="true">
+        <div class="vento"><div class="vento-giro"><b></b><i></i><i></i><i></i><i></i><i></i></div></div>
+        <img class="voo-face" src="giro/g_8_4.png" alt="" draggable="false">
+      </div>
+    </div>
+  </div>
+</div>
+<!-- 21/10: o ícone do notch passou a ser a face do Omni; a chama (fumaca.js e a bancada dela) saiu da página -->
+<script src="ceu.js"></script>
+<script src="nucleo.js"></script>
+<script src="olho.js"></script>
+<script src="cofre-card.js"></script>
+<script src="renderer.js"></script>
+</body>
+</html>

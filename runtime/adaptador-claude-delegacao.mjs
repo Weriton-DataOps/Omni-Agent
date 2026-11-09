@@ -144,7 +144,7 @@ export async function contextoAutomacaoMelhoriasClaude(
 
 export async function contextoProximaAutomacaoClaude(
   casa,
-  { sessionId = 'session-unknown', hookEventName = 'UserPromptSubmit', at, onlyIfIdle = false } = {}
+  { sessionId = 'session-unknown', hookEventName = 'UserPromptSubmit', at, onlyIfIdle = false, interactiveOwnerSession = false } = {}
 ) {
   const [activeFailure, activeImprovement] = await Promise.all([
     localizarDespachoAtivoAutomacaoFalha(casa, { sessionId }, { at }),
@@ -153,6 +153,29 @@ export async function contextoProximaAutomacaoClaude(
   const [failures, improvements] = await Promise.all([lerAutomacaoFalhas(casa), lerAutomacaoMelhorias(casa)])
   if (failures.jobs.some(job => job.state === 'running') || improvements.jobs.some(job => job.state === 'running')) {
     return { kind: 'executor-running', context: null }
+  }
+  // Portão de sessão viva, afinado por estado E por momento. Durante o turno interativo do dono o
+  // loop NÃO convida o nascimento de executor de fundo novo: candidato pronto (queued/dispatch-ready)
+  // spawnaria a fase pesada (suíte com processos + mutação no repositório canônico), estourando
+  // janela de console e sujando a árvore no meio do trabalho ao vivo — foi o flood da
+  // apresentação (13/10). Esse fica para o contexto ocioso/não-interativo.
+  //
+  // DUAS exceções, ambas por NÃO spawnarem fase pesada na frente do dono:
+  // 1. onlyIfIdle (PostToolUse de ferramenta primária que DEU CERTO) é o ponto de CONTINUAÇÃO DE
+  //    FILA projetado — a ferramenta passou, a sessão progride, pega o próximo job. É o lugar
+  //    histórico do despacho (por isso o caminho PostToolUse já liga onlyIfIdle). O que precisa ser
+  //    contido é o prompt vivo do dono (UserPromptSubmit) e o candidato recém-nascido de uma FALHA
+  //    no turno vivo (PostToolUseFailure, onlyIfIdle=false) — não esta continuação controlada.
+  // 2. job ENDEREÇADO ao dono que não spawna nada: needs-owner (travado esperando a AUTORIDADE que
+  //    só ele concede) e diagnosisOnly (diagnóstico local somente leitura — o needs-owner de
+  //    reivindicação legada sem recibo é rebaixado a este na sincronização). Os dois PRECISAM
+  //    aparecer no turno vivo, senão o dono nunca vê o pedido/achado que é dirigido a ele.
+  // Candidato queued cru (diagnosisOnly=false), fora do ponto ocioso, segue adiado.
+  const jobEnderecadoAoDono = failures.jobs.some(
+    job => job.state === 'needs-owner' || job.diagnosisOnly === true
+  )
+  if (interactiveOwnerSession && !onlyIfIdle && !jobEnderecadoAoDono) {
+    return { kind: 'deferred-interactive-session', context: null }
   }
   if (onlyIfIdle && (activeFailure.job || activeImprovement.job)) return { kind: 'already-dispatched', context: null }
   if (activeFailure.job && activeImprovement.job) {

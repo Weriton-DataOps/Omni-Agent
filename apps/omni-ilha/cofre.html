@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:">
+<title>Cofre</title>
+<style>
+/* Janela do cofre (F1, plano 5, T6): a gestão das credenciais. Lista à esquerda, ficha à direita; a lixeira
+   troca a lista. Mesma família visual da ilha e do Overcore; verde-água no lugar do azul. O valor revelado
+   aparece numa caixa só, com prazo, e some ao trocar de credencial, ao perder o foco ou no fim do prazo.
+   Escalas: letra 11/13/16/22 (razão ~1,2 sobre 13), raio 4/8 e pílula, espaço em múltiplos de 4.
+   Um só botão cheio por tela: o de confirmar o que está aberto (guardar, trocar, restaurar). */
+:root {
+  --fundo: #11141a; --vidro: rgba(255, 255, 255, .035); --vidro-luz: rgba(255, 255, 255, .08);
+  --fio-luz: rgba(255, 255, 255, .12); --fio: rgba(255, 255, 255, .06);
+  --tinta: #e8ebf2; --tinta-2: #9aa2b5; --tinta-3: #8a91a3;
+  --cofre: #74d4c0; --verde: #9fe045; --laranja: #f5a35f; --vermelho: #f07b7b;
+  --l-meta: 11px; --l-corpo: 13px; --l-titulo: 16px; --l-numero: 22px;
+  --r-marca: 4px; --r: 8px; --r-pilula: 999px;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { font: 400 var(--l-corpo)/1.5 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; color: var(--tinta); background: var(--fundo); display: grid; grid-template-rows: 40px auto 1fr; overflow: hidden; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button:disabled { opacity: .45; cursor: default; }
+.topo { -webkit-app-region: drag; display: flex; align-items: center; gap: 12px; padding: 0 152px 0 16px; border-bottom: 1px solid var(--fio); }
+.topo h1 { font-size: var(--l-corpo); font-weight: 600; margin: 0; }
+.status { color: var(--tinta-2); font-size: var(--l-meta); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.status b { color: var(--laranja); font-weight: 600; }
+.vistas { -webkit-app-region: no-drag; display: flex; gap: 4px; margin-left: 12px; }
+.chip { border: 0; background: var(--vidro); box-shadow: inset 0 0 0 1px var(--fio); color: var(--tinta-2); font-size: var(--l-meta); padding: 4px 8px; border-radius: var(--r-pilula); cursor: pointer; white-space: nowrap; }
+.chip:hover { color: var(--tinta); }
+.chip.ativa { color: var(--tinta); background: rgba(116, 212, 192, .14); box-shadow: inset 0 0 0 1px rgba(116, 212, 192, .5); font-weight: 600; }
+.chip .n { margin-left: 4px; font-weight: 700; }
+.campo { -webkit-app-region: no-drag; height: 28px; padding: 0 8px; border: 0; border-radius: var(--r); font-size: var(--l-corpo); outline: none; background: var(--vidro); box-shadow: inset 0 0 0 1px var(--fio); }
+.campo:focus { box-shadow: inset 0 0 0 1px var(--cofre); }
+#busca { margin-left: auto; width: 200px; }
+.barra { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 16px; border-bottom: 1px solid var(--fio); }
+.barra .bt { margin-left: auto; }
+.corpo { display: grid; grid-template-columns: minmax(260px, 360px) 1fr; min-height: 0; }
+.lista { overflow-y: auto; padding: 8px; border-right: 1px solid var(--fio); display: flex; flex-direction: column; gap: 4px; }
+.item { -webkit-app-region: no-drag; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0 8px; width: 100%; text-align: left; border: 0; border-radius: var(--r); padding: 8px 12px; background: transparent; cursor: pointer; }
+.item:hover { background: var(--vidro); }
+.item.sel { background: rgba(116, 212, 192, .1); box-shadow: inset 0 0 0 1px rgba(116, 212, 192, .45); }
+.item .nome { font-weight: 600; font-size: var(--l-corpo); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.item .sub { grid-column: 1 / -1; color: var(--tinta-3); font-size: var(--l-meta); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.marcas { display: flex; gap: 4px; align-items: center; }
+.marca { font-size: var(--l-meta); font-weight: 700; letter-spacing: .04em; text-transform: uppercase; padding: 0 4px; border-radius: var(--r-marca); }
+.m-alerta { color: var(--laranja); box-shadow: inset 0 0 0 1px rgba(245, 163, 95, .45); }
+.m-falhou { color: var(--vermelho); box-shadow: inset 0 0 0 1px rgba(240, 123, 123, .45); }
+.m-gerenciador { color: var(--tinta-2); box-shadow: inset 0 0 0 1px var(--fio-luz); }
+.painel { overflow-y: auto; padding: 16px 24px; }
+.vazio { color: var(--tinta-3); padding: 8px 4px; }
+.painel h2 { margin: 0; font-size: var(--l-titulo); font-weight: 600; word-break: break-all; }
+.painel h3 { margin: 16px 0 4px; font-size: var(--l-corpo); font-weight: 600; color: var(--tinta-2); }
+.linha-titulo { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.etq { font-size: var(--l-meta); color: var(--tinta-2); }
+.ficha { display: grid; grid-template-columns: 128px 1fr; gap: 4px 16px; margin: 12px 0 0; }
+.ficha dt { color: var(--tinta-3); font-size: var(--l-meta); line-height: 20px; }
+.ficha dd { margin: 0; word-break: break-word; white-space: pre-wrap; }
+.ficha dd.nada { color: var(--tinta-3); }
+.teste-ok { color: var(--verde); } .teste-falhou { color: var(--vermelho); } .teste-nunca { color: var(--tinta-3); }
+.acoes { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
+.bt { -webkit-app-region: no-drag; border: 0; border-radius: var(--r); padding: 4px 12px; cursor: pointer; background: var(--vidro-luz); box-shadow: inset 0 0 0 1px var(--fio-luz); white-space: nowrap; }
+.bt:hover:not(:disabled) { background: rgba(255, 255, 255, .14); }
+.bt.forte { color: #0f1714; background: var(--cofre); box-shadow: none; font-weight: 600; }
+.bt.forte:hover:not(:disabled) { background: #8fe0cf; }
+.bt.perigo { background: rgba(240, 123, 123, .12); box-shadow: inset 0 0 0 1px rgba(240, 123, 123, .35); }
+.nota { color: var(--tinta-3); font-size: var(--l-meta); margin-top: 8px; }
+.msg { margin-top: 12px; }
+.msg.ok { color: var(--verde); } .msg.erro { color: var(--vermelho); } .msg.espera { color: var(--tinta-2); }
+.revelado { margin-top: 12px; padding: 12px; border-radius: var(--r); background: rgba(116, 212, 192, .07); box-shadow: inset 0 0 0 1px rgba(116, 212, 192, .35); }
+.revelado code { display: block; font: var(--l-corpo)/1.5 Consolas, "Cascadia Mono", monospace; word-break: break-all; user-select: all; }
+.revelado .rodape { display: flex; align-items: center; gap: 12px; margin-top: 8px; color: var(--tinta-2); font-size: var(--l-meta); }
+.form { display: grid; grid-template-columns: 128px 1fr; gap: 8px 16px; align-items: center; margin-top: 12px; max-width: 620px; }
+.form label { color: var(--tinta-2); }
+.form .campo { width: 100%; }
+.form textarea.campo { height: 64px; padding: 4px 8px; resize: vertical; }
+.form .acoes { grid-column: 2; margin-top: 4px; }
+.form .nota { grid-column: 2; margin-top: 0; }
+.confirma { margin-top: 16px; padding: 12px; border-radius: var(--r); background: rgba(240, 123, 123, .06); box-shadow: inset 0 0 0 1px rgba(240, 123, 123, .3); }
+.alertas { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.alertas button { border: 0; background: none; padding: 0; cursor: pointer; text-align: left; color: var(--tinta); }
+.alertas button:hover { color: var(--cofre); }
+.alertas .quando { color: var(--tinta-3); margin-left: 8px; font-size: var(--l-meta); }
+.numeros { display: flex; gap: 32px; margin-top: 12px; }
+.numeros div { display: flex; flex-direction: column; }
+.numeros strong { font-size: var(--l-numero); font-weight: 600; font-variant-numeric: tabular-nums; }
+.numeros span { color: var(--tinta-3); font-size: var(--l-meta); }
+.usos { margin: 0; padding: 0; list-style: none; }
+.usos li { display: grid; grid-template-columns: 120px 88px 1fr auto; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--fio); }
+.usos time { font: var(--l-meta)/20px Consolas, monospace; color: var(--tinta-3); }
+.usos .res { color: var(--tinta-2); }
+</style>
+</head>
+<body>
+<header class="topo">
+  <h1>Cofre</h1><span class="status" id="status">lendo…</span>
+  <nav class="vistas" id="vistas">
+    <button class="chip ativa" data-vista="credenciais">credenciais</button>
+    <button class="chip" data-vista="lixeira">lixeira</button>
+  </nav>
+  <input class="campo" id="busca" type="search" placeholder="Filtrar" spellcheck="false">
+  <button class="bt" id="nova">+ nova</button>
+</header>
+<div class="barra" id="barra">
+  <select class="campo" id="f-tipo" aria-label="tipo"></select>
+  <select class="campo" id="f-servico" aria-label="serviço"></select>
+  <select class="campo" id="f-agente" aria-label="agente"></select>
+  <select class="campo" id="f-situacao" aria-label="situação">
+    <option value="todas">todas as situações</option>
+    <option value="alerta">com alerta</option>
+    <option value="falhou">teste falhou</option>
+    <option value="nunca">nunca testada</option>
+    <option value="gerenciador">só no Gerenciador</option>
+  </select>
+  <button class="bt" id="duplicatas">conferir valores repetidos</button>
+</div>
+<main class="corpo">
+  <section class="lista" id="lista"></section>
+  <section class="painel" id="painel"></section>
+</main>
+<script src="cofre-janela.js"></script>
+</body>
+</html>

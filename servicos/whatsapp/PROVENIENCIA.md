@@ -80,7 +80,8 @@ O serviço limita requisições por IP, e tudo aqui vem de `127.0.0.1`: ponte, M
 
 ## Pasta `omni/` (nossa, não veio do projeto original)
 
-- `omni/iniciar.ps1` — sobe serviço e ponte em segundo plano, sem duplicar instância. Chamado no logon por um atalho na pasta Inicializar do Windows.
+- `omni/iniciar.ps1` — sobe serviço e ponte em segundo plano, sem duplicar instância. Chamado no logon por um atalho na pasta Inicializar do Windows e pelo vigia; chamadas simultâneas fazem fila numa trava nomeada (`Local\omni-whatsapp-iniciar`).
+- `omni/vigia-servico.mjs` (+ `vigia-servico.vbs`, que o Agendador chama sem janela, a cada 5 min) — confere disco, serviço, ponte e bot. Avisa no WhatsApp abaixo de 10 GB livres; religa pelo `iniciar.ps1` quando o processo some, guardando antes o log da queda em `logs\quedas`; com menos de 2 GB não religa. Problema que dura duas rodadas vira aviso na tela do Windows. `--teste` diz o que faria. Estado em `%APPDATA%\omni\whatsapp\vigia-servico.json`, ações em `logs\vigia-servico.log`.
 - `omni/config.mjs` — caminhos, sessões, dono, chaves do cofre e envio ao dono.
 - `omni/cofre.ps1` e `omni/cofre.mjs` — leitura e gravação no Gerenciador de Credenciais; o segredo passa só por stdin/stdout.
 - `omni/parear.mjs` — QR vivo para parear (`--bot` para a sessão do bot).

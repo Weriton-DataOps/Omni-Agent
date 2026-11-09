@@ -1,0 +1,47 @@
+{
+  "versao": 1,
+  "arte": "texturas/base.png",
+  "tamanho": [1254, 1254],
+  "geometria": {
+    "elipsoide": { "cx": 612, "cy": 650, "rx": 175, "ry": 260, "rz": 115 },
+    "pivo": [612, 930],
+    "sigilo": [612, 572],
+    "rosto": "M612,428 C660,428 720,452 752,500 C780,545 788,600 784,660 C780,730 752,790 706,842 C668,884 636,903 612,903 C588,903 556,884 518,842 C472,790 444,730 440,660 C436,600 444,545 472,500 C504,452 564,428 612,428 Z",
+    "corpo": "M520,836 L704,836 L724,884 L930,990 L1180,1254 L74,1254 L320,990 L500,884 Z",
+    "pescoco": "M520,836 L704,836 L745,960 L775,1010 L449,1010 L479,960 Z",
+    "orelhas": [[428, 640, 30, 72], [796, 640, 30, 72]]
+  },
+  "assar": {
+    "pena": 7,
+    "cabeloK": 0.3,
+    "cabeloZMax": 110,
+    "declive": 1.15,
+    "suaveZ": 4,
+    "ombroGraus": 8,
+    "pontaCabelo": [40, 340],
+    "suavePesos": 10,
+    "faixaPescoco": 230,
+    "suavePonta": 20,
+    "cabeloTopo": 700
+  },
+  "profundidade": { "zmin": -256, "escala": 128 },
+  "parametros": [
+    { "id": "AnguloX", "min": -1, "padrao": 0, "max": 1, "graus": 22, "mola": { "f": 1.8, "zeta": 0.7, "r": -0.2 }, "grupo": "pose" },
+    { "id": "AnguloY", "min": -1, "padrao": 0, "max": 1, "graus": 14, "mola": { "f": 1.8, "zeta": 0.7, "r": -0.2 }, "grupo": "pose" },
+    { "id": "AnguloZ", "min": -1, "padrao": 0, "max": 1, "graus": 12, "mola": { "f": 1.5, "zeta": 0.75, "r": 0 }, "grupo": "pose" },
+    { "id": "Respira", "min": 0, "padrao": 0, "max": 1, "mola": null, "grupo": "corpo" },
+    { "id": "CabeloAtraso", "min": 0, "padrao": 1, "max": 1.5, "mola": null, "grupo": "cabelo" }
+  ],
+  "rig": {
+    "pescoco": { "yaw": 0.35, "pitch": 0.4, "roll": 0.3, "atraso": 0.08 },
+    "ombros": { "yaw": 0.1 },
+    "respira": { "ombros": 4, "gola": 3, "cabeca": 2, "atrasoCabeca": 0.25, "ciclo": 4.2 },
+    "cabelo": { "f": 1.2, "zeta": 0.35 }
+  },
+  "malhas": [{ "id": "unica", "grade": [96, 96], "area": [0, 0, 1254, 1254] }],
+  "deformadores": [
+    { "id": "cabeca", "pai": "pescoco", "pivo": [612, 930], "peso": "pesos.R (rosto, orelhas e cabelo acima do ombro)" },
+    { "id": "pescoco", "pai": "ombros", "pivo": [612, 930], "peso": "pesos.G" },
+    { "id": "ombros", "pai": null, "pivo": [612, 930], "peso": "1 - pesos.R - pesos.G" }
+  ]
+}

@@ -8,7 +8,9 @@ const ORDER = [
   'daily-scan',
   'system-audit',
   'personality-eval',
-  'operational-release'
+  'operational-release',
+  'durable-missions',
+  'operational-learning'
 ]
 
 function dependencies({ failures = new Map(), calls = [] } = {}) {
@@ -24,6 +26,8 @@ function dependencies({ failures = new Map(), calls = [] } = {}) {
     auditarSaudeSistema: execute('system-audit'),
     processarFilaEvalPersonalidade: execute('personality-eval'),
     processarReleasePendenteMelhoria: execute('operational-release'),
+    sincronizarMissoesDuraveis: execute('durable-missions'),
+    sincronizarAprendizadoOperacional: execute('operational-learning'),
     registrarTelemetriaAutocorrecao: async (_casa, input) => {
       assert.equal(input.profile, 'maintenance')
       return { status: 'healthy' }
@@ -41,7 +45,7 @@ test('falha na varredura nao impede auditoria, eval ou release no mesmo ciclo', 
 
   assert.deepEqual(calls.map((item) => item.stage), ORDER)
   assert.equal(result.stages[0].status, 'rejected')
-  assert.equal(result.stages.filter((item) => item.status === 'fulfilled').length, 3)
+  assert.equal(result.stages.filter((item) => item.status === 'fulfilled').length, 5)
   assert.equal(result.suppressOutput, true)
   assert.equal(result.maintenance, 'completed')
   assert.equal(result.telemetry, 'persisted')
@@ -100,8 +104,38 @@ test('caminho feliz preserva ordem e evita reconciliacao duplicada na auditoria'
   assert.deepEqual(calls[1].args, [CASA, { repair: true, reconcile: false }])
   assert.deepEqual(calls[2].args, [{ casa: CASA }])
   assert.deepEqual(calls[3].args, [CASA])
+  assert.deepEqual(calls[4].args, [CASA])
+  assert.deepEqual(calls[5].args, [CASA])
   assert.ok(result.stages.every((item) => item.status === 'fulfilled'))
   assert.ok(result.stages.every((item) => /^[a-f0-9]{64}$/.test(item.resultFingerprint)))
+})
+
+test('os syncs duraveis rodam off-turn, depois da release, com casa e isolados entre si', async () => {
+  // Estes dois saíram do caminho quente do UserPromptSubmit (N+1 ao broker/PG). O teste
+  // fica vermelho se alguém: (a) remover uma stage, (b) religá-la antes da release,
+  // (c) passar algo diferente de [CASA], ou (d) deixar uma falha de uma contaminar a outra.
+  const calls = []
+  const result = await tratarHookVarredura(
+    { hook_event_name: 'Stop' },
+    {},
+    dependencies({ failures: new Map([['durable-missions', 'LEDGER-BRUTO-NAO-VAZAR']]), calls })
+  )
+
+  const sequencia = calls.map((item) => item.stage)
+  const posRelease = sequencia.indexOf('operational-release')
+  const posMissoes = sequencia.indexOf('durable-missions')
+  const posAprendizado = sequencia.indexOf('operational-learning')
+
+  assert.ok(posMissoes > posRelease, 'durable-missions tem de vir depois da release')
+  assert.ok(posAprendizado > posMissoes, 'operational-learning tem de vir depois de durable-missions')
+  assert.deepEqual(calls[posMissoes].args, [CASA])
+  assert.deepEqual(calls[posAprendizado].args, [CASA])
+
+  const missoes = result.stages.find((item) => item.stage === 'durable-missions')
+  const aprendizado = result.stages.find((item) => item.stage === 'operational-learning')
+  assert.equal(missoes.status, 'rejected')
+  assert.equal(aprendizado.status, 'fulfilled')
+  assert.doesNotMatch(JSON.stringify(result), /LEDGER-BRUTO-NAO-VAZAR/)
 })
 
 test('single-flight agrega evento concorrente sem iniciar uma segunda manutencao', async () => {

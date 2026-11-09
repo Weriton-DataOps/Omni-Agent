@@ -1,8 +1,9 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdir, open, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises'
+import { mkdir, open, readFile, stat, unlink, writeFile } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
 
 import { lerAuditoriaAutocorrecao } from './auditoria-autocorrecao.mjs'
+import { carregarTextoDoEstado, gravarTextoDoEstado } from './estados.mjs'
 import { pareceConterSegredo } from './memoria.mjs'
 
 export const FAILURE_STORE_SCHEMA_VERSION = 6
@@ -372,37 +373,37 @@ async function acquireLock(casa) {
   throw new Error('O aprendizado de falhas está ocupado por outra escrita.')
 }
 
+// Carga sob a trava (acquireLock), pela ponte do omni.db. Sem estado em lugar nenhum, a ponte
+// devolve null e o dono começa vazio; a migração de esquema segue aqui, com o backup.
 async function load(casa, policy) {
   const path = caminhoDasFalhas(casa)
-  try {
-    const raw = await readFile(path, 'utf8')
-    let store = JSON.parse(raw)
-    if (store.schemaVersion > FAILURE_STORE_SCHEMA_VERSION) {
-      throw new Error(`Aprendizado de falhas v${store.schemaVersion} é mais novo que este plugin.`)
-    }
-    if ([1, 2, 3, 4, 5].includes(store.schemaVersion)) {
-      await backupBeforeMigration(path, raw, store.schemaVersion)
-      if (store.schemaVersion === 1) store = migrateV1(store)
-      if (store.schemaVersion === 2) store = migrateV2(store)
-      if (store.schemaVersion === 3) store = migrateV3(store)
-      if (store.schemaVersion === 4) store = migrateV4(store)
-      if (store.schemaVersion === 5) store = migrateV5(store)
-    }
-    validateStore(store, path, policy)
-    return { store, initialized: false, migrated: store.schemaVersion !== JSON.parse(raw).schemaVersion }
-  } catch (error) {
-    if (error?.code === 'ENOENT') return { store: emptyStore(), initialized: true }
-    throw error
+  const raw = carregarTextoDoEstado(casa, 'learning/failures.json', {
+    versao: FAILURE_STORE_SCHEMA_VERSION,
+    validar: (doc) => validateStore(doc, path, policy)
+  })
+  if (raw === null) return { store: emptyStore(), initialized: true }
+  let store = JSON.parse(raw)
+  if (store.schemaVersion > FAILURE_STORE_SCHEMA_VERSION) {
+    throw new Error(`Aprendizado de falhas v${store.schemaVersion} é mais novo que este plugin.`)
   }
+  if ([1, 2, 3, 4, 5].includes(store.schemaVersion)) {
+    await backupBeforeMigration(path, raw, store.schemaVersion)
+    if (store.schemaVersion === 1) store = migrateV1(store)
+    if (store.schemaVersion === 2) store = migrateV2(store)
+    if (store.schemaVersion === 3) store = migrateV3(store)
+    if (store.schemaVersion === 4) store = migrateV4(store)
+    if (store.schemaVersion === 5) store = migrateV5(store)
+  }
+  validateStore(store, path, policy)
+  return { store, initialized: false, migrated: store.schemaVersion !== JSON.parse(raw).schemaVersion }
 }
 
+// Escrita pela ponte: banco, arquivo e base na mesma transação.
 async function save(casa, store, policy) {
   const path = caminhoDasFalhas(casa)
-  const temporary = `${path}.${process.pid}.novo`
   store.store.updatedAt = now()
   validateStore(store, path, policy)
-  await writeFile(temporary, `${JSON.stringify(store, null, 2)}\n`, 'utf8')
-  await rename(temporary, path)
+  gravarTextoDoEstado(casa, 'learning/failures.json', `${JSON.stringify(store, null, 2)}\n`)
 }
 
 export async function lerFalhas(casa) {

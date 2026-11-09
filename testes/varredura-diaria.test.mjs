@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { appendFile, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { appendFile, mkdir, mkdtemp, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
@@ -20,6 +20,7 @@ import {
   registrarCoberturaAoVivo,
   varrerAtividadesDoDia
 } from '../runtime/varredura-diaria.mjs'
+import { comBancoDaCasa, pastaDoBanco } from '../runtime/casa/banco.mjs'
 
 function inicializarGit(repo) {
   for (const args of [
@@ -45,6 +46,18 @@ function registro(sessionId, uuid, timestamp, role, content, extra = {}) {
     message: { role, content },
     ...extra
   })
+}
+
+// Degradações anotadas na casa de teste. Arquivo ausente vale lista vazia: um "nada foi anotado"
+// precisa cair na asserção que compara as operações, não num ENOENT da leitura.
+async function lerAnotadas(home) {
+  try {
+    const bruto = await readFile(join(pastaDoBanco(home), 'degradacoes.jsonl'), 'utf8')
+    return bruto.split('\n').filter(Boolean).map((linha) => JSON.parse(linha))
+  } catch (erro) {
+    if (erro?.code === 'ENOENT') return []
+    throw erro
+  }
 }
 
 function transcriptOmni(sessionId, date = '2026-08-26') {
@@ -454,6 +467,257 @@ test('ativacao vinda apenas de subagente nao habilita a sessao principal', async
     assert.equal(result.scan.activitiesFound, 0)
     assert.equal(result.scan.activitiesProcessed, 0)
     assert.equal((await lerMemoria(home)).confirmed.length, 0)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+// A reconciliação dos .md (plano 2 da F1) olha a pasta de projetos da casa, nunca a origem dos
+// JSONL: --origem e diagnóstico podem apontar outra pasta, e ela não pode redirecionar a projeção.
+test('varredura concluida reconcilia os .md da memoria da casa, nao os da origem dos JSONL', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'omni-daily-documentos-'))
+  const home = join(root, 'home')
+  const projects = join(root, 'projects')
+  const memoriaDaCasa = join(home, 'claude', 'projects', 'proj-a', 'memory')
+  try {
+    await mkdir(memoriaDaCasa, { recursive: true })
+    await writeFile(join(memoriaDaCasa, 'a.md'), '# memoria da casa\n', 'utf8')
+    await mkdir(join(projects, 'proj-z', 'memory'), { recursive: true })
+    await writeFile(join(projects, 'proj-z', 'memory', 'z.md'), '# fora da casa\n', 'utf8')
+    const result = await varrerAtividadesDoDia(home, {
+      date: '2026-08-28',
+      projectsRoot: projects,
+      now: new Date('2026-08-28T12:00:00-03:00')
+    })
+    assert.equal(result.result, 'completed')
+    assert.equal(result.documentos.resultado, 'concluida')
+    assert.equal(result.documentos.contagens.ingeridos, 1)
+    const ids = comBancoDaCasa(home, 'omni', (db) => db.prepare('SELECT id FROM documentos ORDER BY id').all().map((linha) => linha.id))
+    assert.deepEqual(ids, ['claude-projects/proj-a/memory/a.md'])
+    assert.equal((await lerEstadoVarredura(home)).scans.at(-1).documentos, undefined)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('varredura automatica fora do horario nao reconcilia os .md', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'omni-daily-documentos-due-'))
+  const home = join(root, 'home')
+  const projects = join(root, 'projects')
+  const memoriaDaCasa = join(home, 'claude', 'projects', 'proj-a', 'memory')
+  try {
+    await mkdir(projects, { recursive: true })
+    await mkdir(memoriaDaCasa, { recursive: true })
+    await writeFile(join(memoriaDaCasa, 'a.md'), 'a\n', 'utf8')
+    const primeira = await varrerAtividadesDoDia(home, {
+      date: '2026-08-28',
+      projectsRoot: projects,
+      automatic: true,
+      now: new Date('2026-08-28T12:00:00-03:00')
+    })
+    assert.equal(primeira.result, 'completed')
+    assert.equal(primeira.documentos.contagens.ingeridos, 1)
+    await writeFile(join(memoriaDaCasa, 'b.md'), 'b\n', 'utf8')
+    const segunda = await varrerAtividadesDoDia(home, {
+      date: '2026-08-28',
+      projectsRoot: projects,
+      automatic: true,
+      now: new Date('2026-08-28T12:05:00-03:00')
+    })
+    assert.equal(segunda.result, 'not-due')
+    assert.equal(segunda.documentos, undefined)
+    const ids = comBancoDaCasa(home, 'omni', (db) => db.prepare('SELECT id FROM documentos ORDER BY id').all().map((linha) => linha.id))
+    assert.deepEqual(ids, ['claude-projects/proj-a/memory/a.md'])
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+// Uma pasta antiga no lugar da trava da reconciliação (só dela: runs/ segue pasta, e o resto da
+// varredura usa runs/) faz a recuperação de trava velha tropeçar em EISDIR, e
+// reconciliarDocumentosMd rejeita: a varredura conclui assim mesmo, com o estado salvo e a
+// degradação anotada.
+test('reconciliacao que rejeita vira degradacao anotada e nao desfaz a varredura', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'omni-daily-documentos-falha-'))
+  const home = join(root, 'home')
+  const projects = join(root, 'projects')
+  const memoriaDaCasa = join(home, 'claude', 'projects', 'proj-a', 'memory')
+  const travaDaReconciliacao = join(home, 'runs', 'documentos-md.lock')
+  try {
+    await mkdir(projects, { recursive: true })
+    await mkdir(memoriaDaCasa, { recursive: true })
+    await writeFile(join(memoriaDaCasa, 'a.md'), 'a\n', 'utf8')
+    await mkdir(travaDaReconciliacao, { recursive: true })
+    await utimes(travaDaReconciliacao, new Date('2020-01-01T00:00:00Z'), new Date('2020-01-01T00:00:00Z'))
+    let result
+    await assert.doesNotReject(async () => {
+      result = await varrerAtividadesDoDia(home, {
+        date: '2026-08-28',
+        projectsRoot: projects,
+        now: new Date('2026-08-28T12:00:00-03:00')
+      })
+    })
+    assert.equal(result.result, 'completed')
+    assert.deepEqual(result.documentos, { resultado: 'degradada' })
+    assert.equal((await lerEstadoVarredura(home)).scans.length, 1)
+    const anotadas = await lerAnotadas(home)
+    assert.deepEqual(anotadas.map((linha) => linha.operacao), ['documentos.varredura'])
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+// Plano 3 da F1: depois dos documentos, a varredura põe no omni.db os estados de learning/ e
+// feedback/ que nenhum dono carregou. Falhas e atalhos, que a própria varredura carrega antes,
+// chegam pela ponte do dono e aparecem como presentes; a continuidade é espelho da loja TS.
+const RECIBOS = 'learning/evolution-receipts.json'
+const CONTINUIDADE = 'feedback/personality-continuity.json'
+const recibosVazios = () => ({
+  schemaVersion: 1,
+  store: { id: 'omni-evolution-receipts', createdAt: '2026-08-27T10:00:00.000Z', updatedAt: '2026-08-27T10:00:00.000Z' },
+  receipts: []
+})
+const continuidadeVazia = () => ({ schemaVersion: 1, observations: [] })
+async function semearEstado(home, rel, doc) {
+  const [pasta, nome] = rel.split('/')
+  await mkdir(join(home, pasta), { recursive: true })
+  await writeFile(join(home, pasta, nome), `${JSON.stringify(doc, null, 2)}\n`, 'utf8')
+}
+function estadosNoBanco(home) {
+  return comBancoDaCasa(home, 'omni', (db) => db.prepare('SELECT id FROM estados ORDER BY id').all().map((linha) => linha.id))
+}
+
+test('varredura concluida poe no omni.db os estados que nenhum dono carregou', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'omni-daily-estados-'))
+  const home = join(root, 'home')
+  const projects = join(root, 'projects')
+  try {
+    await mkdir(projects, { recursive: true })
+    await semearEstado(home, RECIBOS, recibosVazios())
+    await semearEstado(home, CONTINUIDADE, continuidadeVazia())
+    const result = await varrerAtividadesDoDia(home, {
+      date: '2026-08-28',
+      projectsRoot: projects,
+      now: new Date('2026-08-28T12:00:00-03:00')
+    })
+    assert.equal(result.result, 'completed')
+    assert.deepEqual(Object.keys(result), ['result', 'scan', 'documentos', 'estados'], 'a varredura concluida nao devolveu os estados')
+    assert.deepEqual(result.estados, {
+      resultado: 'feita',
+      arquivos: {
+        'learning/failures.json': 'presente',
+        'learning/failure-automation.json': 'sem-arquivo',
+        'learning/self-improvement.json': 'sem-arquivo',
+        'learning/shortcuts.json': 'presente',
+        [RECIBOS]: 'importada',
+        'feedback/personality-feedback.json': 'sem-arquivo',
+        [CONTINUIDADE]: 'importada',
+        'feedback/personality-owner-directions.json': 'vazia'
+      }
+    })
+    assert.deepEqual(estadosNoBanco(home), [CONTINUIDADE, RECIBOS, 'learning/failures.json', 'learning/shortcuts.json'])
+    assert.equal((await lerEstadoVarredura(home)).scans.at(-1).estados, undefined)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('varredura automatica fora do horario nao reconcilia os estados', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'omni-daily-estados-due-'))
+  const home = join(root, 'home')
+  const projects = join(root, 'projects')
+  try {
+    await mkdir(projects, { recursive: true })
+    await semearEstado(home, RECIBOS, recibosVazios())
+    const primeira = await varrerAtividadesDoDia(home, {
+      date: '2026-08-28',
+      projectsRoot: projects,
+      automatic: true,
+      now: new Date('2026-08-28T12:00:00-03:00')
+    })
+    assert.equal(primeira.result, 'completed')
+    assert.equal(primeira.estados?.arquivos[RECIBOS], 'importada', 'a primeira passada nao importou os recibos')
+    await semearEstado(home, CONTINUIDADE, continuidadeVazia())
+    const segunda = await varrerAtividadesDoDia(home, {
+      date: '2026-08-28',
+      projectsRoot: projects,
+      automatic: true,
+      now: new Date('2026-08-28T12:05:00-03:00')
+    })
+    assert.equal(segunda.result, 'not-due')
+    assert.equal(segunda.estados, undefined)
+    assert.equal(estadosNoBanco(home).includes(CONTINUIDADE), false, 'a passada not-due reconciliou a continuidade')
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+// Uma pasta no lugar dos recibos faz a importação tropeçar em EISDIR: o estado degrada, a
+// continuidade segue e a varredura conclui com o estado salvo e a degradação anotada.
+test('estado que falha na varredura vira degradacao anotada e nao desfaz a varredura', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'omni-daily-estados-falha-'))
+  const home = join(root, 'home')
+  const projects = join(root, 'projects')
+  try {
+    await mkdir(projects, { recursive: true })
+    await mkdir(join(home, 'learning', 'evolution-receipts.json'), { recursive: true })
+    await semearEstado(home, CONTINUIDADE, continuidadeVazia())
+    let result
+    await assert.doesNotReject(async () => {
+      result = await varrerAtividadesDoDia(home, {
+        date: '2026-08-28',
+        projectsRoot: projects,
+        now: new Date('2026-08-28T12:00:00-03:00')
+      })
+    })
+    assert.equal(result.result, 'completed')
+    assert.equal(result.estados?.arquivos[RECIBOS], 'degradada', 'os recibos quebrados nao viraram degradacao')
+    assert.equal(result.estados.arquivos[CONTINUIDADE], 'importada')
+    assert.equal((await lerEstadoVarredura(home)).scans.length, 1)
+    const anotadas = await lerAnotadas(home)
+    assert.deepEqual(anotadas.map((linha) => linha.operacao), ['estados.varredura'])
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+// O placar da varredura (contadores antes e depois) não cancela o jogo. Uma pasta antiga no lugar
+// da trava da memória faz lerMemoria rejeitar nas duas pontas, como a memória ocupada por outro
+// processo: a varredura conclui, o placar fica null, a atividade já processada fica salva no
+// estado e cada leitura que caiu vira degradação anotada.
+test('contador que rejeita vira degradacao anotada e nao desfaz a varredura', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'omni-daily-contadores-falha-'))
+  const home = join(root, 'home')
+  const projects = join(root, 'projects')
+  const sessionId = 'session-contadores'
+  const travaDaMemoria = join(home, 'memory', 'memory.lock')
+  try {
+    await mkdir(projects, { recursive: true })
+    await writeFile(join(projects, 'contadores.jsonl'), [
+      registro(sessionId, 'activation', '2026-08-28T09:00:00-03:00', 'user', '<command-name>/omni:omni</command-name>'),
+      registro(sessionId, 'prompt', '2026-08-28T09:01:00-03:00', 'user', 'Verifique a tarefa agendada.'),
+      registro(sessionId, 'answer', '2026-08-28T09:02:00-03:00', 'assistant', [{ type: 'text', text: 'Verificada.' }])
+    ].join('\n') + '\n', 'utf8')
+    await mkdir(travaDaMemoria, { recursive: true })
+    await utimes(travaDaMemoria, new Date('2020-01-01T00:00:00Z'), new Date('2020-01-01T00:00:00Z'))
+    let result
+    await assert.doesNotReject(async () => {
+      result = await varrerAtividadesDoDia(home, {
+        date: '2026-08-28',
+        projectsRoot: projects,
+        now: new Date('2026-08-28T12:00:00-03:00')
+      })
+    })
+    assert.equal(result.result, 'completed')
+    assert.equal(result.scan.activitiesProcessed, 1)
+    assert.equal(result.scan.before, null, 'o placar de antes inventou contagem sem a memoria')
+    assert.equal(result.scan.after, null, 'o placar de depois inventou contagem sem a memoria')
+    assert.equal(result.scan.changes, null, 'a diferenca saiu de um placar que nao existe')
+    const estado = await lerEstadoVarredura(home)
+    assert.equal(estado.scans.length, 1)
+    assert.equal(estado.processedEvidence.length, 1, 'a atividade processada nao ficou salva')
+    const anotadas = await lerAnotadas(home)
+    assert.deepEqual(anotadas.map((linha) => linha.operacao), ['contadores.varredura', 'contadores.varredura'])
   } finally {
     await rm(root, { recursive: true, force: true })
   }

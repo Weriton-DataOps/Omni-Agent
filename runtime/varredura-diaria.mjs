@@ -13,6 +13,9 @@ import { analisarExperiencias } from './pipeline-memoria.mjs'
 import { materializarMelhoriaComBaselineConfigurada } from './automacao-melhorias.mjs'
 import { fingerprintObjetivo } from './passe.mjs'
 import { auditarDesktop } from './auditoria-desktop.mjs'
+import { registrarDegradacao } from './casa/banco.mjs'
+import { reconciliarDocumentosMd } from './documentos-md.mjs'
+import { reconciliarEstados } from './estados.mjs'
 
 export const DAILY_SCAN_SCHEMA_VERSION = 2
 const CONTRACT_PATH = new URL('../contratos/aprendizado/varredura-diaria.json', import.meta.url)
@@ -670,18 +673,38 @@ function memoriaJaCapturadaNoDia(memory, analysis, scope, activityDate) {
   )
 }
 
+// O placar da varredura não cancela o jogo: os quatro leitores assentam juntos (nenhum fica
+// rodando depois que a trava sai) e, se algum rejeitar, cada falha vira degradação anotada e o
+// placar fica null. O estado da varredura é salvo do mesmo jeito; sem isso, uma memória ocupada
+// por outro processo no fim da passada jogava fora cursores e evidências já processadas.
 async function contadores(casa) {
-  const [memory, failures, shortcuts, cycle] = await Promise.all([
+  const leituras = await Promise.allSettled([
     lerMemoria(casa),
     lerFalhas(casa),
     lerAtalhos(casa),
     lerCicloOperacional(casa)
   ])
+  const falhas = leituras.filter((leitura) => leitura.status === 'rejected')
+  for (const falha of falhas) registrarDegradacao(casa, 'contadores.varredura', falha.reason)
+  if (falhas.length > 0) return null
+  const [memory, failures, shortcuts, cycle] = leituras.map((leitura) => leitura.value)
   return {
     memory: { confirmed: memory.confirmed.length, candidates: memory.candidates.length },
     failures: failures.patterns.length,
     shortcuts: shortcuts.shortcuts.length,
     operationalImprovements: cycle.improvementCandidates.length
+  }
+}
+
+// Diferença entre os dois placares; sem um dos lados não existe diferença honesta para contar.
+function mudancas(before, after) {
+  if (before === null || after === null) return null
+  return {
+    confirmedMemories: after.memory.confirmed - before.memory.confirmed,
+    candidateMemories: after.memory.candidates - before.memory.candidates,
+    failurePatterns: after.failures - before.failures,
+    shortcuts: after.shortcuts - before.shortcuts,
+    operationalImprovements: after.operationalImprovements - before.operationalImprovements
   }
 }
 
@@ -892,19 +915,28 @@ export async function varrerAtividadesDoDia(casa, {
       desktopAudit,
       before,
       after,
-      changes: {
-        confirmedMemories: after.memory.confirmed - before.memory.confirmed,
-        candidateMemories: after.memory.candidates - before.memory.candidates,
-        failurePatterns: after.failures - before.failures,
-        shortcuts: after.shortcuts - before.shortcuts,
-        operationalImprovements: after.operationalImprovements - before.operationalImprovements
-      },
+      changes: mudancas(before, after),
       rawConversationStored: false,
       completedAt: now.toISOString()
     }
     store.scans = [...store.scans, scan].slice(-policy.maximumScanHistory)
     await salvar(casa, store)
-    return { result: 'completed', scan }
+    // Os .md da memória do Claude Code entram no omni.db depois do estado da varredura salvo:
+    // falha aqui vira degradação anotada e nunca desfaz a varredura (plano 2 da F1). A pasta é a
+    // da casa, não a projectsRoot: a origem dos JSONL pode ser outra (diagnóstico, --origem) e
+    // não pode redirecionar a projeção.
+    let documentos
+    try {
+      documentos = await reconciliarDocumentosMd(casa)
+    } catch (erro) {
+      registrarDegradacao(casa, 'documentos.varredura', erro)
+      documentos = { resultado: 'degradada' }
+    }
+    // Os estados de learning/ e feedback/ entram no omni.db depois dos documentos (plano 3 da F1):
+    // a varredura importa os p2 que nenhum dono carregou e acompanha os dois espelhos. Sem
+    // try/catch: reconciliarEstados degrada cada estado no próprio try e não rejeita.
+    const estados = await reconciliarEstados(casa)
+    return { result: 'completed', scan, documentos, estados }
   } finally {
     await release()
   }

@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 
+import { sqliteDisponivel } from '../runtime/casa/banco.mjs'
 import {
   caminhoDoFeedbackPersonalidade,
   classificarFeedbackPersonalidade,
@@ -236,7 +237,7 @@ test('sinal repetido permanece candidata local revisavel e nao altera galeria', 
     assert.equal(summary.counts.reviewableCandidates >= 2, true)
     assert.ok(summary.persistentAdjustment.directives.includes('increase-contextual-humor'))
     assert.ok(summary.persistentAdjustment.directives.includes('increase-tone-presence'))
-    assert.deepEqual(await readdir(casa), ['feedback'])
+    assert.deepEqual((await readdir(casa)).sort(), sqliteDisponivel() ? ['casa', 'feedback'] : ['feedback'])
   } finally {
     await rm(casa, { recursive: true, force: true })
   }
@@ -368,6 +369,40 @@ test('escrita concorrente e atomica e retencao limita respostas por sessao', asy
     assert.equal(store.retention.evictedVotes, 0)
     assert.equal(new Set(store.lastResponses.map((item) => item.sessionFingerprint)).size, 100)
   } finally {
+    await rm(casa, { recursive: true, force: true })
+  }
+})
+
+test('escritores do mesmo processo fazem fila e nenhum estoura o prazo da trava', async () => {
+  // A seção crítica abre o omni.db de forma síncrona: sem fila no processo, a vez de cada irmão
+  // consome o prazo de 2 s dos outros com o loop bloqueado, sem deixá-los tentar de novo.
+  const casa = await home()
+  try {
+    const resultados = await Promise.allSettled(Array.from({ length: 40 }, (_, index) => response(casa, `fila-${index}`)))
+    assert.deepEqual(resultados.filter((item) => item.status === 'rejected').map((item) => item.reason?.message), [])
+    const store = await lerFeedbackPersonalidade(casa)
+    assert.equal(store.lastResponses.length, 40)
+    assert.equal(new Set(store.lastResponses.map((item) => item.sessionFingerprint)).size, 40)
+  } finally {
+    await rm(casa, { recursive: true, force: true })
+  }
+})
+
+test('recusa por trava ocupada nao prende a fila do processo', async () => {
+  const casa = await home()
+  const lockPath = join(casa, 'feedback', 'personality-feedback.lock')
+  let relogio
+  try {
+    await mkdir(join(casa, 'feedback'), { recursive: true })
+    await writeFile(lockPath, 'writer-original\n', 'utf8')
+    await assert.rejects(() => response(casa, 'antes-da-recusa'), /ocupado por outra escrita/)
+    await rm(lockPath, { force: true })
+    const presa = new Promise((resolve) => { relogio = setTimeout(() => resolve('presa na fila'), 8_000) })
+    const desfecho = await Promise.race([response(casa, 'depois-da-recusa').then(() => 'gravou'), presa])
+    assert.equal(desfecho, 'gravou')
+    assert.equal((await lerFeedbackPersonalidade(casa)).lastResponses.length, 1)
+  } finally {
+    clearTimeout(relogio)
     await rm(casa, { recursive: true, force: true })
   }
 })

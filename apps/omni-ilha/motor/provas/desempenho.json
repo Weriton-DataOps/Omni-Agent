@@ -1,0 +1,71 @@
+{
+  "placa": "ANGLE (NVIDIA, NVIDIA GeForce GTX 1650 (0x00001F9D) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+  "gtx1650": true,
+  "criterio": "média do tempo de GPU (timer query) de 300 quadros da cena do giro a 512x512 <= 3 ms, na GTX 1650",
+  "malha": {
+    "vertices": 9216,
+    "triangulos": 18050
+  },
+  "a512": {
+    "lado": 512,
+    "quadrosMedidos": 300,
+    "perdidosPorDisjuncao": 0,
+    "gpuMs": {
+      "n": 300,
+      "media": 0.0612,
+      "mediana": 0.0609,
+      "p95": 0.0677,
+      "max": 0.0737,
+      "min": 0.0555
+    },
+    "cpuMs": {
+      "n": 300,
+      "media": 0.0407,
+      "mediana": 0,
+      "p95": 0.1,
+      "max": 0.3,
+      "min": 0
+    },
+    "primeiraPassadaFria": {
+      "gpuMs": {
+        "n": 300,
+        "media": 0.0614,
+        "mediana": 0.0605,
+        "p95": 0.0678,
+        "max": 0.0728,
+        "min": 0.0559
+      }
+    },
+    "paredeComSincroniaMs": {
+      "n": 300,
+      "media": 0.4273,
+      "mediana": 0.4,
+      "p95": 0.6,
+      "max": 0.8,
+      "min": 0.2
+    }
+  },
+  "resolucaoCheia": {
+    "lado": 1254,
+    "quadrosMedidos": 300,
+    "perdidosPorDisjuncao": 0,
+    "gpuMs": {
+      "n": 300,
+      "media": 0.1348,
+      "mediana": 0.1349,
+      "p95": 0.1387,
+      "max": 0.1451,
+      "min": 0.1295
+    },
+    "cpuMs": {
+      "n": 300,
+      "media": 0.0377,
+      "mediana": 0,
+      "p95": 0.1,
+      "max": 0.3,
+      "min": 0
+    }
+  },
+  "passou": true,
+  "medidoEm": "2026-10-19T16:37:54.649Z"
+}
