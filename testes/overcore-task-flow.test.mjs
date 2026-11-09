@@ -71,7 +71,7 @@ test('configuração privada, contexto por turno e observação retomam a mesma 
     assert.equal(repeated.notification.ownerUpdate,'silent')
     const context = await contextoFluxosOvercore(directory, session, env)
     const assembled = buildHookTurnContext({ persona: null, projection: '', externalTasks: context + '\n' + 'Excesso auxiliar.'.repeat(1500) })
-    assert.ok(assembled.characters <= 9500)
+    assert.ok(assembled.characters <= 9_900)
     assert.match(assembled.text, new RegExp(flow.flowId))
     assert.doesNotMatch(assembled.text, new RegExp(token))
     done = true

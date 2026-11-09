@@ -14,6 +14,7 @@ import {
   limitLegacyAdditionalContext,
   renderLegacyAdditionalContext
 } from '../dist/application/build-turn-context/build-hook-context.js'
+import { DEFAULT_INLINE_CONTEXT_BUDGET } from '../dist/core/context/context-block.js'
 import {
   renderCompactPersonalityAnchor,
   renderPersistentPersonalityDirection,
@@ -114,7 +115,9 @@ function avisoDegradacao(falhas) {
 
 function saidaComContexto(hookEventName, additionalContext, metadata = null) {
   const text = String(additionalContext ?? '')
-  if (text.length > 9_500) throw new Error('Contexto do hook excedeu o orçamento block-aware de 9.500 caracteres.')
+  if (text.length > DEFAULT_INLINE_CONTEXT_BUDGET) {
+    throw new Error(`Contexto do hook excedeu o orçamento block-aware de ${DEFAULT_INLINE_CONTEXT_BUDGET} caracteres.`)
+  }
   return {
     suppressOutput: true,
     hookSpecificOutput: {

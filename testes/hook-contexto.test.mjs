@@ -218,7 +218,7 @@ test('limite inline preserva projeção recuperada mesmo quando blocos anteriore
   })
   const limitado = limitarContextoAdicional(contexto, 'SENTINEL_ENCERRAMENTO_CRITICO')
 
-  assert.ok(limitado.length <= 9_500)
+  assert.ok(limitado.length <= 9_900)
   assert.match(limitado, /CONTEXTO AUXILIAR TRUNCADO/)
   assert.match(limitado, /PERSONA_p{100}/)
   assert.match(limitado, /CONTEXTO RECUPERADO PARA ESTE TURNO/)
@@ -226,6 +226,22 @@ test('limite inline preserva projeção recuperada mesmo quando blocos anteriore
   assert.match(limitado, /SENTINEL_MEMORIA_RECUPERADA/)
   assert.doesNotMatch(limitado, /AUDITORIA_|SISTEMA_/)
   assert.ok(limitado.endsWith('SENTINEL_ENCERRAMENTO_CRITICO'))
+})
+
+test('orçamento inline usa 9.900 caracteres, abaixo do corte de 10.000 do host', async () => {
+  // O Claude Code troca additionalContext acima de 10.000 caracteres (contados em String.length)
+  // por uma prévia em arquivo: a v3 vira resumo (AUD-177). 9.900 deixa 100 de margem.
+  const { DEFAULT_INLINE_CONTEXT_BUDGET } = await import('../dist/core/context/context-block.js')
+  assert.equal(DEFAULT_INLINE_CONTEXT_BUDGET, 9_900)
+  assert.ok(DEFAULT_INLINE_CONTEXT_BUDGET < 10_000)
+  const contexto = contextoAdicional({
+    persona: `PERSONA_${'p'.repeat(9_300)}`,
+    audit: `AUDITORIA_${'a'.repeat(2_000)}`
+  })
+  const limitado = limitarContextoAdicional(contexto, 'SENTINEL_ENCERRAMENTO_CRITICO')
+  assert.ok(limitado.length > 9_500, `usou só ${limitado.length} caracteres`)
+  assert.ok(limitado.length <= 9_900)
+  assert.match(limitado, /PERSONA_p{9300}/)
 })
 
 test('ativação persiste por cwd apenas para sessões principais do mesmo escopo', async () => {
@@ -554,14 +570,14 @@ test('contexto deep permanece inline e preserva personalidade e ajuste explícit
       prompt: 'Essa resposta sobre a analise dos riscos da arquitetura ficou seca e genérica; faltou humor e analogia.'
     }, env)
     const contexto = turno.hookSpecificOutput.additionalContext
-    assert.ok(contexto.length <= 9_500)
+    assert.ok(contexto.length <= 9_900)
     assert.match(contexto, /PERSONALIDADE omni-persona-v3-candidate/)
     assert.match(contexto, /Entregue evidência e resultado\./)
     assert.match(contexto, /AJUSTE EXPLÍCITO DO PROPRIETÁRIO PARA ESTA RESPOSTA/)
     assert.match(contexto, /mais humor nascido deste contexto/)
     assert.match(contexto, /analogia forte que ajude a entender/)
     assert.doesNotMatch(contexto, /CONTEXTO AUXILIAR TRUNCADO/)
-    assert.ok(contexto.length < 9_500)
+    assert.ok(contexto.length < 9_900)
     assert.match(contexto, /CONTEXTO RECUPERADO PARA ESTE TURNO/)
     assert.match(contexto, /RELEVANT CONFIRMED MEMORY/)
     assert.match(contexto, /evidência detalhada/i)
@@ -908,7 +924,7 @@ test('candidata adia no turno do dono e despacha em contexto nao-interativo ate 
     assert.match(context, /AUDITORIA E AUTOCORREÇÃO INTERNAS OBRIGATÓRIAS/)
     assert.match(context, /CONTEXTO RECUPERADO PARA ESTE TURNO/)
     assert.match(context, /OMNI CONTEXT V1 - FAST/)
-    assert.ok(context.length <= 9_500)
+    assert.ok(context.length <= 9_900)
     assert.match(context, /subagente.*segundo plano/i)
     assert.match(context, /failure-dispatch-required/i)
     assert.match(context, /delegação .* está visível/i)

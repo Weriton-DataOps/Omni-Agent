@@ -34,7 +34,7 @@ test('diagnostico legado cabe inteiro com personalidade e evidencias no hook rea
     await writeFile(caminhoDaAutomacaoFalhas(env.OMNI_HOME), JSON.stringify(store))
     const output = await tratarHook({ hook_event_name: 'UserPromptSubmit', session_id, prompt: 'continue o trabalho' }, env)
     const context = output.hookSpecificOutput.additionalContext
-    assert.ok(context.length <= 9500)
+    assert.ok(context.length <= 9_900)
     assert.match(context, /diagnóstico local somente leitura/)
     assert.match(context, /PERSONALIDADE omni-persona-v3-candidate/)
     assert.match(context, /<\/failure-dispatch-briefing>/)
