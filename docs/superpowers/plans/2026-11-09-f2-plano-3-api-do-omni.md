@@ -1031,6 +1031,10 @@ Rodar `node --test testes/casa-supervisor.test.mjs`. Esperado: 8 de 8 passando.
   - `if (recusa !== null) {…}` sai do código: vermelho em "recusa:true";
   - `if (parando) return` sai do `subir`: vermelho em "parar corta o ciclo".
 
+  Na execução, este último mutante **sobreviveu** à primeira versão do teste. O `clearTimeout` do `parar` já impede a resubida pelo timer, então o guarda não aparecia. O guarda só pesa em `iniciar()` depois de `parar()`, e o teste passou a chamar isso: `4 !== 3`, vermelho.
+
+  O vazio `''` não serve como troca no script de mutante: o PowerShell 5.1 descarta argumento vazio para executável nativo, então foi usado `/* sem recusa */`.
+
 - [ ] **Passo 7: commit** com a mensagem `feat(casa): supervisor do servir dos agentes`.
 
 ---
