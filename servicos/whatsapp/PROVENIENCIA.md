@@ -74,6 +74,8 @@ Definido pelo Weriton em 28/09/2026: o bot pode mandar mensagem a outra pessoa d
 
 Usa a chave OpenAI do Omni desktop (DPAPI, `%APPDATA%\omni\access\openai-realtime.dpapi`). Entrada e saída só por stdin/stdout em base64; a chave não sai do processo. O MCP oferece `transcrever_audio` para qualquer sessão ler áudios de conversas e grupos.
 
+Plano B (29/09/2026, créditos da OpenAI esgotados): transcrição que a OpenAI não entrega cai no Whisper local, `omni/transcrever-local.py` (faster-whisper, modelo `small` int8 em CPU, ~6 s por áudio curto; `OMNI_WHISPER_MODELO` troca o modelo). O áudio não sai da máquina. Ambiente em `%LOCALAPPDATA%\omni\voz-local` (`venv` com `faster-whisper`, modelos em `modelos`). Crédito esgotado fica anotado por 30 min em `%APPDATA%\omni\whatsapp\openai-sem-credito.json`: nesse intervalo a transcrição vai direto para o local e a resposta a áudio sai escrita, sem aviso de erro; depois a OpenAI é testada de novo, então a recarga volta a valer sozinha.
+
 ## Cota da API
 
 O serviço limita requisições por IP, e tudo aqui vem de `127.0.0.1`: ponte, MCP e envio dividem a mesma cota. O padrão (1000/h) era esgotado pela ponte em ~25 min e cegava tudo, até as respostas. A configuração local sobe para `RATE_LIMIT_LONG_LIMIT=30000`, `RATE_LIMIT_MEDIUM_LIMIT=1000`, `RATE_LIMIT_SHORT_LIMIT=30` (o serviço só escuta em loopback). A ponte faz uma consulta por ciclo, sem mídia embutida, e as chamadas esperam e repetem em 429 (cota) e 409 (número reconectando).
@@ -88,6 +90,7 @@ O serviço limita requisições por IP, e tudo aqui vem de `127.0.0.1`: ponte, M
 - `omni/chaves.mjs` — recria as chaves com escopo, grava no cofre e prova cada uma pelos dois lados.
 - `omni/mcp.mjs` — servidor MCP: ferramentas de leitura, `transcrever_audio` e `enviar_para_weriton`, assinada com projeto e id da sessão.
 - `omni/voz.ps1` — transcrição e síntese de voz pela OpenAI.
+- `omni/transcrever-local.py` — transcrição local (Whisper), plano B quando a OpenAI recusa.
 - `omni/formato.mjs` — critérios de escrito ou áudio e divisão da resposta em fala e parte escrita.
 - `omni/avisar.mjs` — qualquer sessão fala com o Weriton pelo terminal (`node avisar.mjs "texto"`), para janelas abertas antes do MCP existir; assina com projeto e sessão.
 - `omni/delegado.mjs` — delega trabalho a um projeto em segundo plano (sessão na pasta do projeto, permissões liberadas) e entrega o resultado no WhatsApp do dono; substitui o canal entre sessões, que segura recados em janelas de modo de permissão diferente.

@@ -14,6 +14,8 @@ const NAVEGADORES = [
   'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
 ]
 const IMAGENS = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp' }
+// Vídeo pronto (render de animação, tela gravada) segue como vídeo tocável, não como anexo mudo.
+const VIDEOS = { '.mp4': 'video/mp4', '.mov': 'video/quicktime', '.webm': 'video/webm', '.3gp': 'video/3gpp' }
 
 // Imagem: a página é desenhada em `largura` px CSS e fotografada em dobro (1080 px de largura por padrão),
 // nítida no celular. PDF: página inteira, sem cabeçalho nem rodapé do navegador.
@@ -59,6 +61,18 @@ function medir(html, largura) {
   } finally { rmSync(copia, { force: true }) }
 }
 
+// Escala de fonte padrão (Weriton, 09/10/2026: "diminua os tamanhos dos textos do whatsapp"). Os
+// relatórios vinham com tamanho inventado por cada sessão — um com corpo em 13px, outro em 17px com
+// h1 de 40px — grande demais pra um render de 540 px CSS de largura. Cole no <head> do HTML antes do
+// CSS próprio do relatório; o próprio CSS por cima só sobrescreve o que precisar de diferente.
+export const ESTILO_BASE = `
+  body{font-size:13px;line-height:1.45}
+  h1{font-size:18px;line-height:1.2}
+  h2{font-size:14px;line-height:1.25}
+  h3{font-size:13px;line-height:1.3}
+  .legenda,footer,small,.nota{font-size:11px}
+`
+
 // Agrupa os blocos em páginas de até `limite` px CSS; bloco maior que a página vai sozinho, inteiro.
 export function paginar(blocos, limite = ALTURA_PAGINA) {
   const paginas = []
@@ -97,8 +111,9 @@ export async function enviarArquivoAoDono(caminho, { formato, legenda, largura, 
     else if (f === 'pdf') { finais = [renderizar(caminho, 'pdf')]; rota = 'send-document'; mime = 'application/pdf' }
     else { finais = renderizarPaginas(caminho, { largura, altura }); rota = 'send-image'; mime = 'image/png' }
   } else if (IMAGENS[ext]) { rota = 'send-image'; mime = IMAGENS[ext] }
+  else if (VIDEOS[ext]) { rota = 'send-video'; mime = VIDEOS[ext] }
   else if (ext === '.pdf') { rota = 'send-document'; mime = 'application/pdf' }
-  else throw new Error('formato não suportado: use .html, .png, .jpg, .webp ou .pdf')
+  else throw new Error('formato não suportado: use .html, .png, .jpg, .webp, .pdf, .mp4, .mov ou .webm')
   const caminhoApi = `/api/sessions/${sessaoBot()}/messages/${rota}`
   const waIds = []
   for (const [n, final] of finais.entries()) {
@@ -117,6 +132,7 @@ export async function enviarArquivoAoDono(caminho, { formato, legenda, largura, 
     if (!r.ok) throw new Error(`envio recusado pelo serviço (HTTP ${r.status})${n ? ` na página ${n + 1} de ${finais.length}` : ''}`)
     waIds.push(r.dados.waMessageId || r.dados.messageId || r.dados.id)
   }
-  const tipo = rota === 'send-image' ? (finais.length > 1 ? `imagem em ${finais.length} páginas` : 'imagem') : mime === 'application/pdf' ? 'PDF' : 'HTML'
+  const tipo = rota === 'send-image' ? (finais.length > 1 ? `imagem em ${finais.length} páginas` : 'imagem')
+    : rota === 'send-video' ? 'vídeo' : mime === 'application/pdf' ? 'PDF' : 'HTML'
   return { waId: waIds[0], waIds, final: finais[0], finais, tipo }
 }

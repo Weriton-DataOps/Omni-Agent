@@ -1180,6 +1180,24 @@ export class BaileysEvents {
           reuploadRequest: this.host.getSocket().updateMediaMessage,
         },
       )) as AsyncIterable<Buffer> & { destroy?: () => void };
+      // A stream.destroy() below (timeout or overflow abort) can still surface a second, async
+      // socket-level error afterward — once the for-await loop has already exited and nothing else is
+      // listening. Node then escalates that unlistened 'error' event on the EventEmitter to a
+      // process-fatal uncaughtException ("Emitted 'error' event on Readable instance", the 08/10/2026
+      // crash: ECONNRESET during an aborted media fetch). A passive listener here only prevents that
+      // escalation; the real failure still propagates through the for-await loop below and the
+      // caller's catch block, unchanged.
+      // A stream.destroy() below (timeout or overflow abort) can still surface a second, async
+      // socket-level error afterward — once the for-await loop has already exited and nothing else is
+      // listening. Node then escalates that unlistened 'error' event on the EventEmitter to a
+      // process-fatal uncaughtException ("Emitted 'error' event on Readable instance", the 08/10/2026
+      // crash: ECONNRESET during an aborted media fetch). A passive listener here only prevents that
+      // escalation; the real failure still propagates through the for-await loop below and the
+      // caller's catch block, unchanged.
+      (stream as unknown as { on?: (event: string, listener: (...a: unknown[]) => void) => void }).on?.(
+        'error',
+        () => {},
+      );
       if (timedOut) {
         stream.destroy?.();
         return Buffer.alloc(0);
