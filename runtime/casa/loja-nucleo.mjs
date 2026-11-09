@@ -277,3 +277,16 @@ export function listarMaquinas(db) {
       (SELECT count(*) FROM instalacoes i WHERE i.maquina = m.id AND i.apagado_em IS NULL) AS agentes
     FROM maquinas m WHERE m.apagado_em IS NULL ORDER BY m.id`).all().map((l) => ({ ...l }))
 }
+
+// Quem o supervisor do Omni sobe nesta máquina: instalado aqui, com o modo servir no manifesto do
+// catálogo. Instalação com manifesto diferente do catálogo sai marcada (divergente) e não sobe:
+// o comando que o catálogo diz pode não ser o que está no disco. O Omni não supervisiona a si mesmo.
+export function listarServidores(db, { maquina = maquinaAtual() } = {}) {
+  return db.prepare(`SELECT i.agente, i.raiz, i.manifesto_sha256, a.manifesto, a.manifesto_sha256 AS sha_catalogo
+    FROM instalacoes i JOIN agentes a ON a.id = i.agente AND a.apagado_em IS NULL
+    WHERE i.maquina = ? AND i.apagado_em IS NULL AND i.agente <> 'omni' ORDER BY i.agente`).all(maquina).flatMap((l) => {
+    const executor = JSON.parse(l.manifesto).executor
+    if (!executor?.modos?.includes('servir')) return []
+    return [{ agente: l.agente, raiz: l.raiz, comando: executor.comando, divergente: l.sha_catalogo !== l.manifesto_sha256 }]
+  })
+}

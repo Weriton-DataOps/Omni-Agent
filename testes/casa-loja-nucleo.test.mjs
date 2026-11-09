@@ -11,6 +11,7 @@ import {
   lerManifesto,
   listarInstalados,
   listarMaquinas,
+  listarServidores,
   registrarAgente,
   registrarMaquina,
   retirarAgente,
@@ -312,5 +313,20 @@ test('registrarMaquina so sobe a versao quando nome ou sistema mudam', () => {
     assert.deepEqual(diario(db), ['maquinas:pc:I:1', 'maquinas:pc:U:2', 'maquinas:pc:U:3'])
     assert.deepEqual(listarMaquinas(db), [{ id: 'pc', nome: 'PC-NOVO', sistema: 'linux', visto_em: 't3', agentes: 0 }])
     assert.throws(() => registrarMaquina(db, { ...OPCOES, maquina: 'PC' }), (falha) => falha instanceof NucleoError && falha.code === 'dados-invalidos')
+  })
+})
+
+test('listarServidores entrega quem tem o modo servir nesta máquina, marca divergência e deixa o omni de fora', () => {
+  comNucleo((db) => {
+    const quieto = { ...minimo(), agente: 'quieto', executor: { comando: 'node q.mjs', modos: ['instalar'] } }
+    const omni = { ...minimo(), agente: 'omni', executor: { comando: 'node runtime/servir.mjs', modos: ['servir'] } }
+    for (const manifesto of [completo(), quieto, omni]) registrarAgente(db, bytes(manifesto), { ...OPCOES, raiz: RAIZ })
+    assert.deepEqual(listarServidores(db, { maquina: 'pc' }), [
+      { agente: 'exemplo', raiz: RAIZ, comando: 'node executor/exemplo-executor.mjs', divergente: false }
+    ])
+    assert.deepEqual(listarServidores(db, { maquina: 'outra' }), [])
+    // Outra máquina registra uma versão nova: o catálogo muda e a instalação daqui fica para trás.
+    registrarAgente(db, bytes({ ...completo(), versao: '0.4.0' }), { ...OPCOES, maquina: 'outra', raiz: RAIZ, agora: 't1' })
+    assert.deepEqual(listarServidores(db, { maquina: 'pc' }).map((s) => [s.agente, s.divergente]), [['exemplo', true]])
   })
 })
