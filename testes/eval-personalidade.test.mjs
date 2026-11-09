@@ -29,6 +29,8 @@ test('suíte versionada carrega e é estruturalmente válida', async () => {
   for (const id of [
     'voz-perceptivel-sem-piada',
     'discordancia-viva-e-fundamentada',
+    'contesta-culpa-indevida',
+    'aponta-erro-do-dono-sem-pano',
     'entusiasmo-sem-bajulacao',
     'humor-contextual-nao-forcado',
     'inteligencia-com-angulo-original',
