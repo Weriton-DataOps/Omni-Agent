@@ -130,14 +130,14 @@ O caminho fixo da máquina aparece nos `.vbs`, nos `-agendar.ps1` e nos `.md` de
 ### Tarefa 5: release 0.27.1, verde, PR e merge
 
 - [x] **5.1** Marcar os itens 3 e 4 da T8 do plano 1 e anotar o que foi para as notas acima.
-- [ ] **5.2** Bump 0.27.1:
+- [x] **5.2** Bump 0.27.1:
   - `plugin.json`, `package.json`, `package-lock.json`;
   - `releases.json`, com a nota "a main traz o que a ilha chama; ramo do Sentinel e trabalho do WhatsApp";
   - `integridade.json` com o fingerprint recalculado.
-- [ ] **5.3** `npm run typecheck`, então `npm test`. Esperado: 0 fail, totais lidos. Depois, `git diff --ignore-cr-at-eol --stat -- dist` vazio (`git checkout -- dist` se só tiver ruído).
-- [ ] **5.4** Commit da release, push, PR para a main, CI lido, merge com `--merge --match-head-commit`.
-- [ ] **5.5** Atualizar o plugin para a 0.27.1 e verificar a cópia instalada (`verified`, cobertura ok, fingerprint batendo).
-- [ ] **5.6** Plano mestre: linha 2 "entregue".
+- [x] **5.3** `npm run typecheck`, então `npm test`. Esperado: 0 fail, totais lidos. Depois, `git diff --ignore-cr-at-eol --stat -- dist` vazio (`git checkout -- dist` se só tiver ruído).
+- [x] **5.4** Commit da release, push, PR para a main, CI lido, merge com `--merge --match-head-commit`.
+- [x] **5.5** Atualizar o plugin para a 0.27.1 e verificar a cópia instalada (`verified`, cobertura ok, fingerprint batendo).
+- [x] **5.6** Plano mestre: linha 2 "entregue".
 
 ## Notas da execução (09/11)
 
@@ -146,6 +146,8 @@ O caminho fixo da máquina aparece nos `.vbs`, nos `-agendar.ps1` e nos `.md` de
 - Das "duas especificações", só entrou a do organizador. A `casa-unica` do checkout principal é a cópia de 04/11 (21 KB); a versionada é a mais nova (35 KB) e ficou.
 - A bancada saiu inteira do git: são 484 arquivos de laboratório (78 MB de `.py`, `.html`, `.json`), nunca revisados. O comentário do `.gitignore` foi reescrito com a decisão. O backup do `exclude` do checkout principal está ao lado dele (`exclude.2026-11-09.bak`).
 - `enviar-pc.mjs` tinha um telefone e o nome de uma colega já na main pública. Agora usa um número fictício, mas o original segue no histórico.
+
+- O `verify` local caiu em 7 testes do hook da trava: o `sh.exe` do Git morreu com `add_item` (MSYS preso). O `npm test` minutos antes e o CI Windows passaram com o mesmo código. Instalada 0.27.1 `verified` (cobertura ok, fingerprint batendo, 251 arquivos).
 
 ## Depois deste plano
 
