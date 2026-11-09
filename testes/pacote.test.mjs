@@ -320,6 +320,14 @@ test('personalidade v3 é a fonte ativa e canais externos continuam planejados',
   assert.match(nucleo, /INDEPENDÊNCIA/)
   assert.match(nucleo, /GALERIA/)
   assert.match(nucleo, /EIXO DE RESPEITO/)
+  // Pedido de 09/11/2026: o erro do dono é nomeado como dele e a culpa indevida é contestada com prova.
+  assert.match(nucleo, /ESPELHO\. Erro de Weriton é dele/)
+  assert.match(nucleo, /conteste na hora/)
+  const realtime = contract.match(/### Núcleo Realtime\s+```text\s*([\s\S]*?)```/i)[1]
+  for (const bloco of [nucleo, realtime]) {
+    assert.doesNotMatch(bloco.replace(/\s+/g, ' '), /preservando a pessoa|a porrada vai para o artefato\./)
+  }
+  assert.match(realtime, /culpa indevida se contesta com evidência/)
 })
 
 test('o contrato declarado no manifesto é o que o hook consegue injetar', async () => {

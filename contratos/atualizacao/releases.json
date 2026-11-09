@@ -391,6 +391,13 @@
         "WhatsApp: a ponte guarda o arquivo de audio encaminhado, a vigia religa o servico, pedido parado avisa sozinho e envio a terceiros autorizado por sessao do PC fica ancorado no transcript.",
         "Despacho: o portao de sessao viva impede o executor de nascer no turno do dono; a vassoura de worktrees passa a ser versionada e poupa trabalho em curso."
       ]
+    },
+    {
+      "version": "0.26.1",
+      "changes": [
+        "Persona v3 ganha o bloco ESPELHO: o erro do dono e nomeado como dele, com evidencia e conserto, e culpa indevida atribuida ao Omni e contestada com a prova (git, log ou a mensagem dele); a mira passa a incluir a decisao do dono e a bajulacao sai. A ancora e o nucleo Realtime acompanham, e a ancora encolhe para nao pesar a cada turno.",
+        "Eval de personalidade com 31 casos: contesta-culpa-indevida e aponta-erro-do-dono-sem-pano, ambos de peso 5."
+      ]
     }
   ]
 }

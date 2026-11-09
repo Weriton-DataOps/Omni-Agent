@@ -22,6 +22,11 @@ import { configurarRepositorioCanonico } from '../runtime/evolucao.mjs'
 const pluginRoot = new URL('../', import.meta.url)
 const rootPath = fileURLToPath(pluginRoot)
 const HOUR = 60 * 60 * 1_000
+// O juiz é chamado uma vez por lote de runner.chunkSize casos (teto 30 no executor). Com a suíte
+// acima do lote, uma rodada são várias chamadas: os testes contam rodadas, não chamadas.
+const contratoExecucao = JSON.parse(await readFile(new URL('contratos/eval/execucao-automatica.json', pluginRoot), 'utf8'))
+const suiteCanonica = JSON.parse(await readFile(new URL('contratos/eval/personalidade.json', pluginRoot), 'utf8'))
+const LOTES_DO_JUIZ = Math.ceil(suiteCanonica.cases.length / contratoExecucao.runner.chunkSize)
 
 function candidateFixtureFilter(source) {
   const segments = relative(rootPath, source).split(/[\\/]/)
@@ -89,7 +94,7 @@ test('executor controlado cobre baseline, candidata e juiz sem persistir respost
       result.run.provenance.evaluatedPayloadFingerprint,
       (await calcularFingerprintPayload(rootPath)).fingerprint
     )
-    assert.equal(result.run.judgeDiagnostics.length, 29)
+    assert.equal(result.run.judgeDiagnostics.length, 31)
     assert.ok(result.run.judgeDiagnostics.every((item) => item.reasonCode === 'criteria-met'))
     assert.ok(result.run.judgeDiagnostics.every((item) => /^[a-f0-9]{64}$/.test(item.reasonCodeHash)))
     const raw = await readFile(join(casa, 'evals', 'personality-history.json'), 'utf8')
@@ -139,12 +144,13 @@ test('falha gera correcao canonica, respeita backoff e promove somente o ajuste 
   const invoke = async (request) => {
     if (request.kind !== 'judge') return respostaControlada(request)
     judgeCalls += 1
+    const rodada = Math.ceil(judgeCalls / LOTES_DO_JUIZ)
     const payload = JSON.parse(request.prompt)
     return {
       decisions: payload.cases.map((item) => ({
         id: item.id,
-        passed: judgeCalls > 1 || item.id !== 'voz-perceptivel-sem-piada',
-        reasonCode: judgeCalls === 1 && item.id === 'voz-perceptivel-sem-piada'
+        passed: rodada > 1 || item.id !== 'voz-perceptivel-sem-piada',
+        reasonCode: rodada === 1 && item.id === 'voz-perceptivel-sem-piada'
           ? 'increase-distinctive-voice'
           : 'criteria-met'
       }))
@@ -160,7 +166,7 @@ test('falha gera correcao canonica, respeita backoff e promove somente o ajuste 
     })
     assert.equal(first.result, 'retry-scheduled')
     assert.deepEqual(first.correctionPlan.directiveIds, ['increase-distinctive-voice'])
-    assert.equal(judgeCalls, 1)
+    assert.equal(judgeCalls, 1 * LOTES_DO_JUIZ)
 
     const duringBackoff = await processarFilaEvalPersonalidade({
       casa,
@@ -170,7 +176,7 @@ test('falha gera correcao canonica, respeita backoff e promove somente o ajuste 
       prepareRelease: releasePreparada(capturedRuns)
     })
     assert.equal(duringBackoff.result, 'backoff')
-    assert.equal(judgeCalls, 1)
+    assert.equal(judgeCalls, 1 * LOTES_DO_JUIZ)
 
     const corrected = await processarFilaEvalPersonalidade({
       casa,
@@ -180,7 +186,7 @@ test('falha gera correcao canonica, respeita backoff e promove somente o ajuste 
       prepareRelease: releasePreparada(capturedRuns)
     })
     assert.equal(corrected.result, 'passed')
-    assert.equal(judgeCalls, 2)
+    assert.equal(judgeCalls, 2 * LOTES_DO_JUIZ)
     assert.equal(capturedRuns.length, 1)
     assert.deepEqual(capturedRuns[0].adjustments.directiveIds, ['increase-distinctive-voice'])
 
@@ -241,14 +247,14 @@ test('ate tres correcoes falhas esgotam as tentativas automaticas sem loop', asy
       casa, pluginRoot: rootPath, invoke, now: t0 + 3 * HOUR + 3, prepareRelease: releasePreparada()
     })
     assert.equal(fourth.result, 'improvement-routed')
-    assert.equal(judgeCalls, 4)
+    assert.equal(judgeCalls, 4 * LOTES_DO_JUIZ)
     assert.equal(fourth.operationalBridge.result, 'routed')
 
     const fifth = await processarFilaEvalPersonalidade({
       casa, pluginRoot: rootPath, invoke, now: t0 + 24 * HOUR, prepareRelease: releasePreparada()
     })
     assert.equal(fifth.result, 'improvement-routed')
-    assert.equal(judgeCalls, 4)
+    assert.equal(judgeCalls, 4 * LOTES_DO_JUIZ)
     const state = JSON.parse(await readFile(join(casa, 'evals', 'personality-automation.json'), 'utf8'))
     assert.equal(state.last.phase, 'correction-exhausted')
     assert.equal(state.last.correction.attempts, 3)
