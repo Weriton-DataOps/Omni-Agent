@@ -322,11 +322,14 @@ test('listarServidores entrega quem tem o modo servir nesta máquina, marca dive
     const omni = { ...minimo(), agente: 'omni', executor: { comando: 'node runtime/servir.mjs', modos: ['servir'] } }
     for (const manifesto of [completo(), quieto, omni]) registrarAgente(db, bytes(manifesto), { ...OPCOES, raiz: RAIZ })
     assert.deepEqual(listarServidores(db, { maquina: 'pc' }), [
-      { agente: 'exemplo', raiz: RAIZ, comando: 'node executor/exemplo-executor.mjs', divergente: false }
+      { agente: 'exemplo', raiz: RAIZ, comando: 'node executor/exemplo-executor.mjs', divergente: false, rotas: completo().interface.rotas }
     ])
+    // Sem interface, sem rotas: o chamar recusa tudo desse agente.
+    registrarAgente(db, bytes({ ...minimo(), agente: 'mudo', executor: { comando: 'node m.mjs', modos: ['servir'] } }), { ...OPCOES, raiz: RAIZ })
+    assert.deepEqual(listarServidores(db, { maquina: 'pc' }).find((s) => s.agente === 'mudo').rotas, [])
     assert.deepEqual(listarServidores(db, { maquina: 'outra' }), [])
     // Outra máquina registra uma versão nova: o catálogo muda e a instalação daqui fica para trás.
     registrarAgente(db, bytes({ ...completo(), versao: '0.4.0' }), { ...OPCOES, maquina: 'outra', raiz: RAIZ, agora: 't1' })
-    assert.deepEqual(listarServidores(db, { maquina: 'pc' }).map((s) => [s.agente, s.divergente]), [['exemplo', true]])
+    assert.deepEqual(listarServidores(db, { maquina: 'pc' }).map((s) => [s.agente, s.divergente]), [['exemplo', true], ['mudo', false]])
   })
 })
