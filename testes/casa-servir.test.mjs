@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import test from 'node:test'
 
 import { createHash } from 'node:crypto'
@@ -94,6 +94,35 @@ test('porta ocupada sai 1 com recusa:true', async (t) => {
   const linha = await s.primeira()
   assert.equal(linha.ok, false)
   assert.equal(linha.recusa, true)
+})
+
+test('um servir por casa: o segundo recusa com saída 1 e o primeiro segue servindo', async (t) => {
+  const { pasta, env } = pastaTemporaria(t)
+  const primeiro = subirServir(t, env)
+  const linha = await primeiro.primeira()
+  assert.equal(linha.ok, true)
+  const segundo = subirServir(t, env)
+  const recusa = await segundo.primeira()
+  assert.equal(recusa.ok, false)
+  assert.equal(recusa.recusa, true)
+  assert.match(recusa.erro, /já há um servir/)
+  assert.equal(await segundo.fim, 1)
+  assert.equal((await chamar(linha.porta, 'GET', '/v1/saude', { token: TOKEN })).status, 200)
+  // A recusa não apaga nem reescreve o servir.json do primeiro.
+  assert.equal(JSON.parse(readFileSync(arquivoServir(pasta, env), 'utf8')).pid, primeiro.filho.pid)
+})
+
+test('servir.json órfão, de pid morto, não impede o servir de subir', async (t) => {
+  const { pasta, env } = pastaTemporaria(t)
+  const morto = spawn(process.execPath, ['-e', '0'], { windowsHide: true })
+  await new Promise((resolver) => morto.on('close', resolver))
+  const arquivo = arquivoServir(pasta, env)
+  mkdirSync(dirname(arquivo), { recursive: true })
+  writeFileSync(arquivo, JSON.stringify({ pid: morto.pid, porta: 1, agentes: [] }))
+  const s = subirServir(t, env)
+  const linha = await s.primeira()
+  assert.equal(linha.ok, true)
+  assert.equal(JSON.parse(readFileSync(arquivo, 'utf8')).pid, s.filho.pid)
 })
 
 test('supervisiona o agente do nucleo.db e o agente toca a campainha pela API', async (t) => {
