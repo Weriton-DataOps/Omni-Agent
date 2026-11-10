@@ -378,7 +378,11 @@ As caixas:
 
 ### Tarefa 8: fechamento
 
-- [ ] Suíte inteira (`npm test`) em segundo plano, lida até o total; `dist` sem ruído.
-- [ ] Integridade 6 de 6, para confirmar que a impressão digital não mudou (nada nas raízes da release).
+- [x] Suíte inteira (`npm test`) em segundo plano, lida até o total; `dist` sem ruído.
+  - Resultado: 1144 testes, 1133 passando, 4 pulados e 7 falhas, todas do `omni-trava-guarda`, em menos de 1 ms cada, sem chegar a nenhuma asserção.
+  - Causa das falhas: a montagem do teste faz um `git push` para um repositório local, e o `sh.exe` do Git morreu nele com `add_item ("\??\C:\Program Files\Git", "/", ...) failed, errno 1`. É a falha conhecida do MSYS nesta máquina, de infraestrutura, e não toca no que o 4c mudou.
+  - O mesmo arquivo, rodado sozinho logo depois: 7 de 7, de 0,6 a 1,7 s cada.
+  - `dist` só com ruído de fim de linha (o diff com `--ignore-cr-at-eol` sai vazio), restaurado.
+- [x] Integridade 6 de 6 (`integridade-release`): a impressão digital não mudou, porque nada do 4c está nas raízes da release.
 - [ ] Commit Weriton-DataOps, PR, CI verde e merge (`--merge --match-head-commit`).
 - [ ] Linha 4c do mestre marcada como entregue, com o desvio da janela anotado.
