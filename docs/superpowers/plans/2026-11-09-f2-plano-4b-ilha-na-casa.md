@@ -160,13 +160,21 @@ Script no rascunho da sessão, nunca no repo, no molde da prova do 4a:
 - uma casa temporária com a cópia do Oráculo (`f3/lote-d`), registrada e com os tokens;
 - o Electron próprio com `OMNI_ILHA_ESCONDIDA=1` e `OMNI_ILHA_TESTE`.
 
-- [ ] A ilha sobe o `servir`, e o `GET /v1/agentes` lista o oraculo com o `modulo` dentro da raiz.
-- [ ] `abrirAgente('oraculo')` carrega `interface/index.html`, e o `window.oraculo.saude()` do painel volta 200.
-- [ ] O resumo do card (`actions:resumo` e `oracle:resumo`) chega com os números do Oráculo.
-- [ ] A navegação para `actions/actions.html` passa, e para fora da pasta é barrada.
-- [ ] Um pedido em nome de outro agente vindo da janela do oraculo dá `status: 0`.
-- [ ] Sem Oráculo registrado, os dois cards voltam `ausente`.
-- [ ] Nenhum token no log da ilha nem no do `servir`.
+- [x] A ilha sobe o `servir`, e o `GET /v1/agentes` lista o oraculo com o `modulo` dentro da raiz.
+- [x] `abrirAgente('oraculo')` carrega `interface/index.html`, e o `window.oraculo.saude()` do painel volta 200.
+- [x] O resumo do card (`actions:resumo` e `oracle:resumo`) chega com os números do Oráculo.
+- [x] A navegação para `actions/actions.html` passa, e para fora da pasta é barrada.
+- [x] Um pedido em nome de outro agente vindo da janela do oraculo dá `status: 0`.
+- [x] Sem Oráculo registrado, os dois cards voltam `ausente`.
+- [x] Nenhum token no log da ilha nem no do `servir`.
+  Resultado (10/11): Oráculo `d3d4050` por `git archive`, ilha com o Electron próprio, 16 OK e 0 FALHOU, saída 0.
+  - Lista: `interface\index.html` e o preload `interface\actions\actions-preload.js`, ambos dentro da raiz.
+  - Resumos: Actions com 1 ponto e Oráculo com 5 projetos.
+  - Janela: `saude()` volta 0.3.0 (migração 0005); o renderer não vê `require` nem `ipcRenderer`.
+  - Navegação: `actions/actions.html` lista o ponto. O `location.href` para `win.ini` e o `abrirAgente('..\\..\\package.json')` deixam a página onde estava.
+  - Porteiro: em nome do overcore volta 0 ("esta janela só fala com o próprio agente"); sem dono, 0; o próprio, 200.
+  - Casa vazia (fumaça do T5 de novo): os dois cards voltam `ausente`, `abrirAgente` volta false e não abre janela.
+  - Tokens: tela e visita não aparecem na saída da ilha nem nos 10 arquivos de texto da prova. A saída da ilha também não tem nada com a forma do token dela (43 base64url). O stderr do `servir` a ilha descarta sem guardar; o log dele foi conferido limpo na prova do 4a.
 
 ### Tarefa 9: release 0.30.0
 
