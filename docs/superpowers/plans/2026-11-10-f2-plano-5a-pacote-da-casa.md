@@ -96,6 +96,12 @@ test('retrato separa NULL de texto, blob de texto e vírgula dentro do valor', (
   assert.equal(new Set(hashes).size, casos.length)
 })
 
+test('retrato muda quando a coluna muda de nome com os mesmos valores', () => {
+  const a = banco("CREATE TABLE t (id INTEGER PRIMARY KEY, a TEXT); INSERT INTO t VALUES (1, 'x')")
+  const b = banco("CREATE TABLE t (id INTEGER PRIMARY KEY, b TEXT); INSERT INTO t VALUES (1, 'x')")
+  assert.notEqual(retratoDaTabela(a, 't').sha256, retratoDaTabela(b, 't').sha256)
+})
+
 test('tabela sem chave primária ordena por todas as colunas', () => {
   const a = banco("CREATE TABLE t (x, y); INSERT INTO t VALUES (2, 'b'), (1, 'a')")
   const b = banco("CREATE TABLE t (x, y); INSERT INTO t VALUES (1, 'a'), (2, 'b')")
