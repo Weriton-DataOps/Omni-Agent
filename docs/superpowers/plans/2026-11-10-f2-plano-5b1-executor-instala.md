@@ -66,7 +66,7 @@
 - Modificar: `runtime/integridade-release.mjs:7-15`
 - Teste: `testes/omni-manifesto.test.mjs`
 
-- [ ] **Passo 1: teste que falha**
+- [x] **Passo 1: teste que falha**
 
 ```js
 // O manifesto do próprio Omni (F2, plano 5b-1): é por ele que o instalar registra o Omni no núcleo.
@@ -94,9 +94,9 @@ test('a versão do manifesto acompanha a do package.json', () => {
 })
 ```
 
-- [ ] **Passo 2: ver vermelho.** Rodar `node --test --test-reporter=spec testes/omni-manifesto.test.mjs`. Esperado: os dois falham com `NucleoError` `sem-manifesto`.
+- [x] **Passo 2: ver vermelho.** Rodar `node --test --test-reporter=spec testes/omni-manifesto.test.mjs`. Esperado: os dois falham com `NucleoError` `sem-manifesto`.
 
-- [ ] **Passo 3: o manifesto.** Criar `executor/agente.json`:
+- [x] **Passo 3: o manifesto.** Criar `executor/agente.json`:
 
 ```json
 {
@@ -125,17 +125,17 @@ Escolhas:
 - **Sem `atualizar`**, porque ele chega no 5b-2 junto do zip.
 - **`tarefas` vazias.** A visita das 7h passa para o manifesto do Oráculo no 5c. O vigia do WhatsApp entra no 5b-2, quando o zip levar o `servicos/`.
 
-- [ ] **Passo 4: payload.** Em `runtime/integridade-release.mjs`, acrescentar à `PAYLOAD_ROOTS`, depois de `dist`:
+- [x] **Passo 4: payload.** Em `runtime/integridade-release.mjs`, acrescentar à `PAYLOAD_ROOTS`, depois de `dist`:
 
 ```js
   { path: 'executor', required: false },
 ```
 
-- [ ] **Passo 5: ver verde.** Rodar o teste novo e também `node --test --test-reporter=spec testes/integridade-release.test.mjs` (ou o arquivo que importa `calcularFingerprintPayload`, achado por Grep).
+- [x] **Passo 5: ver verde.** Rodar o teste novo e também `node --test --test-reporter=spec testes/integridade-release.test.mjs` (ou o arquivo que importa `calcularFingerprintPayload`, achado por Grep).
 
 A impressão digital declarada vai divergir até o bump da T5. Isso é esperado: anotar o nome do teste que acusa e seguir.
 
-- [ ] **Passo 6: commit.** Mensagem: `feat(executor): manifesto do Omni e executor/ no payload da release`.
+- [x] **Passo 6: commit.** Mensagem: `feat(executor): manifesto do Omni e executor/ no payload da release`.
 
 ---
 
@@ -146,7 +146,7 @@ A impressão digital declarada vai divergir até o bump da T5. Isso é esperado:
 - Modificar: `runtime/executor.mjs`
 - Teste: `testes/executor-instalar.test.mjs`
 
-- [ ] **Passo 1: teste que falha.** Criar `testes/executor-instalar.test.mjs`:
+- [x] **Passo 1: teste que falha.** Criar `testes/executor-instalar.test.mjs`:
 
 ```js
 // O executor instala (F2, plano 5b-1): a casa com os três bancos e o Omni registrado no núcleo, e os
@@ -224,9 +224,9 @@ test('instalar de novo não muda nada', async (t) => {
 })
 ```
 
-- [ ] **Passo 2: ver vermelho.** Rodar `node --test --test-reporter=spec testes/executor-instalar.test.mjs`. Esperado: saída 2 (`comando desconhecido`) na asserção `r.codigo, 0`.
+- [x] **Passo 2: ver vermelho.** Rodar `node --test --test-reporter=spec testes/executor-instalar.test.mjs`. Esperado: saída 2 (`comando desconhecido`) na asserção `r.codigo, 0`.
 
-- [ ] **Passo 3: implementação.** Criar `runtime/casa/instalar-casa.mjs`:
+- [x] **Passo 3: implementação.** Criar `runtime/casa/instalar-casa.mjs`:
 
 ```js
 // Instalação da casa e dos agentes (§4 passos 3 e 6, §4.2, §8.3). O instalarCasa cria os três bancos
@@ -287,13 +287,13 @@ Em `runtime/executor.mjs`:
 
 - trocar o comentário do topo para "exportar, importar, verificar e instalar; o atualizar chega com o zip da release (plano 5b-2)".
 
-- [ ] **Passo 4: ver verde.** Os dois testes passam, e `testes/executor-cli.test.mjs` continua 5/5.
+- [x] **Passo 4: ver verde.** Os dois testes passam, e `testes/executor-cli.test.mjs` continua 5/5.
 
-- [ ] **Passo 5: mutante.**
+- [x] **Passo 5: mutante.**
   - Trocar `raiz: raizOmni` por `raiz: casa`: o primeiro teste tem de ficar vermelho na asserção da raiz.
   - Desfazer o mutante.
 
-- [ ] **Passo 6: commit.** Mensagem: `feat(executor): instalar cria a casa e registra o Omni`.
+- [x] **Passo 6: commit.** Mensagem: `feat(executor): instalar cria a casa e registra o Omni`.
 
 ---
 
@@ -304,7 +304,7 @@ Em `runtime/executor.mjs`:
 - Modificar: `runtime/executor.mjs`
 - Teste: `testes/executor-instalar.test.mjs`
 
-- [ ] **Passo 1: testes que falham.** Acrescentar a `testes/executor-instalar.test.mjs`:
+- [x] **Passo 1: testes que falham.** Acrescentar a `testes/executor-instalar.test.mjs`:
 
 ```js
 // Agente falso de verdade: grava em recebido.json o argv e o stdin, ou sai com FALSO_SAIR.
@@ -427,9 +427,9 @@ test('instalar-agente sem --raiz é uso errado', async (t) => {
 })
 ```
 
-- [ ] **Passo 2: ver vermelho.** Esperado: os oito falham, com saída 2 (`comando desconhecido`) na primeira asserção de código.
+- [x] **Passo 2: ver vermelho.** Esperado: os oito falham, com saída 2 (`comando desconhecido`) na primeira asserção de código.
 
-- [ ] **Passo 3: implementação.** Acrescentar a `runtime/casa/instalar-casa.mjs`:
+- [x] **Passo 3: implementação.** Acrescentar a `runtime/casa/instalar-casa.mjs`:
 
 ```js
 // '>=N[.N[.N]]': compara número a número; o que falta na versão conta como 0 e o sufixo -pre é ignorado.
@@ -508,15 +508,15 @@ Em `runtime/executor.mjs`:
       }
 ```
 
-- [ ] **Passo 4: ver verde.** Os 10 testes do arquivo passam, e `testes/executor-cli.test.mjs` continua 5/5.
+- [x] **Passo 4: ver verde.** Os 10 testes do arquivo passam, e `testes/executor-cli.test.mjs` continua 5/5.
 
-- [ ] **Passo 5: mutantes.** Cada um tem de cair vermelho numa asserção; depois, desfazer.
+- [x] **Passo 5: mutantes.** Cada um tem de cair vermelho numa asserção; depois, desfazer.
   1. Registrar antes de chamar o `instalar` do agente: cai "agente que recusa…".
   2. Mandar `{tela: valor}` cru no lugar do sha256 (trocar `tokens.tela` por `tokenDoAgente(...)`): cai a asserção "o token em si nunca vai ao agente". Basta o mutante de pensamento se a costura não permitir; registrar no PR.
   3. `atende` devolvendo `true` sempre: cai "requisito não atendido…".
   4. Tirar o `modos.includes('servir')`: cai "agente sem servir…".
 
-- [ ] **Passo 6: commit.** Mensagem: `feat(executor): instalar-agente entrega o sha256 dos tokens e registra depois do aceite`.
+- [x] **Passo 6: commit.** Mensagem: `feat(executor): instalar-agente entrega o sha256 dos tokens e registra depois do aceite`.
 
 ---
 
@@ -532,7 +532,7 @@ A guarda lê o `servir.json`. Se o `pid` for de outro processo vivo, o novo `ser
 
 Risco aceito: dois `servir` nascidos no mesmo milissegundo passam pela guarda antes de qualquer um gravar. Fechar isso pediria trava de arquivo exclusiva, e o caso real (a ilha) já é instância única.
 
-- [ ] **Passo 1: testes que falham.** Acrescentar a `testes/casa-servir.test.mjs`:
+- [x] **Passo 1: testes que falham.** Acrescentar a `testes/casa-servir.test.mjs`:
 
 ```js
 test('segundo servir na mesma casa recusa e não derruba o primeiro', async (t) => {
@@ -564,9 +564,9 @@ test('servir.json órfão (processo morto) não impede a subida', async (t) => {
 
 Acrescentar `mkdirSync` e `writeFileSync` ao import de `node:fs`, e `dirname` ao de `node:path`.
 
-- [ ] **Passo 2: ver vermelho.** O primeiro teste falha em `linhaB.ok` (vem `true`). O segundo pode passar já agora: ele é a cerca do mutante "recusar sempre que houver arquivo".
+- [x] **Passo 2: ver vermelho.** O primeiro teste falha em `linhaB.ok` (vem `true`). O segundo pode passar já agora: ele é a cerca do mutante "recusar sempre que houver arquivo".
 
-- [ ] **Passo 3: implementação.** Em `runtime/servir.mjs`:
+- [x] **Passo 3: implementação.** Em `runtime/servir.mjs`:
   - importar `processoVivo` de `./casa/sessoes-vivas.mjs`;
   - `rodarServir` ganha a opção `vivo = processoVivo`;
   - mover `const servirJson = arquivoServir(casa, env)` para logo depois do bloco que lê porta e token;
@@ -592,19 +592,19 @@ function outroServirNoAr(arquivo, vivo) {
 
   - apagar a declaração antiga do `servirJson`, perto da linha 183.
 
-- [ ] **Passo 4: ver verde.** Rodar `node --test --test-reporter=spec testes/casa-servir.test.mjs` inteiro.
+- [x] **Passo 4: ver verde.** Rodar `node --test --test-reporter=spec testes/casa-servir.test.mjs` inteiro.
 
-- [ ] **Passo 5: mutantes.**
+- [x] **Passo 5: mutantes.**
   - Tirar o `vivo(pid)`: cai "servir.json órfão…".
   - Tirar a guarda inteira: cai "segundo servir…".
 
-- [ ] **Passo 6: commit.** Mensagem: `fix(servir): um servir por casa; o segundo recusa sem derrubar o primeiro`.
+- [x] **Passo 6: commit.** Mensagem: `fix(servir): um servir por casa; o segundo recusa sem derrubar o primeiro`.
 
 ---
 
 ### Tarefa 5: prova, verde inteiro, release 0.32.0
 
-- [ ] **Passo 1: prova com o Oráculo de verdade (só leitura no repo dele).** Usar o mesmo molde do plano 3, T6.
+- [x] **Passo 1: prova com o Oráculo de verdade (só leitura no repo dele).** Usar o mesmo molde do plano 3, T6.
   - **Pasta:** `%LOCALAPPDATA%\omni\rascunho\prova-p5b1-<hora>`.
   - **Antes e depois:** conferir `git -C <Oracle> status --porcelain`, que tem de ficar igual.
   - **Raiz:** a raiz registrada é uma cópia por `git archive HEAD` + `tar` dentro da pasta. `OMNI_ACTIONS` aponta para uma pasta vazia, e `OMNI_HOME` e `OMNI_CASA_BANCO` ficam na pasta da prova.
@@ -616,16 +616,16 @@ function outroServirNoAr(arquivo, vivo) {
     - fechar o stdin encerra os dois processos.
   - **Fechar:** anotar no PR, sem token, sha256 nem caminho pessoal, e apagar a pasta.
 
-- [ ] **Passo 2: plano mestre.**
+- [x] **Passo 2: plano mestre.**
   - A linha 5b vira 5b-1 (este plano, entregue) e 5b-2 (o `omni-instalar.ps1`: zip com SHA, ilha, plugin, tarefas, chave do WhatsApp, `atualizar`).
   - Marcar as caixas deste plano.
 
-- [ ] **Passo 3: suíte inteira**, uma pesada por vez.
+- [x] **Passo 3: suíte inteira**, uma pesada por vez.
   - Rodar `npm test`, com a saída num arquivo de rascunho, e ler o total: pass, fail e skip. As 7 falhas conhecidas de `omni-trava-guarda` (`sh.exe`) não contam, desde que o arquivo sozinho passe.
   - Rodar `npm run typecheck` e `npm run check`.
   - Conferir que `git diff --ignore-cr-at-eol --stat -- dist` vem vazio e rodar `git checkout -q -- dist`.
 
-- [ ] **Passo 4: bump para 0.32.0.**
+- [x] **Passo 4: bump para 0.32.0.**
   - Os cinco lugares de sempre: `plugin.json`, `package.json`, `package-lock.json`, `releases.json` e `integridade.json`.
   - Mais o `executor/agente.json`, cuja `versao` é vigiada pelo teste da T1.
   - A impressão digital vem por último, com o payload já bumpado.
