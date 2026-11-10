@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import test from 'node:test'
 
 import { comBancoDaCasa } from '../runtime/casa/banco.mjs'
-import { DespachoError, listarDespachos, registrarDespacho, validarDespacho } from '../runtime/casa/loja-despachos.mjs'
+import { DespachoError, listarDespachos, marcarDespacho, registrarDespacho, validarDespacho } from '../runtime/casa/loja-despachos.mjs'
 
 const EXECUCAO = '20261109-120000-abcd'
 
@@ -63,5 +63,28 @@ test('o banco recusa id que não bate com agente e execução', () => {
   comOmni((db) => {
     assert.throws(() => db.prepare(`INSERT INTO despachos (id, agente, execucao, recebido_em, atualizado_em, origem_maquina)
       VALUES ('outro/x', 'oraculo', 'x', 't', 't', 'pc')`).run(), /CHECK/)
+  })
+})
+
+// F2, plano 4a, T4: o carteiro anota no recibo o que fez com a execução.
+test('marcarDespacho atualiza o recibo e cria o que a campainha não trouxe', () => {
+  comOmni((db) => {
+    registrarDespacho(db, { agente: 'oraculo', execucao: EXECUCAO }, { maquina: 'pc', agora: '2026-11-09T12:00:00.000Z' })
+    const marcado = marcarDespacho(db, { agente: 'oraculo', execucao: EXECUCAO, estado: 'assumido', detalhe: 'entregue a omni-1' }, { maquina: 'pc', agora: '2026-11-09T12:01:00.000Z' })
+    assert.deepEqual(marcado, { id: `oraculo/${EXECUCAO}`, agente: 'oraculo', execucao: EXECUCAO, estado: 'assumido', tentativas: 1, detalhe: 'entregue a omni-1', recebido_em: '2026-11-09T12:00:00.000Z', atualizado_em: '2026-11-09T12:01:00.000Z' })
+    const outra = marcarDespacho(db, { agente: 'oraculo', execucao: 'e2', estado: 'falhou', detalhe: null }, { maquina: 'pc', agora: '2026-11-09T12:02:00.000Z' })
+    assert.equal(outra.estado, 'falhou')
+    assert.equal(outra.tentativas, 1)
+    assert.equal(outra.recebido_em, '2026-11-09T12:02:00.000Z')
+    assert.equal(marcarDespacho(db, { agente: 'oraculo', execucao: 'e2', estado: 'assumido' }, { maquina: 'pc', agora: '2026-11-09T12:03:00.000Z' }).tentativas, 2)
+  })
+})
+
+test('marcarDespacho recusa estado desconhecido e corta detalhe longo em 300', () => {
+  comOmni((db) => {
+    assert.throws(() => marcarDespacho(db, { agente: 'oraculo', execucao: EXECUCAO, estado: 'perdido' }), DespachoError)
+    assert.throws(() => marcarDespacho(db, { agente: 'Oraculo', execucao: EXECUCAO, estado: 'falhou' }), DespachoError)
+    const r = marcarDespacho(db, { agente: 'oraculo', execucao: EXECUCAO, estado: 'falhou', detalhe: 'x'.repeat(400) })
+    assert.equal(r.detalhe.length, 300)
   })
 })
