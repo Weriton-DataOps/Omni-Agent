@@ -821,9 +821,13 @@
     try { w = await ponte.whatsapp(); } catch { /* fica o que estava */ }
     if (!w) return;
     const noAr = w.instalado && w.servico && w.ponte;
-    const condicao = !w.instalado || !noAr ? 'parada' : w.pausada ? 'pausada' : 'ligada';
-    for (const c of ['ligada', 'pausada', 'parada']) cardWhats.classList.toggle(c, c === condicao);
-    $('whats-estado').textContent = !w.instalado ? 'AUSENTE' : { ligada: 'NO AR', pausada: 'PAUSADA', parada: 'PARADA' }[condicao];
+    // plano 4c: verde só com os dois números pareados e o pessoal provado só leitura (w.vista vem do main)
+    const vista = w.vista || { estado: 'ausente', acao: null, texto: '' };
+    const condicao = !w.instalado || !noAr ? 'parada' : vista.estado !== 'pareado' ? 'falta' : w.pausada ? 'pausada' : 'ligada';
+    for (const c of ['ligada', 'pausada', 'parada', 'falta']) cardWhats.classList.toggle(c, c === condicao);
+    cardWhats.dataset.acao = vista.acao || '';
+    const rotuloFalta = vista.estado === 'conferindo' ? 'CONFERINDO' : 'PAREAR';
+    $('whats-estado').textContent = !w.instalado ? 'AUSENTE' : { ligada: 'NO AR', pausada: 'PAUSADA', parada: 'PARADA', falta: rotuloFalta }[condicao];
     const svg = $('whats-icone').firstElementChild;
     if (svg) {
       tingir(svg, noAr ? 'tom-whats' : 'tom-ociosa');
@@ -874,6 +878,9 @@
       if (s.velha) avisos.push(linhaWhats('saúde sem atualizar', quando(Date.parse(s.em)), true));
     } else if (w.vozAte) avisos.push(linhaWhats('voz sem crédito até', hhmm(new Date(w.vozAte)), true));
     linhas.unshift(linhaWhats('último sinal', w.ultima ? quando(w.ultima) : '—'));
+    // o que falta parear passa na frente de qualquer aviso: sem os dois números o resto nem funciona
+    if (vista.acao === 'parear') avisos.unshift(linhaWhats(vista.texto, 'parear ›', true));
+    else if (vista.estado === 'conferindo') linhas.unshift(linhaWhats(vista.texto, '…'));
     const vaga = avisos.length > 1
       ? linhaWhats(avisos[0].firstChild.textContent, `+${avisos.length - 1} avisos`, true)
       : avisos[0] || linhas[0];
@@ -1221,6 +1228,14 @@
     if (estado !== 'aberta' || !poco.classList.contains('revelada')) return;
     ponte.abrirCofre();
     cofre.lidoEm = null;
+    recolherJa();
+  });
+  // plano 4c: com pareamento faltando, o card do WhatsApp inteiro é o "parear" (as linhas mudam a cada 2 s,
+  // botão dentro delas trocaria de nó embaixo do ponteiro). Card verde ou parado não abre nada.
+  tocar(cardWhats, () => {
+    if (estado !== 'aberta' || !poco.classList.contains('revelada') || cardWhats.dataset.acao !== 'parear') return;
+    if (typeof ponte.abrirPareamento !== 'function') return;
+    ponte.abrirPareamento();
     recolherJa();
   });
 

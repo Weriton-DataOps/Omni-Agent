@@ -8,6 +8,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
+const { vistaPareamento } = require('./whatsapp-vista');
 
 const RUN = path.join(process.env.APPDATA || '', 'omni', 'whatsapp');
 const CAUDA = 64 * 1024;
@@ -69,7 +70,7 @@ function cauda(arquivo) {
 }
 
 function lerWhatsapp(processos) {
-  if (!fs.existsSync(RUN)) return { instalado: false };
+  if (!fs.existsSync(RUN)) return { instalado: false, vista: vistaPareamento({ instalado: false }) };
   let pausada = false;
   try { pausada = !!JSON.parse(fs.readFileSync(path.join(RUN, 'ponte.json'), 'utf8')).pausada; } catch { /* sem estado */ }
   let vozAte = null;
@@ -94,7 +95,11 @@ function lerWhatsapp(processos) {
     if (m[2] === '←') recebidas += 1; else enviadas += 1;
   }
 
-  return {
+  // plano 4c: o que já foi pareado e provado (pareamento.json não tem chave nem número inteiro)
+  let pareamento = null;
+  try { pareamento = JSON.parse(fs.readFileSync(path.join(RUN, 'pareamento.json'), 'utf8')); } catch { /* ainda não fechou */ }
+
+  const w = {
     instalado: true,
     servico: vivo('servico.pid', processos),
     ponte: vivo('ponte.pid', processos),
@@ -103,8 +108,12 @@ function lerWhatsapp(processos) {
     enviadas,
     ultima,
     vozAte,
+    ids: { pessoal: fs.existsSync(path.join(RUN, 'sessao.id')), bot: fs.existsSync(path.join(RUN, 'sessao-bot.id')) },
+    pareamento,
     saude: lerSaude(),
   };
+  w.vista = vistaPareamento(w);
+  return w;
 }
 
 module.exports = { lerWhatsapp };

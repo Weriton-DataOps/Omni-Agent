@@ -86,8 +86,8 @@ O serviço limita requisições por IP, e tudo aqui vem de `127.0.0.1`: ponte, M
 - `omni/vigia-servico.mjs` (+ `vigia-servico.vbs`, que o Agendador chama sem janela, a cada 5 min) — confere disco, serviço, ponte e bot. Avisa no WhatsApp abaixo de 10 GB livres; religa pelo `iniciar.ps1` quando o processo some, guardando antes o log da queda em `logs\quedas`; com menos de 2 GB não religa. Problema que dura duas rodadas vira aviso na tela do Windows. `--teste` diz o que faria. Estado em `%APPDATA%\omni\whatsapp\vigia-servico.json`, ações em `logs\vigia-servico.log`.
 - `omni/config.mjs` — caminhos, sessões, dono, chaves do cofre e envio ao dono.
 - `omni/cofre.ps1` e `omni/cofre.mjs` — leitura e gravação no Gerenciador de Credenciais; o segredo passa só por stdin/stdout.
-- `omni/parear.mjs` — QR vivo para parear (`--bot` para a sessão do bot).
-- `omni/chaves.mjs` — recria as chaves com escopo, grava no cofre e prova cada uma pelos dois lados.
+- `omni/parear.mjs` — QR vivo para parear, na ordem: `--papel pessoal` (padrão), `--papel bot` (ou `--bot`) e `--papel fechar`, que cria as chaves com escopo, prova que o pessoal é só leitura e grava `pareamento.json` (sem chave e sem número inteiro). `--json` troca a página por uma linha JSON por evento; é assim que a janela "Parear WhatsApp" da ilha conversa com ele. O laço mora em `omni/pareamento.mjs`.
+- `omni/chaves.mjs` — recria as chaves com escopo, grava no cofre e prova cada uma pelos dois lados. As provas moram em `omni/chaves-escopo.mjs`.
 - `omni/mcp.mjs` — servidor MCP: ferramentas de leitura, `transcrever_audio` e `enviar_para_weriton`, assinada com projeto e id da sessão.
 - `omni/voz.ps1` — transcrição e síntese de voz pela OpenAI.
 - `omni/transcrever-local.py` — transcrição local (Whisper), plano B quando a OpenAI recusa.
