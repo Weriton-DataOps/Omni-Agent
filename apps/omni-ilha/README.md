@@ -159,7 +159,10 @@ scratchpad da sessão. Os tokens vêm do `style.css` do port Windows dele:
   janela de um agente existindo, mesmo minimizada, o Windows engole o botão-baixo na ilha, e sem o par não há
   `click`. O teste é pelo retângulo porque o refresh de 2 s troca os nós por baixo do ponteiro.
 
-Usa o Electron já instalado em `..\omni-desktop\node_modules`; não tem `npm install` nem build.
+Tem o próprio Electron 33.4.11 (`npm ci` nesta pasta; a raiz e o CI não instalam). No Node 24 o
+postinstall do pacote morre calado no meio da extração e deixa a `dist` só com o `LICENSES`; o
+`iniciar.ps1` completa a extração pelo `tar.exe`, a partir do zip que o `npm ci` já deixou no cache
+(`iniciar.ps1 -SoPreparar` faz só isso e sai). Não tem build.
 
 ## De onde vem o dado
 

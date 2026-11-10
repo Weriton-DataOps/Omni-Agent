@@ -23,7 +23,7 @@ env -u ELECTRON_RUN_AS_NODE <electron.exe> gravar.js giro rasgo          # ou s�
 env -u ELECTRON_RUN_AS_NODE <electron.exe> provas/fumaca-gpu.js          # sanidade: WebGL2 + timer query na GTX 1650
 ```
 
-`<electron.exe>` = `C:\Users\wp.santos\Documents\Omni\apps\omni-desktop\node_modules\electron\dist\electron.exe`.
+`<electron.exe>` = o Electron próprio da ilha, `..\node_modules\electron\dist\electron.exe` (ver `iniciar.ps1 -SoPreparar`).
 
 Os vídeos vão para `provas/` e os dumps crus para `%TEMP%\omni-motor-cru`. A régua numérica é `ferramentas/medir.py`.
 

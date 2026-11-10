@@ -149,9 +149,10 @@ Contrato: `criarCasa({ spawn, env, raiz, limiteMs })` → `{ iniciar(), chamar(m
 
 ### Tarefa 7: Electron próprio
 
-- [ ] `apps/omni-ilha/package.json`: `devDependencies: { "electron": "33.4.11" }` e `start: "electron ."`. O `package-lock.json` sai por `npm install` dentro de `apps/omni-ilha`, com o zip do cache.
-- [ ] `iniciar.ps1` aponta para `node_modules\electron\dist\electron.exe` da própria pasta e, se faltar, avisa com `npm ci`.
-- [ ] Conferir que o CI não toca `apps/` (o `npm ci` roda só na raiz) e que `node_modules/` está no `.gitignore`.
+- [x] `apps/omni-ilha/package.json`: `devDependencies: { "electron": "33.4.11" }` e `start: "electron ."`. O `package-lock.json` sai por `npm install` dentro de `apps/omni-ilha`, com o zip do cache.
+- [x] `iniciar.ps1` aponta para `node_modules\electron\dist\electron.exe` da própria pasta e, se faltar, avisa com `npm ci`.
+- [x] Conferir que o CI não toca `apps/` (o `npm ci` roda só na raiz) e que `node_modules/` está no `.gitignore`.
+  Resultado: achado no caminho. No Node 24 o postinstall do electron 33 (`extract-zip`) sai com 0 em 1 s e deixa a `dist` só com o `LICENSES`; o zip baixado fica no cache. O `iniciar.ps1` passou a completar a extração pelo `tar.exe` (dist + `path.txt`, igual ao `install.js`) e ganhou `-SoPreparar`, que o instalador do plano 6 usa. Teste no rascunho com cache falso (`electron_config_cache`): 4/4, o velho 0/4 pela asserção, dois mutantes mortos (sem `path.txt`, sem `-SoPreparar`). O `electron.exe` extraído tem o mesmo hash do desktop. Fumaça com o binário próprio: saída 0. Raiz sem `workspaces`, `apps/` fora do `payloadRoots` da integridade, lock só no `registry.npmjs.org`. O README do `motor/` perdeu o caminho pessoal.
 
 ### Tarefa 8: prova de bancada com o Oráculo de verdade
 
