@@ -438,6 +438,16 @@
         "As maos do Actions: node runtime/maos-actions.mjs execucao <id> --estado ... devolve o estado ao Oraculo pelo servir do Omni, com o token tirado do cofre e nunca mostrado; o servir publica servir.json com a porta de cada agente no ar.",
         "Provado contra o Oraculo de verdade numa casa temporaria: tela cria, campainha toca, carteiro assume, maos concluem."
       ]
+    },
+    {
+      "version": "0.30.0",
+      "changes": [
+        "A ilha sobe a casa: runtime/servir.mjs num processo a parte, com o Node do sistema e um token aleatorio a cada subida que nao sai do processo da ilha; fechar a ilha leva a casa junto.",
+        "Os cards Actions e Oraculo leem o resumo do proprio Oraculo pela casa; sem o Oraculo instalado o card fica apagado com \"instalar\", e casa fora do ar mostra o motivo.",
+        "Janela de agente: a ilha abre o painel que o agente declara na interface do agente.json, com o preload dele, navegacao presa a pasta da interface e o agente:api falando so com o dono da janela (outro agente ou janela sem dono: status 0, sem trafego).",
+        "O deposito Actions saiu da ilha e mora no Oraculo: actions.html, actions.js, oracle.js e scripts/omni-actions-despachar.mjs removidos, e o subcomando execucao do omni-actions.mjs tambem; quem devolve execucao sao as maos do Actions.",
+        "A ilha tem o proprio Electron (33.4.11, apps/omni-ilha/package.json); o iniciar.ps1 completa a extracao quando o postinstall do Electron falha calado no Node 24, e -SoPreparar so prepara."
+      ]
     }
   ]
 }
