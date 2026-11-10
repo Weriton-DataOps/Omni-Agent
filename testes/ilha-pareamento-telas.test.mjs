@@ -6,7 +6,7 @@ import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
 
 const require = createRequire(import.meta.url)
-const { inicial, aplicar, textoDoMotivo } = require('../apps/omni-ilha/pareamento-telas.js')
+const { inicial, aplicar, textoDoMotivo, MOTIVOS } = require('../apps/omni-ilha/pareamento-telas.js')
 
 const QR = 'data:image/png;base64,iVBORw0KGgo='
 const rodar = (...eventos) => eventos.reduce((est, e) => aplicar(est, e), inicial())
@@ -117,4 +117,8 @@ test('textos dos motivos: conhecidos em português, desconhecido não some', () 
   assert.match(textoDoMotivo('servico-fora'), /serviço do WhatsApp/)
   assert.match(textoDoMotivo('sem-node'), /Node/)
   assert.match(textoDoMotivo('xyz'), /xyz/)
+})
+
+test('a janela chama o segundo número de "número do Omni": nenhum motivo diz "bot" à pessoa', () => {
+  for (const [motivo, texto] of Object.entries(MOTIVOS)) assert.doesNotMatch(texto, /\bbot\b/i, motivo)
 })

@@ -10,7 +10,7 @@
   else raiz.PareamentoTelas = fabrica();
 })(typeof self !== 'undefined' ? self : this, function () {
   const MOTIVOS = {
-    'mesmo-numero': 'Você escaneou o QR do bot com o seu próprio celular. Desfiz esse pareamento: escaneie com o celular do número do Omni.',
+    'mesmo-numero': 'Você escaneou o QR do número do Omni com o seu próprio celular. Desfiz esse pareamento: escaneie de novo com o celular do número do Omni, o outro chip.',
     'servico-fora': 'O serviço do WhatsApp não respondeu. Ele precisa estar ligado para parear.',
     'admin-ausente': 'Falta a chave de administração do serviço no cofre. A instalação é que cria essa chave.',
     prazo: 'O código venceu sem ser escaneado: o pareamento espera 10 minutos.',

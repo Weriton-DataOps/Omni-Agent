@@ -310,7 +310,7 @@ criarPareador({ gerar, node, script, env, enviar }) → { iniciar(), cancelar(),
   4. `qr-bot`.
   5. `provando`: "conferindo que o seu número é só leitura".
   6. `pronto`: os dois `fone4`, "pessoal só leitura · provado (5 recusas)".
-  7. `erro`: o motivo em português. Os textos ficam num mapa: `mesmo-numero` é "você escaneou o QR do bot com o seu próprio celular; desfiz o pareamento, escaneie com o celular do número do Omni". Botão "tentar de novo".
+  7. `erro`: o motivo em português. Os textos ficam num mapa: `mesmo-numero` é "você escaneou o QR do número do Omni com o seu próprio celular; desfiz esse pareamento, escaneie de novo com o celular do número do Omni" (na T7 o "bot" saiu do texto: a janela não usa essa palavra). Botão "tentar de novo".
   - O QR só aparece depois do clique em "mostrar o QR". É a regra do §4.1: o papel do número vem antes do escaneio.
   - Pausar entre o pessoal e o bot pede um ajuste: o pareador emite o `fim` do pessoal, e a janela só pede o `bot` com o clique. Por isso `criarPareador` ganha `continuar()`, e a sequência para depois de cada `fim ok` até a janela chamar `continuar()`. O teste do T5, caso 1, passa a chamar `continuar()` entre os passos. Esta mudança entra no T5, antes do commit dele.
 - [x] `pareamento.html`:
@@ -341,16 +341,40 @@ O cenário:
 - a ilha real escondida, com o gancho.
 
 As caixas:
-- [ ] Com `OMNI_ILHA_PAREAR=1`, a janela abre sozinha e a tela é `apresentar-pessoal`, sem QR no DOM.
-- [ ] "mostrar o QR" → aparece um `img` com `data:image/png` e o texto do SEU celular.
-- [ ] O pessoal fica `ready` → `apresentar-bot`, com o texto do NÚMERO DO OMNI e sem QR no DOM.
-- [ ] O bot fica `ready` → `provando` → `pronto`, com os dois `fone4` e "5 recusas".
-- [ ] O card da ilha fica `ligada` (verde) só depois do `pronto`. Antes dele, fica `falta`, com o texto da Tarefa 4.
-- [ ] Cenário trocado: o bot pareia com o fone do pessoal → tela `erro` com o texto de `mesmo-numero`, mais um `logout` no serviço falso.
-- [ ] Cenário de envio vazando: o serviço aceita envio pela pessoal → `erro` com "não consegui provar que o seu número é só leitura", e o card não fica verde.
-- [ ] Vazamento: as chaves do serviço falso e o número inteiro não aparecem na saída da ilha, nos arquivos do `APPDATA` temporário nem no DOM (`document.body.innerHTML`).
-- [ ] Fotos (`capturePage`) de cada tela, mais a revisão `anti-slop-review`, com as correções aplicadas.
-- [ ] Resultado registrado aqui, com a contagem de OK e FALHOU.
+- [x] Com `OMNI_ILHA_PAREAR=1`, a janela abre sozinha e a tela é `apresentar-pessoal`, sem QR no DOM.
+- [x] "mostrar o QR" → aparece um `img` com `data:image/png` e o texto do SEU celular.
+- [x] O pessoal fica `ready` → `apresentar-bot`, com o texto do NÚMERO DO OMNI e sem QR no DOM.
+- [x] O bot fica `ready` → `provando` → `pronto`, com os dois `fone4` e "5 recusas". Ordem registrada por um `MutationObserver`: `apresentar-pessoal, qr-pessoal, apresentar-bot, qr-bot, provando, pronto`.
+- [x] O card da ilha fica `ligada` ("NO AR") só depois do `pronto`. Antes dele, fica `falta` ("PAREAR"), também com só o pessoal pareado.
+- [x] Cenário trocado: o bot pareia com o fone do pessoal → tela `erro` com o texto de `mesmo-numero`, mais um `logout` do bot no serviço falso; o card não fica verde.
+- [x] Cenário de envio vazando: o serviço aceita envio pela pessoal → `erro` com "não consegui provar que o seu número é só leitura", `pareamento.json` com `soLeitura.ok: false` e o card em `falta`.
+- [x] Vazamento: a chave admin, as 3 chaves emitidas e os números inteiros não aparecem na saída da ilha, nos arquivos do `APPDATA` temporário nem no DOM da janela e da ilha. Exceção por desenho: o `dono.txt` guarda o número do dono inteiro, porque a ponte precisa dele (T3).
+- [x] Fotos (`capturePage`) de cada tela, mais a revisão `anti-slop-review` (registro APP), com as correções aplicadas.
+- [x] Resultado registrado aqui, com a contagem de OK e FALHOU.
+
+**Como rodou:** a ilha real (o Electron do próprio `apps/omni-ilha`, escondida, `--aberta` para o card se atualizar, `--user-data-dir` próprio) contra o serviço falso na mesma process do roteiro (porta aleatória; aborta se for 2785). Cada cenário tem `APPDATA`, casa e user-data temporários. O `servico.pid` e o `ponte.pid` apontam para o próprio roteiro (um node vivo), e o `saude.json` é regravado a cada 10 s: com a sonda sempre fresca, a ilha nunca dispara o `saude.mjs`, que leria o cofre de verdade. A chave admin chega ao gancho por uma variável da bancada, sai do `process.env` antes de nascer qualquer filho e vai ao pareador por `configurarPareador({ chaveStdin })`. O QR do serviço falso é um PNG com cara de QR (29 módulos, os três quadrados de canto), para a foto mostrar o que a pessoa vai ver.
+
+**Resultado:** 86 conferências, 0 FALHOU (normal 30, mesmo-numero 27, vaza 29), na primeira volta e de novo depois das correções.
+
+**Revisão das fotos (anti-slop, registro APP):** poucos ajustes.
+- A foto da 1ª tela saiu vazia: a bancada fotografou antes da primeira pintura (o DOM já estava certo, a caixa de `data-tela` passou). Era defeito da bancada, não da janela, que só aparece no `ready-to-show`. Corrigido: a foto espera dois quadros.
+- O texto de `mesmo-numero` dizia "o QR do **bot**", e a janela inteira chama esse número de "número do Omni". O vocabulário trocava justo na tela de quem já se confundiu. Agora diz: "Você escaneou o QR do número do Omni com o seu próprio celular. Desfiz esse pareamento: escaneie de novo com o celular do número do Omni, o outro chip." Virou teste: nenhum motivo diz "bot" à pessoa. O mutante com o texto antigo fica vermelho pela asserção (`mesmo-numero`).
+- Contraste calculado sobre o fundo `#11141a`:
+
+  | Cor | Razão |
+  |---|---|
+  | vermelho do erro | 6,87 |
+  | `--tinta-3` (nota, 11 px) | 5,85 |
+  | `--tinta-2` | 7,21 |
+  | texto do botão cheio | 15,45 |
+  | anel verde do QR | 8,09 |
+
+  Tudo acima de 4,5:1.
+- Do resto, nada reprova:
+  - um só botão cheio por tela;
+  - raio 8 px;
+  - nenhum glow, gradiente ou faixa lateral;
+  - o verde aparece só no anel do QR pronto e no card "NO AR".
 
 ### Tarefa 8: fechamento
 
