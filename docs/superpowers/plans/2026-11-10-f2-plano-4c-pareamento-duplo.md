@@ -295,15 +295,15 @@ criarPareador({ gerar, node, script, env, enviar }) → { iniciar(), cancelar(),
 
 **Arquivos:** `apps/omni-ilha/pareamento.html`, `pareamento-preload.js`, `pareamento-janela.js`, `main.js`, `preload.js`, `renderer.js`, `index.html`.
 
-- [ ] `main.js`:
+- [x] `main.js`:
   - `abrirPareamento()` segue o molde do `abrirCofre`: uma só janela, `setContentProtection(true)`, `window.open` negado e navegação negada;
   - IPC `whatsapp:parear-iniciar` e `whatsapp:parear-cancelar`, conferidos por `daJanelaPareamento`;
   - os eventos do pareador vão por `janelaPareamento.webContents.send('whatsapp:pareamento', e)`;
   - fechar a janela chama `cancelar()`;
   - `abrir-pareamento` vem da ilha (`daIlha`), e com `OMNI_ILHA_PAREAR=1` a janela abre depois do `pronta`;
   - o gancho de teste ganha `abrirPareamento` e `janelaPareamento`.
-- [ ] `pareamento-preload.js` expõe `window.pareamento = { iniciar, cancelar, aoEvento(cb) }`. Só repassa o dado, nunca o evento do Electron.
-- [ ] `pareamento-janela.js`: uma máquina de telas, na ordem:
+- [x] `pareamento-preload.js` expõe `window.pareamento = { iniciar, cancelar, aoEvento(cb) }`. Só repassa o dado, nunca o evento do Electron.
+- [x] `pareamento-janela.js`: uma máquina de telas, na ordem:
   1. `apresentar-pessoal`: "1 de 2 · o SEU WhatsApp". Explica que o Omni só lê e nunca envia por ele. Botão "mostrar o QR".
   2. `qr-pessoal`: o QR, com "No SEU celular: WhatsApp → Aparelhos conectados → Conectar um aparelho".
   3. `apresentar-bot`: "2 de 2 · o número do Omni". Diz que é por ele que o Omni conversa com você, e manda escanear com o celular do NÚMERO DO OMNI, não com o seu. Botão "mostrar o QR".
@@ -313,14 +313,22 @@ criarPareador({ gerar, node, script, env, enviar }) → { iniciar(), cancelar(),
   7. `erro`: o motivo em português. Os textos ficam num mapa: `mesmo-numero` é "você escaneou o QR do bot com o seu próprio celular; desfiz o pareamento, escaneie com o celular do número do Omni". Botão "tentar de novo".
   - O QR só aparece depois do clique em "mostrar o QR". É a regra do §4.1: o papel do número vem antes do escaneio.
   - Pausar entre o pessoal e o bot pede um ajuste: o pareador emite o `fim` do pessoal, e a janela só pede o `bot` com o clique. Por isso `criarPareador` ganha `continuar()`, e a sequência para depois de cada `fim ok` até a janela chamar `continuar()`. O teste do T5, caso 1, passa a chamar `continuar()` entre os passos. Esta mudança entra no T5, antes do commit dele.
-- [ ] `pareamento.html`:
+- [x] `pareamento.html`:
   - CSS com tokens no `:root`, a mesma paleta escura do cofre (`#11141a`) e o verde do WhatsApp só no QR pronto;
   - o QR a 280 px num fundo branco com margem;
   - nada de emoji como ícone;
   - revisão `anti-slop-review` sobre as fotos da Tarefa 7.
-- [ ] `index.html` e `renderer.js`: o botão "parear" na 2ª linha do card quando `acao === 'parear'`; `preload.js` ganha `abrirPareamento`.
-- [ ] **Verde lido:** a suíte da ilha (`ilha-*`), `node --check` nos JS novos e o typecheck.
-- [ ] **Commit:** `feat(ilha): janela Parear WhatsApp com o papel de cada número antes do QR`.
+- [x] `index.html` e `renderer.js`: o botão "parear" na 2ª linha do card quando `acao === 'parear'`; `preload.js` ganha `abrirPareamento`.
+- [x] **Feito, com estes desvios do texto acima:**
+  - a máquina de telas saiu pura, num arquivo próprio (`pareamento-telas.js`, UMD: `<script>` na janela, `require` no teste), e `pareamento-janela.js` só desenha e cumpre o `efeito` (`{ passo }`) que ela devolve;
+  - o mapeamento "passo pedido → `iniciar` ou `continuar`" saiu do `main.js` para `pedirPasso(pareador, passo)` no `pareamento-ilha.js`, com teste: o mesmo passo rodando responde sim sem outro processo; o seguinte ao que ainda roda espera ele fechar; pular passo é recusado; parado, é sempre `iniciar(passo)`;
+  - clique `voltar` no QR: a janela cancela o processo e volta à apresentação do mesmo número;
+  - motivo `ocupado` quando o main recusa o passo pedido;
+  - o gancho de teste ganhou `configurarPareador(opcoes)` (script, node e `chaveStdin` da bancada, nunca por variável de ambiente);
+  - o botão cheio da janela é neutro (tinta clara): o verde do WhatsApp fica só no anel do QR pronto;
+  - `index.html` e `renderer.js` já tinham entrado na Tarefa 4 (o card inteiro é o alvo do toque).
+- [x] **Verde lido:** `ilha-pareamento-telas` 13 de 13 e `ilha-pareador` 18 de 18; suíte `ilha-*` 99 de 99; `node --check` nos 6 JS; typecheck com saída 0. Mutantes: 12 na máquina de telas e 6 no `pedirPasso`/`voltar`. O "erro sem limpar o QR" sobreviveu na 1ª rodada (o teste nunca tinha QR na tela) e morreu com um QR antes da falha; o texto do motivo desconhecido é equivalente; duas linhas do `pedirPasso` eram redundantes (equivalentes) e saíram do código.
+- [x] **Commit:** `feat(ilha): janela Parear WhatsApp com o papel de cada número antes do QR`.
 
 ### Tarefa 7: prova na bancada, com um serviço falso
 

@@ -131,4 +131,14 @@ function criarPareador({ gerar, node, script, env = {}, enviar, chaveStdin = nul
   };
 }
 
-module.exports = { criarPareador, filtrar };
+// A janela só sabe dizer "quero o passo X". Daqui sai iniciar() ou continuar(): o mesmo passo já rodando
+// responde sim sem outro processo; o seguinte ao que ainda roda espera ele fechar; pular passo é recusado.
+// Parado, é sempre iniciar(passo): ele recusa passo desconhecido e faz o mesmo que o continuar().
+function pedirPasso(pareador, passo) {
+  const { rodando, papel } = pareador.estado();
+  if (!rodando) return pareador.iniciar(passo);
+  if (papel === passo) return true;
+  return PASSOS[PASSOS.indexOf(papel) + 1] === passo ? pareador.continuar() : false;
+}
+
+module.exports = { criarPareador, filtrar, pedirPasso };

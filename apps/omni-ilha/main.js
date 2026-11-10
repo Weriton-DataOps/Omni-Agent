@@ -15,6 +15,7 @@
 'use strict';
 
 const { app, BrowserWindow, clipboard, globalShortcut, ipcMain, screen } = require('electron');
+const { spawn } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -28,6 +29,7 @@ const { lerSistema, processos } = require('./sistema');
 const { lerWhatsapp } = require('./whatsapp');
 const { criarMaoCofre } = require('./cofre');
 const { registrarIpcCofre } = require('./cofre-ipc');
+const { criarPareador, pedirPasso } = require('./pareamento-ilha');
 const ICONE = path.join(__dirname, 'omni.ico'); // a face do Omni (b2-arte.png recortada)
 
 // FAIXA px de cada lado para a faixa que escorre pela borda de cima da tela; FOLGA px a mais de cada lado
@@ -246,6 +248,10 @@ if (trava) app.whenReady().then(() => {
       janelaOvercore: () => janelaOvercore,
       janelaCofre: () => janelaCofre,
       abrirCofre: () => abrirCofre(),
+      janelaPareamento: () => janelaPareamento,
+      abrirPareamento: () => abrirPareamento(),
+      // a bancada troca o script, o node e a chave da prova (chaveStdin) sem passar por variável de ambiente
+      configurarPareador: (opcoes) => { pareador?.cancelar(); pareador = null; opcoesPareador = { ...opcoes }; },
       estado: () => ({ ignorando, dentro, alvo, estadoIlha, caixa, tamanho, escapeLigado }),
       // a bancada não aperta teclas de verdade: simula o atalho global (só se estivesse registrado)
       apertarEscape: () => { if (escapeLigado) janela.webContents.send('tecla', 'escape'); return escapeLigado; },
@@ -281,6 +287,11 @@ ipcMain.on('pronta', (evento, medidas) => {
     janela.setAlwaysOnTop(true, 'screen-saver');
   }
   sondarJa();
+  // OMNI_ILHA_PAREAR=1: o instalador pede o pareamento logo na primeira subida (uma vez por vida da ilha)
+  if (process.env.OMNI_ILHA_PAREAR === '1' && !pareamentoPedido) {
+    pareamentoPedido = true;
+    abrirPareamento();
+  }
 });
 
 // Retângulo do corpo visível. Chega a cada troca de estado e, durante a animação, a cada quadro que muda.
@@ -477,6 +488,62 @@ ipcMain.on('abrir-cofre', (evento) => {
   abrirCofre();
 });
 registrarIpcCofre({ ipcMain, mao: criarMaoCofre(), clipboard, daJanela: daJanelaCofre, daIlha });
+
+// ── janela "Parear WhatsApp" (F2, plano 4c): os dois números, cada um apresentado antes do QR dele. Quem roda
+// o parear.mjs é o pareador (pareamento-ilha.js), um passo por vez; a janela só pede passos e recebe os
+// eventos já filtrados. Fora de captura de tela: o QR na tela é a sessão de alguém. Fechar cancela o passo.
+let janelaPareamento = null;
+let pareamentoPedido = false;
+let pareador = null;
+let opcoesPareador = {};
+function obterPareador() {
+  if (!pareador) {
+    pareador = criarPareador({
+      gerar: (node, args, opcoes) => spawn(node, args, opcoes),
+      node: process.env.OMNI_NODE || 'node',
+      script: path.join(__dirname, '..', '..', 'servicos', 'whatsapp', 'omni', 'parear.mjs'),
+      env: process.env,
+      enviar: (e) => { if (janelaPareamento && !janelaPareamento.isDestroyed()) janelaPareamento.webContents.send('whatsapp:pareamento', e); },
+      ...opcoesPareador,
+    });
+  }
+  return pareador;
+}
+function abrirPareamento() {
+  if (janelaPareamento && !janelaPareamento.isDestroyed()) {
+    if (janelaPareamento.isMinimized()) janelaPareamento.restore();
+    if (!ESCONDIDA) { janelaPareamento.show(); janelaPareamento.focus(); }
+    return;
+  }
+  const area = screen.getPrimaryDisplay().workArea;
+  const largura = Math.min(560, area.width - 80);
+  const altura = Math.min(680, area.height - 80);
+  janelaPareamento = new BrowserWindow({
+    width: largura, height: altura,
+    x: Math.round(area.x + (area.width - largura) / 2), y: Math.round(area.y + (area.height - altura) / 2),
+    minWidth: 480, minHeight: 560, show: false, title: 'Parear WhatsApp', icon: ICONE, backgroundColor: '#11141a',
+    titleBarStyle: 'hidden', titleBarOverlay: { color: '#11141a', symbolColor: '#9aa2b5', height: 40 },
+    webPreferences: { preload: path.join(__dirname, 'pareamento-preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, offscreen: ESCONDIDA },
+  });
+  janelaPareamento.setContentProtection(true);
+  janelaPareamento.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  janelaPareamento.webContents.on('will-navigate', (ev) => ev.preventDefault());
+  janelaPareamento.on('closed', () => { janelaPareamento = null; pareador?.cancelar(); });
+  janelaPareamento.once('ready-to-show', () => { if (!ESCONDIDA) janelaPareamento?.show(); });
+  janelaPareamento.loadFile(path.join(__dirname, 'pareamento.html'));
+}
+const daJanelaPareamento = (evento) => janelaPareamento && !janelaPareamento.isDestroyed() && evento.sender === janelaPareamento.webContents;
+ipcMain.on('abrir-pareamento', (evento) => {
+  if (!daIlha(evento)) return;
+  ligarEscape(false);
+  abrirPareamento();
+});
+ipcMain.handle('whatsapp:parear-iniciar', (evento, passo) => (daJanelaPareamento(evento) ? pedirPasso(obterPareador(), String(passo)) : false));
+ipcMain.handle('whatsapp:parear-cancelar', (evento) => {
+  if (!daJanelaPareamento(evento)) return false;
+  pareador?.cancelar();
+  return true;
+});
 
 // ── janela do chat com o Omni (27/10): a ilha não pega foco, então a conversa mora numa janela normal.
 // Por enquanto é só a forma (pedido dele): a caixa escreve e a bolha aparece, mas nada sai daqui. Uma só.

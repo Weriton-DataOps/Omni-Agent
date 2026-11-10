@@ -35,5 +35,6 @@ contextBridge.exposeInMainWorld('ilha', {
   // a coluna de sistema e o card do WhatsApp
   sistema: () => ipcRenderer.invoke('sistema'),
   whatsapp: () => ipcRenderer.invoke('whatsapp'),
+  abrirPareamento: () => ipcRenderer.send('abrir-pareamento'),
   fechar: () => ipcRenderer.invoke('fechar'),
 });

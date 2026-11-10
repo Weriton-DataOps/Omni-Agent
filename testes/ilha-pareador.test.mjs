@@ -8,7 +8,7 @@ import { EventEmitter } from 'node:events'
 import { PassThrough } from 'node:stream'
 
 const require = createRequire(import.meta.url)
-const { criarPareador } = require('../apps/omni-ilha/pareamento-ilha.js')
+const { criarPareador, pedirPasso } = require('../apps/omni-ilha/pareamento-ilha.js')
 
 const QR = 'data:image/png;base64,iVBORw0KGgo='
 const tique = () => new Promise((ok) => setTimeout(ok, 5))
@@ -218,4 +218,47 @@ test('chaveStdin (só a prova usa): a chave vai pela 1ª linha do stdin com --ch
   const sem = montar()
   sem.pareador.iniciar()
   assert.ok(!sem.chamadas[0].args.includes('--chave-stdin'))
+})
+
+// pedirPasso: o que a janela pede ("quero o passo X") vira iniciar() ou continuar(), sem abrir dois processos
+test('pedirPasso: desconhecido recusa; do zero inicia o passo pedido', () => {
+  const { pareador, chamadas } = montar()
+  assert.equal(pedirPasso(pareador, 'nada'), false)
+  assert.equal(chamadas.length, 0)
+  assert.equal(pedirPasso(pareador, 'pessoal'), true)
+  assert.equal(papelDe(chamadas[0]), 'pessoal')
+})
+
+test('pedirPasso: o mesmo passo rodando responde sim sem outro processo', () => {
+  const { pareador, chamadas } = montar()
+  pedirPasso(pareador, 'pessoal')
+  assert.equal(pedirPasso(pareador, 'pessoal'), true)
+  assert.equal(chamadas.length, 1)
+})
+
+test('pedirPasso: o passo seguinte ao que ainda fecha espera ele sair; pular um passo é recusado', async () => {
+  const { pareador, chamadas } = montar()
+  pedirPasso(pareador, 'pessoal')
+  await linhas(chamadas[0].p, { evento: 'fim', papel: 'pessoal', ok: true })
+  assert.equal(pedirPasso(pareador, 'fechar'), false, 'do pessoal não se pula para o fechar')
+  assert.equal(pedirPasso(pareador, 'bot'), true)
+  assert.equal(chamadas.length, 1)
+  await sair(chamadas[0].p)
+  assert.equal(papelDe(chamadas[1]), 'bot')
+})
+
+test('pedirPasso: depois do passo fechado ok continua; depois de falha recomeça no passo pedido', async () => {
+  const ok = montar()
+  pedirPasso(ok.pareador, 'pessoal')
+  await linhas(ok.chamadas[0].p, { evento: 'fim', papel: 'pessoal', ok: true })
+  await sair(ok.chamadas[0].p)
+  assert.equal(pedirPasso(ok.pareador, 'bot'), true)
+  assert.equal(papelDe(ok.chamadas[1]), 'bot')
+  const falha = montar()
+  pedirPasso(falha.pareador, 'bot')
+  await linhas(falha.chamadas[0].p, { evento: 'fim', papel: 'bot', ok: false, motivo: 'mesmo-numero' })
+  await sair(falha.chamadas[0].p, 2)
+  assert.equal(pedirPasso(falha.pareador, 'bot'), true)
+  assert.equal(papelDe(falha.chamadas[1]), 'bot')
+  assert.equal(falha.chamadas.length, 2)
 })
