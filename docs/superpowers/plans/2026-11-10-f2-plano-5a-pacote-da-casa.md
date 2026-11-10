@@ -479,6 +479,34 @@ test('banco aberto na casa vira casa-ocupada e nada muda', { skip: process.platf
     assert.deepEqual(readdirSync(join(d.casa, 'casa')).filter((n) => n.startsWith('antes-de-importar')), [])
   } finally { aberto.close() }
 }))
+
+test('pacote corrompido não entra na casa', () => comCasa((c) => {
+  const saida = pacotePronto(c)
+  mexer(join(saida, 'omni.db'), 'PRAGMA user_version = 7')
+  const d = destinoDe(c.pasta)
+  assert.throws(() => importarCasa(d.casa, saida, { env: d.env }), { code: 'pacote-corrompido' })
+  assert.ok(!existsSync(join(d.casa, 'casa', 'omni.db')))
+}))
+
+test('-wal órfão da casa antiga vai para o backup e não contamina a cópia', () => comCasa((c) => {
+  const saida = pacotePronto(c)
+  const d = destinoDe(c.pasta)
+  const arquivo = join(d.casa, 'casa', 'omni.db')
+  comBancoDaCasa(d.casa, 'omni', () => null, d.env)
+  // Um -wal com quadros não aplicados, como o que sobra de um processo morto no meio.
+  const db = new DatabaseSync(arquivo)
+  let wal
+  try {
+    db.exec('PRAGMA wal_autocheckpoint = 0')
+    registrarDespacho(db, { agente: 'oraculo', execucao: 'velho' }, { maquina: 'destino' })
+    wal = readFileSync(`${arquivo}-wal`)
+  } finally { db.close() }
+  writeFileSync(`${arquivo}-wal`, wal)
+  const r = importarCasa(d.casa, saida, { env: d.env, substituir: true })
+  assert.ok(existsSync(join(r.backup, 'omni.db-wal')))
+  const ids = comBancoDaCasa(d.casa, 'omni', (db) => db.prepare('SELECT id FROM despachos ORDER BY id').all().map((l) => l.id), d.env)
+  assert.deepEqual(ids, ['oraculo/e1'])
+}))
 ```
 
 - [ ] Rodar. Esperado: falha (`importarCasa` não existe).
@@ -559,12 +587,14 @@ export function importarCasa(casa, pasta, { substituir = false, env = process.en
 ```
 
   Juntar os `import` novos aos do topo do arquivo (`constants`, `copyFileSync`, `renameSync`, `basename` e `pastaDoBanco`).
-- [ ] Rodar. Esperado: 17 de 17 no Windows.
-- [ ] **Mutantes:**
+- [ ] Rodar. Esperado: 20 de 20 no Windows.
+- [ ] **Mutantes** (executados em 10/11):
   - sem a recusa `casa-existente` → vermelho em "recusa sem --substituir";
-  - backup copiado em vez de movido → vermelho em "guarda o banco atual" pelo `deepEqual` dos ids;
+  - backup copiado em vez de movido → vermelho em "-wal órfão" (`database disk image is malformed`: o `-wal` velho é reaplicado sobre o banco novo) e em "casa-ocupada". O "guarda o banco atual" sozinho não pega, porque o rename sobrescreve o `omni.db`;
   - sem `devolverBackup` no `catch` do renomear → vermelho em "casa-ocupada", porque o `nucleo.db` não volta;
-  - sem a checagem de migração → vermelho em "mais novo".
+  - sem a checagem de migração → vermelho em "mais novo";
+  - sem `conferirPacote` na entrada → vermelho em "pacote corrompido não entra";
+  - sem a conferência da cópia → verde. O pacote acabou de passar no sha256, e cópia divergente só nasce de corrida ou de disco entre a conferência e o `copyFile`, que nenhum teste provoca sem costura no código. A linha fica como rede de segurança.
 - [ ] Commit `feat(casa): importar o pacote com backup datado e conferência antes de migrar`.
 
 ### Tarefa 5: linha de comando `runtime/executor.mjs`

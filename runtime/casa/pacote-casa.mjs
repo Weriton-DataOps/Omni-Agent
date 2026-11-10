@@ -2,11 +2,11 @@
 // O pacote é uma pasta com nucleo.db, omni.db e manifesto.json. O cofre não entra: o blob DPAPI só
 // abre na máquina que o cifrou, e o cofre já tem o próprio pacote cifrado (cofre.mjs exportar).
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { constants, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { basename, join, resolve } from 'node:path'
 
 import { BANCOS } from './esquemas.mjs'
-import { ESPERA_OCUPADO_MS, agoraIso, carregarSqlite, comBancoDaCasa, maquinaAtual, sha256 } from './banco.mjs'
+import { ESPERA_OCUPADO_MS, agoraIso, carregarSqlite, comBancoDaCasa, maquinaAtual, pastaDoBanco, sha256 } from './banco.mjs'
 
 export const FORMATO_PACOTE = 'omni-casa-pacote'
 export const BANCOS_DO_PACOTE = Object.freeze(['nucleo', 'omni'])
@@ -137,4 +137,73 @@ export function conferirPacote(pasta, { env = process.env } = {}) {
     throw new PacoteCasaError('pacote-corrompido', 'O pacote não confere com o próprio manifesto.', { divergencias })
   }
   return manifesto
+}
+const SOBRAS = ['', '-wal', '-shm', '-journal']
+const OCUPADO = new Set(['EBUSY', 'EPERM', 'EACCES'])
+
+// Importa o pacote conferido. Casa com banco só com substituir: o atual vai inteiro (com -wal e -shm)
+// para antes-de-importar-<data>, e qualquer falha devolve tudo ao lugar. Migra só depois da cópia conferir.
+export function importarCasa(casa, pasta, { substituir = false, env = process.env, agora = agoraIso() } = {}) {
+  const origem = resolve(pasta)
+  const manifesto = conferirPacote(origem, { env })
+  for (const nome of BANCOS_DO_PACOTE) {
+    const conhecida = Math.max(0, ...BANCOS[nome].migracoes.map((m) => m.versao))
+    if (manifesto.bancos[nome].migracao > conhecida) {
+      throw new PacoteCasaError('pacote-mais-novo', `O pacote traz o ${nome}.db na migração ${manifesto.bancos[nome].migracao} e este Omni conhece até a ${conhecida}; atualize o Omni antes de importar.`)
+    }
+  }
+  const pastaBanco = pastaDoBanco(casa, env)
+  const existentes = BANCOS_DO_PACOTE
+    .flatMap((nome) => SOBRAS.map((sufixo) => join(pastaBanco, `${BANCOS[nome].arquivo}${sufixo}`)))
+    .filter((arquivo) => existsSync(arquivo))
+  if (existentes.length > 0 && !substituir) {
+    throw new PacoteCasaError('casa-existente', 'Esta casa já tem banco; com --substituir o atual vai para um backup datado antes da cópia.')
+  }
+  mkdirSync(pastaBanco, { recursive: true })
+  const backup = existentes.length > 0 ? join(pastaBanco, `antes-de-importar-${agora.replace(/[:.]/g, '-')}`) : null
+  const movidos = []
+  const devolverBackup = () => {
+    for (const [de, para] of movidos.reverse()) renameSync(para, de)
+    if (backup) rmSync(backup, { recursive: true, force: true })
+  }
+  if (backup) {
+    mkdirSync(backup)
+    try {
+      for (const de of existentes) {
+        const para = join(backup, basename(de))
+        renameSync(de, para)
+        movidos.push([de, para])
+      }
+    } catch (erro) {
+      devolverBackup()
+      if (OCUPADO.has(erro.code)) {
+        throw new PacoteCasaError('casa-ocupada', 'Um processo está com o banco da casa aberto; feche o Omni (servir, ilha e sessões) e tente de novo.')
+      }
+      throw erro
+    }
+  }
+  const copiados = []
+  try {
+    for (const nome of BANCOS_DO_PACOTE) {
+      const destino = join(pastaBanco, BANCOS[nome].arquivo)
+      copiados.push(...SOBRAS.map((sufixo) => `${destino}${sufixo}`), `${destino}.importando`)
+      copyFileSync(join(origem, manifesto.bancos[nome].arquivo), `${destino}.importando`, constants.COPYFILE_EXCL)
+      renameSync(`${destino}.importando`, destino)
+      const divergencias = compararRetratos(manifesto.bancos[nome], retratoDoArquivo(destino, env))
+      if (divergencias.length > 0) {
+        throw new PacoteCasaError('copia-divergente', 'A cópia na casa não bateu com o pacote; o banco anterior voltou.', { divergencias: divergencias.map((d) => ({ banco: nome, ...d })) })
+      }
+    }
+    const bancos = {}
+    const migracoes = {}
+    for (const nome of BANCOS_DO_PACOTE) {
+      bancos[nome] = comBancoDaCasa(casa, nome, (db) => resumirRetrato(retratoDoBanco(db)), env)
+      migracoes[nome] = { pacote: manifesto.bancos[nome].migracao, casa: bancos[nome].migracao }
+    }
+    return { importado: true, backup, migracoes, bancos }
+  } catch (erro) {
+    for (const arquivo of copiados) rmSync(arquivo, { force: true })
+    devolverBackup()
+    throw erro
+  }
 }

@@ -7,7 +7,7 @@ import test from 'node:test'
 import { carregarSqlite, comBancoDaCasa, sha256 } from '../runtime/casa/banco.mjs'
 import { registrarDespacho } from '../runtime/casa/loja-despachos.mjs'
 import { registrarMaquina } from '../runtime/casa/loja-nucleo.mjs'
-import { compararRetratos, conferirPacote, exportarCasa, retratoDoBanco, retratoDaTabela } from '../runtime/casa/pacote-casa.mjs'
+import { compararRetratos, conferirPacote, exportarCasa, importarCasa, retratoDoBanco, retratoDaTabela } from '../runtime/casa/pacote-casa.mjs'
 
 const { DatabaseSync } = carregarSqlite()
 function comPasta(uso) {
@@ -145,4 +145,97 @@ test('banco faltando e manifesto estranho são recusados', () => comCasa((c) => 
   assert.throws(() => conferirPacote(saida, { env: c.env }), { code: 'pacote-invalido' })
   rmSync(join(saida, 'manifesto.json'))
   assert.throws(() => conferirPacote(saida, { env: c.env }), { code: 'pacote-invalido' })
+}))
+const destinoDe = (pasta) => {
+  const casa = join(pasta, 'casa-destino')
+  return { casa, env: { ...process.env, OMNI_HOME: casa, OMNI_CASA_BANCO: join(casa, 'casa') } }
+}
+
+test('importar numa casa vazia traz tudo igual e fecha sem -wal', () => comCasa((c) => {
+  const saida = pacotePronto(c)
+  const d = destinoDe(c.pasta)
+  const r = importarCasa(d.casa, saida, { env: d.env })
+  assert.equal(r.importado, true); assert.equal(r.backup, null)
+  const m = JSON.parse(readFileSync(join(saida, 'manifesto.json'), 'utf8'))
+  for (const nome of ['nucleo', 'omni']) {
+    const vivo = comBancoDaCasa(d.casa, nome, (db) => retratoDoBanco(db), d.env)
+    assert.deepEqual(compararRetratos(m.bancos[nome], vivo), [], nome)
+  }
+  assert.equal(r.bancos.omni.linhas, Object.values(m.bancos.omni.tabelas).reduce((s, t) => s + t.linhas, 0))
+  assert.deepEqual(readdirSync(join(d.casa, 'casa')).filter((n) => n.endsWith('.importando')), [])
+}))
+
+test('casa com banco recusa sem --substituir e não muda nada', () => comCasa((c) => {
+  const saida = pacotePronto(c)
+  const d = destinoDe(c.pasta)
+  comBancoDaCasa(d.casa, 'omni', () => null, d.env)
+  const antes = sha256(readFileSync(join(d.casa, 'casa', 'omni.db')))
+  assert.throws(() => importarCasa(d.casa, saida, { env: d.env }), { code: 'casa-existente' })
+  assert.equal(sha256(readFileSync(join(d.casa, 'casa', 'omni.db'))), antes)
+}))
+
+test('--substituir guarda o banco atual num backup datado antes de copiar', () => comCasa((c) => {
+  const saida = pacotePronto(c)
+  const d = destinoDe(c.pasta)
+  comBancoDaCasa(d.casa, 'omni', (db) => registrarDespacho(db, { agente: 'oraculo', execucao: 'velho' }, { maquina: 'destino' }), d.env)
+  const antes = sha256(readFileSync(join(d.casa, 'casa', 'omni.db')))
+  const r = importarCasa(d.casa, saida, { env: d.env, substituir: true, agora: '2026-11-10T01:02:03.004Z' })
+  assert.equal(r.backup, join(d.casa, 'casa', 'antes-de-importar-2026-11-10T01-02-03-004Z'))
+  assert.equal(sha256(readFileSync(join(r.backup, 'omni.db'))), antes)
+  const ids = comBancoDaCasa(d.casa, 'omni', (db) => db.prepare('SELECT id FROM despachos ORDER BY id').all().map((l) => l.id), d.env)
+  assert.deepEqual(ids, ['oraculo/e1'])
+}))
+
+test('pacote com migração mais nova que este Omni é recusado', () => comCasa((c) => {
+  const saida = pacotePronto(c)
+  const caminho = join(saida, 'manifesto.json')
+  mexer(join(saida, 'omni.db'), "INSERT INTO _migracoes (versao, nome, sha256, aplicada_em) VALUES (999, 'futura', 'x', 'y')")
+  const m = JSON.parse(readFileSync(caminho, 'utf8'))
+  const db = new DatabaseSync(join(saida, 'omni.db'))
+  try { m.bancos.omni = { ...m.bancos.omni, ...retratoDoBanco(db) } } finally { db.close() }
+  m.bancos.omni.sha256 = sha256(readFileSync(join(saida, 'omni.db')))
+  writeFileSync(caminho, JSON.stringify(m))
+  const d = destinoDe(c.pasta)
+  assert.throws(() => importarCasa(d.casa, saida, { env: d.env }), { code: 'pacote-mais-novo' })
+  assert.ok(!existsSync(join(d.casa, 'casa', 'omni.db')))
+}))
+
+test('banco aberto na casa vira casa-ocupada e nada muda', { skip: process.platform !== 'win32' }, () => comCasa((c) => {
+  const saida = pacotePronto(c)
+  const d = destinoDe(c.pasta)
+  comBancoDaCasa(d.casa, 'nucleo', () => null, d.env)
+  comBancoDaCasa(d.casa, 'omni', () => null, d.env)
+  const aberto = new DatabaseSync(join(d.casa, 'casa', 'omni.db'))
+  try {
+    assert.throws(() => importarCasa(d.casa, saida, { env: d.env, substituir: true }), { code: 'casa-ocupada' })
+    assert.ok(existsSync(join(d.casa, 'casa', 'nucleo.db')), 'o nucleo.db voltou do backup')
+    assert.deepEqual(readdirSync(join(d.casa, 'casa')).filter((n) => n.startsWith('antes-de-importar')), [])
+  } finally { aberto.close() }
+}))
+test('pacote corrompido não entra na casa', () => comCasa((c) => {
+  const saida = pacotePronto(c)
+  mexer(join(saida, 'omni.db'), 'PRAGMA user_version = 7')
+  const d = destinoDe(c.pasta)
+  assert.throws(() => importarCasa(d.casa, saida, { env: d.env }), { code: 'pacote-corrompido' })
+  assert.ok(!existsSync(join(d.casa, 'casa', 'omni.db')))
+}))
+
+test('-wal órfão da casa antiga vai para o backup e não contamina a cópia', () => comCasa((c) => {
+  const saida = pacotePronto(c)
+  const d = destinoDe(c.pasta)
+  const arquivo = join(d.casa, 'casa', 'omni.db')
+  comBancoDaCasa(d.casa, 'omni', () => null, d.env)
+  // Um -wal com quadros não aplicados, como o que sobra de um processo morto no meio.
+  const db = new DatabaseSync(arquivo)
+  let wal
+  try {
+    db.exec('PRAGMA wal_autocheckpoint = 0')
+    registrarDespacho(db, { agente: 'oraculo', execucao: 'velho' }, { maquina: 'destino' })
+    wal = readFileSync(`${arquivo}-wal`)
+  } finally { db.close() }
+  writeFileSync(`${arquivo}-wal`, wal)
+  const r = importarCasa(d.casa, saida, { env: d.env, substituir: true })
+  assert.ok(existsSync(join(r.backup, 'omni.db-wal')))
+  const ids = comBancoDaCasa(d.casa, 'omni', (db) => db.prepare('SELECT id FROM despachos ORDER BY id').all().map((l) => l.id), d.env)
+  assert.deepEqual(ids, ['oraculo/e1'])
 }))
