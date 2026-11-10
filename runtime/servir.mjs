@@ -26,7 +26,7 @@ import { criarPonteDpapi } from './casa/dpapi.mjs'
 import { entregar } from './casa/entregar-sessao.mjs'
 import { marcarDespacho } from './casa/loja-despachos.mjs'
 import { listarInterfaces, listarServidores } from './casa/loja-nucleo.mjs'
-import { sessoesVivas } from './casa/sessoes-vivas.mjs'
+import { processoVivo, sessoesVivas } from './casa/sessoes-vivas.mjs'
 import { criarSupervisor } from './casa/supervisor.mjs'
 import { arquivoServir } from './maos-actions.mjs'
 import { casaDoNucleo } from './nucleo.mjs'
@@ -93,6 +93,12 @@ export function criarGravadorDePedidos(pasta) {
   }
 }
 
+function outroServirNoAr(arquivo, vivo) {
+  let pid
+  try { pid = JSON.parse(readFileSync(arquivo, 'utf8')).pid } catch { return false }
+  return Number.isInteger(pid) && pid !== process.pid && vivo(pid)
+}
+
 // O mapa de portas para as mãos do Actions: troca atômica, sem token.
 function gravarJson(arquivo, objeto) {
   const temporario = `${arquivo}.${process.pid}.tmp`
@@ -102,7 +108,7 @@ function gravarJson(arquivo, objeto) {
 
 export async function rodarServir(argv, {
   env = process.env, saida = process.stdout, erro = process.stderr, entrada = process.stdin, casa = casaDoNucleo(env),
-  ponte = null, sessoes = () => sessoesVivas()
+  ponte = null, sessoes = () => sessoesVivas(), vivo = processoVivo
 } = {}) {
   const linha = (objeto) => saida.write(`${JSON.stringify(objeto)}\n`)
   const log = (texto) => erro.write(`[omni servir] ${texto}\n`)
@@ -118,6 +124,14 @@ export async function rodarServir(argv, {
     erro.write(`${falha.message}\n${USO}\n`)
     linha({ ok: false, erro: falha.message })
     return 2
+  }
+
+  // Um servir por casa (§5): dois supervisores subiriam cada agente duas vezes. Arquivo de pid morto é
+  // sobra de queda e não bloqueia; a recusa não toca no servir.json de quem está no ar.
+  const servirJson = arquivoServir(casa, env)
+  if (outroServirNoAr(servirJson, vivo)) {
+    linha({ ok: false, erro: 'já há um servir no ar nesta casa', recusa: true })
+    return 1
   }
 
   try {
@@ -180,7 +194,6 @@ export async function rodarServir(argv, {
     log: (texto) => log(`carteiro: ${texto}`)
   })
 
-  const servirJson = arquivoServir(casa, env)
   const publicar = () => {
     try {
       gravarJson(servirJson, { pid: process.pid, porta: real, agentes: noAr().map((e) => ({ agente: e.agente, porta: e.porta })) })

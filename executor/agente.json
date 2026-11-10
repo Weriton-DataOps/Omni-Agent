@@ -1,0 +1,20 @@
+{
+  "agente": "omni",
+  "versao": "0.32.0",
+  "banco": "omni.db",
+  "migracoes": "runtime/casa/esquemas.mjs",
+  "requer": {
+    "node": ">=24"
+  },
+  "executor": {
+    "comando": "node runtime/executor.mjs",
+    "modos": [
+      "instalar",
+      "importar",
+      "exportar",
+      "verificar"
+    ]
+  },
+  "tarefas": [],
+  "credenciais": []
+}
