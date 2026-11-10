@@ -9,7 +9,7 @@ export class ErroDeTarefa extends Error {
   }
 }
 
-// As mesmas ferramentas da visita velha (scripts/omni-actions-visita.ps1): trabalha no Actions, nunca
+// As mesmas ferramentas da visita velha (o .ps1 aposentado no plano 5c): trabalha no Actions, nunca
 // publica, nunca entra em servidor.
 const LIBERADAS = ['Read', 'Glob', 'Grep', 'Edit', 'Write', 'Bash', 'PowerShell', 'WebSearch', 'WebFetch']
 const BARRADAS = ['Bash(git push:*)', 'Bash(gh:*)', 'Bash(ssh:*)', 'Bash(scp:*)', 'Bash(npm publish:*)', 'Bash(vercel:*)', 'Bash(pm2:*)']

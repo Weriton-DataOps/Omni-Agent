@@ -220,6 +220,8 @@ O `.vbs` recebe `agente id motivo` e roda `node "<pasta>\..\runtime\tarefa-agent
 
 - [ ] **Testes vermelhos:**
   - **ponte:** a ponte exporta `comandoDaVisita(motivo)`, que devolve `[process.execPath, [<raiz>/runtime/tarefa-agente.mjs, 'rodar', 'oraculo', 'actions-visita', '--motivo', motivo]]`; o teste falha enquanto aponta para o `.ps1`;
+    - *Desvio registrado na execução:* a função mora em `servicos/whatsapp/omni/visita.mjs`, e a ponte importa de lá. Exportar da ponte obrigaria o teste a importá-la, e o import dela tem efeito colateral (`setInterval`, varredura, retomada de pedido). O teste vermelho foi o do depósito, pela asserção.
+    - *Cota:* o teste velho gastava a cota com `propor-veredito`, que virou comando do depósito. Agora ela vale para o `avisar`: o teste novo prova a seco e a cota esgotada (2 avisos por dia).
   - **reação e cota:** os testes de `aprovacoes.mjs` e o `avisar` seco/cota passam para `actions-whatsapp.test.mjs`;
   - **comando do depósito:** `omni-actions.mjs mesa` responde `{ok:false, erro:'comando do depósito: use o omni-actions.mjs do Oráculo'}`.
 - [ ] **Implementação:**

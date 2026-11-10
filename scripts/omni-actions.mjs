@@ -1,17 +1,10 @@
 #!/usr/bin/env node
-// Omni — as mãos da visita do Actions (21/10). A visita (sessão escondida do Claude Code) mexe no depósito
-// por aqui, e não editando à mão, porque aqui ficam os limites que não dependem da boa vontade dela:
-//   - campos do ponto só da lista permitida; histórico só de acréscimo
-//   - no máximo 2 propostas de veredito por dia
-//   - WhatsApp: no máximo 2 avisos de decisão madura por dia; 1 pedido de risco por visita
+// Omni — o WhatsApp da visita do Actions. O depósito (pontos, mesa, projetos, execuções) mora no Oráculo
+// desde a F2 (plano 5c) e é mexido pelo omni-actions.mjs dele; aqui ficam só os limites do WhatsApp,
+// que não dependem da boa vontade da visita:
+//   - no máximo 2 avisos de decisão madura por dia; 1 pedido de risco por visita
 //   - aprovação vale uma vez, para o mesmo commit e comando
 // Uso: node scripts/omni-actions.mjs <comando> [argumentos]   (saída em JSON)
-//   mesa                                         o que a tela mostra (pra você, potencial, projetos…)
-//   ponto <slug>                                 o ponto inteiro
-//   campo <slug> <Campo> <valor|--apagar>        Estágio, Próximo passo, Potencial, Projeto ligado, Pra você, Status
-//   propor-veredito <slug> <texto>               ex.: "arquivar — backtest perdeu do acaso" (2 por dia)
-//   historico <slug> <texto>                     linha datada no ## Histórico
-//   propor-item <projeto> <texto> [dd/mm/aaaa]   item novo no projetos.md, esperando o ✓ dele
 //   avisar <texto>                               WhatsApp de decisão madura (2 por dia)
 //   risco --titulo --repo --commit --comando --toca --nivel   pedido de risco (1 por visita)
 //   aprovacao <waId> --commit --comando          estado do pedido (não consome)
@@ -20,21 +13,14 @@
 //     shell comer as aspas (furo medido em 27/10, ponto claude-duet-agente-proativo)
 //   explicar <waId> <texto>                      resposta ao ❓ dele
 //   pendentes                                    pedidos de risco ainda abertos
-import { createRequire } from 'node:module'
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 
-const require = createRequire(import.meta.url)
-const ilha = (nome) => require(fileURLToPath(new URL(`../apps/omni-ilha/${nome}`, import.meta.url)))
-const { lerPonto, RAIZ, formatarData, hojeMs } = ilha('pontos.js')
-const { montarMesa } = ilha('mesa.js')
-const { mexerNoPonto, proporItem } = ilha('escrita.js')
-
-const CAMPOS = new Set(['Estágio', 'Próximo passo', 'Potencial', 'Projeto ligado', 'Pra você', 'Status'])
-const ESTAGIOS = new Set(['semente', 'em teste'])
+const RAIZ = process.env.OMNI_ACTIONS || join(homedir(), 'Documents', 'Actions')
 const COTA = join(RAIZ, 'visitas', 'cota.json')
 const LIMITE = { propostas: 2, avisos: 2 }
+const DEPOSITO = new Set(['mesa', 'ponto', 'campo', 'propor-veredito', 'historico', 'propor-item'])
 const visita = process.env.OMNI_VISITA_ID || ''
 
 const [, , cmd, ...args] = process.argv
@@ -53,16 +39,17 @@ const comandoDoPedido = () => {
 const sair = (obj, codigo = 0) => { console.log(JSON.stringify(obj, null, 1)); process.exit(codigo) }
 const falhar = (erro) => sair({ ok: false, erro: String(erro?.message || erro) }, 1)
 
-// cota do dia: zera quando a data muda
-function cota() {
-  const hoje = formatarData(hojeMs())
-  let c = {}
-  try { c = JSON.parse(readFileSync(COTA, 'utf8')) } catch { /* primeira do dia */ }
-  if (c.dia !== hoje) c = { dia: hoje, propostas: 0, avisos: 0 }
-  return c
+// cota do dia (o mesmo cota.json que o Oráculo usa para as propostas): zera quando a data muda
+const doisDigitos = (n) => String(n).padStart(2, '0')
+function hoje() {
+  const d = new Date()
+  return `${doisDigitos(d.getDate())}/${doisDigitos(d.getMonth() + 1)}/${d.getFullYear()}`
 }
 function gastar(tipo) {
-  const c = cota()
+  const dia = hoje()
+  let c = {}
+  try { c = JSON.parse(readFileSync(COTA, 'utf8')) } catch { /* primeira do dia */ }
+  if (c.dia !== dia) c = { dia, propostas: 0, avisos: 0 }
   if (c[tipo] >= LIMITE[tipo]) throw new Error(`cota de hoje esgotada: ${LIMITE[tipo]} ${tipo} por dia`)
   c[tipo]++
   mkdirSync(join(RAIZ, 'visitas'), { recursive: true })
@@ -76,61 +63,8 @@ const zap = () => import(new URL('../servicos/whatsapp/omni/aprovacoes.mjs', imp
 const cfg = () => import(new URL('../servicos/whatsapp/omni/config.mjs', import.meta.url))
 
 try {
+  if (DEPOSITO.has(cmd)) throw new Error('comando do depósito: use o omni-actions.mjs do Oráculo')
   switch (cmd) {
-    case 'mesa': {
-      const m = montarMesa()
-      sair({ ok: true, cota: cota(), ...m, ultimaVisita: m.ultimaVisita && { ...m.ultimaVisita, texto: undefined } })
-      break
-    }
-    case 'ponto': {
-      const p = lerPonto(args[0])
-      if (!p) throw new Error('ponto não encontrado')
-      sair({ ok: true, ponto: p })
-      break
-    }
-    case 'campo': {
-      const [slug, nome, valor] = args
-      // prazo: só preenche o que faltou (ponto criado fora do modelo); prazo existente não se mexe
-      if (nome === 'Prazo do veredito') {
-        if (!/^\d{2}\/\d{2}\/\d{4}$/.test(String(valor))) throw new Error('Prazo do veredito: dd/mm/aaaa')
-        if (lerPonto(slug)?.prazo) throw new Error('o ponto já tem prazo; prazo não se mexe pela visita')
-        mexerNoPonto(slug, { campos: { [nome]: valor }, historico: `Visita: prazo do veredito que faltava → ${valor}` })
-        sair({ ok: true })
-        break
-      }
-      if (!CAMPOS.has(nome)) throw new Error(`campo não permitido. Use: ${[...CAMPOS].join(', ')}, Prazo do veredito (só se faltar)`)
-      if (nome === 'Estágio' && !ESTAGIOS.has(String(valor))) throw new Error('Estágio: semente ou em teste (veredito só pela tela, por ele)')
-      if (nome === 'Potencial' && !/^▲{1,3}\s+—\s+\S/.test(String(valor))) throw new Error('Potencial: "▲▲ — motivo" (o motivo é obrigatório)')
-      const apagar = valor === '--apagar'
-      const r = mexerNoPonto(slug, { campos: { [nome]: apagar ? null : valor }, historico: `Visita: ${nome} ${apagar ? 'limpo' : `→ ${valor}`}` })
-      sair({ ok: true, ponto: { slug, estagio: r.estagio, potencial: r.potencial } })
-      break
-    }
-    case 'propor-veredito': {
-      const [slug, texto] = args
-      if (!/^(vira projeto|entra em .+|arquivar|dormente até \d{2}\/\d{2}\/\d{4})\s+—\s+\S/i.test(String(texto))) throw new Error('proposta: "arquivar — motivo", "dormente até dd/mm/aaaa — motivo", "vira projeto — motivo" ou "entra em <projeto> — motivo"')
-      const p = lerPonto(slug)
-      if (!p) throw new Error('ponto não encontrado')
-      if (p.veredito && p.veredito.tipo !== 'dormente') throw new Error('o ponto já tem veredito')
-      if (p.proposta) throw new Error('o ponto já tem proposta esperando por ele')
-      const c = gastar('propostas')
-      mexerNoPonto(slug, { campos: { 'Proposta de veredito': texto }, historico: `Visita propôs veredito: ${texto}` })
-      sair({ ok: true, cota: c })
-      break
-    }
-    case 'historico': {
-      const [slug, texto] = args
-      if (!String(texto || '').trim()) throw new Error('texto vazio')
-      mexerNoPonto(slug, { historico: texto })
-      sair({ ok: true })
-      break
-    }
-    case 'propor-item': {
-      const [projeto, texto, data] = args
-      proporItem(projeto, texto, data)
-      sair({ ok: true })
-      break
-    }
     case 'avisar': {
       seco()
       const texto = String(args[0] || '').trim()

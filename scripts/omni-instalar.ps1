@@ -334,7 +334,7 @@ function Preparar-WhatsApp([string]$raiz) {
   Passo 'whatsapp' $true ('serviço compilado; sobe no logon por ' + $criado)
 }
 
-# O vigia do WhatsApp roda pela versão instalada, de 5 em 5 minutos, mesmo molde do omni-actions-agendar.ps1.
+# O vigia do WhatsApp roda pela versão instalada, de 5 em 5 minutos, escondido pelo wscript.
 # O primeiro disparo fica 5 minutos à frente: registrar nunca acorda o vigia na hora (ele mexe no WhatsApp
 # de verdade), e o -StartWhenAvailable não tem início perdido para recuperar. -Force substitui a anterior.
 function Registrar-Tarefas([string]$raiz) {
