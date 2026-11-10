@@ -384,5 +384,5 @@ As caixas:
   - O mesmo arquivo, rodado sozinho logo depois: 7 de 7, de 0,6 a 1,7 s cada.
   - `dist` só com ruído de fim de linha (o diff com `--ignore-cr-at-eol` sai vazio), restaurado.
 - [x] Integridade 6 de 6 (`integridade-release`): a impressão digital não mudou, porque nada do 4c está nas raízes da release.
-- [ ] Commit Weriton-DataOps, PR, CI verde e merge (`--merge --match-head-commit`).
-- [ ] Linha 4c do mestre marcada como entregue, com o desvio da janela anotado.
+- [x] Commit Weriton-DataOps, PR, CI verde e merge (`--merge --match-head-commit`). Resultado: PR #12.
+- [x] Linha 4c do mestre marcada como entregue, com o desvio da janela anotado.
