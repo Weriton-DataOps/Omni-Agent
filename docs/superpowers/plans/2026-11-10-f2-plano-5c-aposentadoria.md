@@ -153,7 +153,7 @@ O teste injeta `iniciar = (exe, args, o) => spawn(process.execPath, [FALSO, ...a
 
 **Files:** Create `scripts/omni-tarefa.vbs`, `scripts/omni-tarefas.ps1`; Test `testes/omni-tarefas-ps1.test.mjs`.
 
-O `.vbs` recebe `agente id motivo` e roda `node "<pasta>\..\runtime\tarefa-agente.mjs" rodar <agente> <id> --motivo <motivo>` com `Run ..., 0, False`, usando o node do `OMNI_NODE` ou o `node` do PATH.
+O `.vbs` recebe `agente id motivo` e roda `node "<pasta>\..\runtime\tarefa-agente.mjs" rodar <agente> <id> --motivo <motivo>` com `Run ..., 0, True`, usando o node do `OMNI_NODE` ou o `node` do PATH. Ele espera o lançador e sai com o código dele (2 sem os três argumentos), para o `LastTaskResult` do Agendador mostrar o resultado de verdade; o teto de 30 min do lançador fica abaixo dos 45 min da tarefa.
 
 `omni-tarefas.ps1 -Modo registrar|verificar -Prefixo <p> [-Raiz <versao>]` tem este contrato:
 - roda `node <Raiz>\runtime\tarefa-agente.mjs listar`;
