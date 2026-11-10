@@ -111,6 +111,6 @@ O atalho real `Omni Runtime.lnk` aponta para `Documents\Omni\scripts\start-user-
 
 ### Tarefa 3: release 0.36.0
 
-- [ ] Bump nos seis lugares e o selo refeito.
-- [ ] Suíte inteira em segundo plano, `typecheck`, `check` e o `dist` sem diff além das remoções.
-- [ ] PR, CI verde, merge, `plugin update` e o selo conferido.
+- [x] Bump nos seis lugares e o selo refeito.
+- [x] Suíte inteira em segundo plano (1296 de 1296, 0 falhas), `typecheck`, `check` e o `dist` sem diff além das remoções.
+- [x] PR, CI verde, merge, `plugin update` e o selo conferido.
