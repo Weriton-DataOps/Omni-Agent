@@ -1,5 +1,5 @@
-// Executor do Omni, parte do pacote da casa (§4.2, §5): exportar, importar e verificar o nucleo.db e
-// o omni.db. O instalar e o atualizar chegam no plano 5b, que chama este mesmo arquivo.
+// Executor do Omni (§4.2, §5): exportar, importar, verificar e instalar a casa. O atualizar chega com
+// o zip da release (plano 5b-2), que chama este mesmo arquivo.
 // A saída é JSON numa linha. Códigos de saída: 0 ok; 2 uso errado; 3 recusa ou divergência;
 // 1 falha inesperada (vai para degradacoes.jsonl).
 import { existsSync, readFileSync } from 'node:fs'
@@ -11,13 +11,16 @@ import { arquivoDoBanco, comBancoDaCasa, registrarDegradacao } from './casa/banc
 import {
   BANCOS_DO_PACOTE, PacoteCasaError, compararRetratos, conferirPacote, exportarCasa, importarCasa, resumirRetrato, retratoDoBanco
 } from './casa/pacote-casa.mjs'
+import { InstalarError, instalarCasa } from './casa/instalar-casa.mjs'
+import { NucleoError } from './casa/loja-nucleo.mjs'
 import { casaDoNucleo } from './nucleo.mjs'
 
 const RAIZ = dirname(dirname(fileURLToPath(import.meta.url)))
 const USO = `uso: node runtime/executor.mjs <comando> [opções]
   exportar --saida <pasta>   (nucleo.db e omni.db por VACUUM INTO, com manifesto)
   importar --pacote <pasta> [--substituir]   (confere tudo antes; o banco atual vai para backup datado)
-  verificar [--pacote <pasta>]   (integridade do SQLite; com --pacote, contagem e hash por tabela)`
+  verificar [--pacote <pasta>]   (integridade do SQLite; com --pacote, contagem e hash por tabela)
+  instalar   (cria a casa com os três bancos e registra o Omni desta release)`
 class UsoError extends Error {}
 
 function lerOpcoes(argumentos, opcoes, obrigatorias = []) {
@@ -72,12 +75,21 @@ export async function rodarExecutor(argv, { saida = process.stdout, erro = proce
         escrever(r)
         return r.ok ? 0 : 3
       }
+      case 'instalar': {
+        lerOpcoes(resto, {})
+        escrever({ ok: true, ...instalarCasa(casa, RAIZ, { env }) })
+        return 0
+      }
       default: throw new UsoError(comando === undefined ? 'falta o comando' : 'comando desconhecido')
     }
   } catch (falha) {
     if (falha instanceof UsoError) { erro.write(`${falha.message}\n${USO}\n`); return 2 }
     if (falha instanceof PacoteCasaError) {
       escrever({ ok: false, codigo: falha.code, erro: falha.message, ...(falha.divergencias ? { divergencias: falha.divergencias } : {}) })
+      return 3
+    }
+    if (falha instanceof InstalarError || falha instanceof NucleoError) {
+      escrever({ ok: false, codigo: falha.code, erro: falha.message, ...(falha.erros ? { erros: falha.erros } : {}) })
       return 3
     }
     registrarDegradacao(casa, 'executor.cli', falha, env)
