@@ -81,13 +81,17 @@ writeFileSync('recebido.json', JSON.stringify({ args, entrada }))
 process.stdout.write('{"ok":true}\\n')
 `
 
+// O requisito de Node acompanha quem roda o teste: o CI usa Node 22 e o PC usa 24. Fixar ">=24" aqui
+// faria o requer recusar o agente no CI antes de qualquer asserção sobre tokens ou núcleo.
+const NODE_ATUAL = `>=${process.versions.node.split('.')[0]}`
+
 function agenteFalso(t, mudar = (m) => m) {
   const raiz = mkdtempSync(join(tmpdir(), 'omni-agente-falso-'))
   t.after(() => rmSync(raiz, { recursive: true, force: true }))
   mkdirSync(join(raiz, 'executor'))
   writeFileSync(join(raiz, 'executor', 'falso.mjs'), FALSO)
   const manifesto = mudar({
-    agente: 'falso', versao: '1.0.0', banco: null, requer: { node: '>=24', agentes: ['omni>=0.26'] },
+    agente: 'falso', versao: '1.0.0', banco: null, requer: { node: NODE_ATUAL, agentes: ['omni>=0.26'] },
     executor: { comando: 'node executor/falso.mjs', modos: ['instalar', 'servir'] }, tarefas: [], credenciais: []
   })
   writeFileSync(join(raiz, 'executor', 'agente.json'), JSON.stringify(manifesto, null, 2))
@@ -153,7 +157,7 @@ test('agente que recusa o instalar não entra no núcleo', async (t) => {
 
 test('requisito não atendido para antes de token, agente e registro', async (t) => {
   const { pasta, env } = casaTemporaria(t)
-  const raiz = agenteFalso(t, (m) => ({ ...m, requer: { node: '>=24', agentes: ['omni>=99'] } }))
+  const raiz = agenteFalso(t, (m) => ({ ...m, requer: { node: NODE_ATUAL, agentes: ['omni>=99'] } }))
   const r = await rodar(['instalar-agente', '--raiz', raiz], env, { ponte: ponteFalsa() })
   assert.equal(r.codigo, 3)
   assert.equal(r.json.codigo, 'requisito')
