@@ -285,8 +285,10 @@ export function listarServidores(db, { maquina = maquinaAtual() } = {}) {
   return db.prepare(`SELECT i.agente, i.raiz, i.manifesto_sha256, a.manifesto, a.manifesto_sha256 AS sha_catalogo
     FROM instalacoes i JOIN agentes a ON a.id = i.agente AND a.apagado_em IS NULL
     WHERE i.maquina = ? AND i.apagado_em IS NULL AND i.agente <> 'omni' ORDER BY i.agente`).all(maquina).flatMap((l) => {
-    const executor = JSON.parse(l.manifesto).executor
+    const manifesto = JSON.parse(l.manifesto)
+    const executor = manifesto.executor
     if (!executor?.modos?.includes('servir')) return []
-    return [{ agente: l.agente, raiz: l.raiz, comando: executor.comando, divergente: l.sha_catalogo !== l.manifesto_sha256 }]
+    // rotas: o que a ilha e o carteiro podem pedir a esse agente pelo chamar (método, padrão, escopo).
+    return [{ agente: l.agente, raiz: l.raiz, comando: executor.comando, divergente: l.sha_catalogo !== l.manifesto_sha256, rotas: manifesto.interface?.rotas ?? [] }]
   })
 }

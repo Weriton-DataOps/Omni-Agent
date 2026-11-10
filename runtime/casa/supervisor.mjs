@@ -27,9 +27,14 @@ export function partirComando(comando, execPath = process.execPath) {
 const curto = (texto) => String(texto ?? '').replace(/\s+/g, ' ').trim().slice(0, LIMITE_ERRO)
 
 export function criarSupervisor({
-  agentes, omniApi, env = process.env, iniciar = spawn, log = () => {},
+  agentes, omniApi, env = process.env, iniciar = spawn, log = () => {}, aoMudar = null,
   baseMs = 1_000, tetoMs = 60_000, estavelMs = 60_000, subidaMs = 15_000, paradaMs = 5_000, relogio = Date.now
 }) {
+  // Quem precisa do mapa de portas (o servir.json) ouve aqui: entrou no ar ou saiu dele.
+  const avisar = () => {
+    if (!aoMudar) return
+    try { aoMudar() } catch (falha) { log(`aoMudar: ${curto(falha?.message ?? falha)}`) }
+  }
   const vigias = agentes.map((a) => ({
     agente: a.agente, raiz: a.raiz, comando: a.comando,
     estado: a.divergente ? 'manifesto-divergente' : 'parado',
@@ -111,6 +116,7 @@ export function criarSupervisor({
         v.erro = null
         v.desde = relogio()
         log(`${v.agente}: no ar na porta ${linha.porta}`)
+        avisar()
         return
       }
       if (linha?.recusa === true) recusa = typeof linha.erro === 'string' ? linha.erro : 'recusou a subida'
@@ -132,10 +138,14 @@ export function criarSupervisor({
       if (encerrado) return
       encerrado = true
       clearTimeout(prazo)
-      const estavaNoAr = v.estado === 'no-ar'
+      const estavaNoAr = v.porta !== null // o parar já trocou o estado; a porta só existe no ar
       v.filho = null
       v.pid = null
       v.porta = null
+      decidir(codigo, erroDeSubida, estavaNoAr)
+      if (estavaNoAr) avisar()
+    }
+    const decidir = (codigo, erroDeSubida, estavaNoAr) => {
       if (parando) {
         v.estado = 'parado'
         return

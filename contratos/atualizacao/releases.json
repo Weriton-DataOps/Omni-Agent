@@ -428,6 +428,16 @@
         "Campainha dos agentes: POST /v1/despachos {agente, execucao} responde 202 e e idempotente pelo id; o recibo fica na tabela despachos, migracao v5 do omni.db.",
         "Supervisor do servir dos agentes instalados nesta maquina: sobe servir --porta 0 com OMNI_API e OMNI_API_TOKEN, le a porta, volta com espera dobrada e trata saida 2, recusa:true e comando inexistente como recusa permanente. Provado com o Oraculo real."
       ]
+    },
+    {
+      "version": "0.29.0",
+      "changes": [
+        "O chamar: POST /v1/agentes/:agente/chamar leva o pedido da ilha ao servir do agente so pelas rotas que o manifesto declara, com o token do papel certo tirado do cofre; rota fora da lista, escopo errado ou papel desconhecido param no Omni, sem trafego.",
+        "O token dos agentes fica separado do token da ilha: abre so a saude e a campainha; o chamar e a lista de despachos respondem 403 a ele.",
+        "O carteiro tira da fila do agente: acordado pela campainha ou quando um agente sobe, escolhe a sessao do VS Code, assume com o token visita (409 vira recusado), grava o pedido e entrega por um claude -p curto; cada execucao termina num recibo no omni.db. Sem sessao aberta, a execucao fica \"sem sessao\" no agente.",
+        "As maos do Actions: node runtime/maos-actions.mjs execucao <id> --estado ... devolve o estado ao Oraculo pelo servir do Omni, com o token tirado do cofre e nunca mostrado; o servir publica servir.json com a porta de cada agente no ar.",
+        "Provado contra o Oraculo de verdade numa casa temporaria: tela cria, campainha toca, carteiro assume, maos concluem."
+      ]
     }
   ]
 }

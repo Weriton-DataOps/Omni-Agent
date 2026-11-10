@@ -37,6 +37,19 @@ export function registrarDespacho(db, corpo, { maquina = maquinaAtual(), agora =
   return { id, novo: Number(r.changes) === 1 }
 }
 
+// O carteiro anota no recibo o que fez (assumido, recusado por outra mão, falhou). Se a execução veio
+// da varredura e não da campainha, o recibo nasce aqui. Cada marca soma uma tentativa.
+export function marcarDespacho(db, { agente, execucao, estado, detalhe = null }, { maquina = maquinaAtual(), agora = agoraIso() } = {}) {
+  const { id } = validarDespacho({ agente, execucao })
+  if (!ESTADOS.includes(estado)) throw new DespachoError(`estado: ${ESTADOS.join(', ')}.`)
+  const nota = detalhe === null || detalhe === undefined ? null : String(detalhe).slice(0, 300)
+  db.prepare(`INSERT INTO despachos (id, agente, execucao, estado, tentativas, detalhe, recebido_em, atualizado_em, origem_maquina)
+    VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?)
+    ON CONFLICT (id) DO UPDATE SET estado = excluded.estado, detalhe = excluded.detalhe, tentativas = tentativas + 1, atualizado_em = excluded.atualizado_em`)
+    .run(id, agente, execucao, estado, nota, agora, agora, maquina)
+  return { ...db.prepare('SELECT id, agente, execucao, estado, tentativas, detalhe, recebido_em, atualizado_em FROM despachos WHERE id = ?').get(id) }
+}
+
 export function listarDespachos(db, { estado = 'recebido', limite = LIMITE_LISTA } = {}) {
   if (!ESTADOS.includes(estado)) throw new DespachoError(`estado: ${ESTADOS.join(', ')}.`)
   const n = Number.isInteger(limite) ? Math.min(Math.max(limite, 1), LIMITE_LISTA) : LIMITE_LISTA
