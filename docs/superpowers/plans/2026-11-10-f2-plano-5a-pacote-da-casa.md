@@ -613,9 +613,10 @@ import { rodarExecutor } from '../runtime/executor.mjs'
 
 function saidaFalsa() { return { texto: '', write(t) { this.texto += t; return true } } }
 const ultimaLinha = (saida) => JSON.parse(saida.texto.trim().split('\n').at(-1))
-function comPasta(uso) {
+// async: com função async, um comPasta síncrono apagaria a pasta antes do teste rodar.
+async function comPasta(uso) {
   const pasta = mkdtempSync(join(tmpdir(), 'omni-executor-cli-'))
-  try { return uso(pasta) } finally { rmSync(pasta, { recursive: true, force: true }) }
+  try { return await uso(pasta) } finally { rmSync(pasta, { recursive: true, force: true }) }
 }
 const casaEm = (pasta, nome) => {
   const casa = join(pasta, nome)
@@ -628,7 +629,9 @@ async function rodar(env, argv) {
 
 test('uso errado sai com 2 e nunca ecoa o argumento', async () => comPasta(async (pasta) => {
   const { env } = casaEm(pasta, 'a')
-  for (const argv of [[], ['sumir'], ['exportar'], ['importar'], ['verificar', '--segredo=valor-que-nao-volta'], ['exportar', 'solto']]) {
+  // O posicional solto vem com --saida válido: cai pelo posicional, não por falta de opção.
+  const solto = ['exportar', '--saida', join(pasta, 'pacote'), 'solto']
+  for (const argv of [[], ['sumir'], ['exportar'], ['importar'], ['verificar', '--segredo=valor-que-nao-volta'], solto]) {
     const r = await rodar(env, argv)
     assert.equal(r.codigo, 2, JSON.stringify(argv))
     assert.match(r.erro.texto, /uso: node runtime\/executor\.mjs/)
@@ -639,7 +642,7 @@ test('uso errado sai com 2 e nunca ecoa o argumento', async () => comPasta(async
 
 test('exportar, importar noutra casa e verificar contra o pacote: 100%', async () => comPasta(async (pasta) => {
   const a = casaEm(pasta, 'origem'); const b = casaEm(pasta, 'destino')
-  comBancoDaCasa(a.casa, 'nucleo', () => null, a.env)
+  comBancoDaCasa(a.casa, 'nucleo', (db) => registrarMaquina(db, { maquina: 'origem', nome: 'origem', sistema: 'teste' }), a.env)
   const pacote = join(pasta, 'pacote')
   const ex = await rodar(a.env, ['exportar', '--saida', pacote])
   assert.equal(ex.codigo, 0, ex.erro.texto); assert.equal(ultimaLinha(ex.saida).ok, true)
@@ -650,6 +653,7 @@ test('exportar, importar noutra casa e verificar contra o pacote: 100%', async (
   const v = ultimaLinha(ve.saida)
   assert.equal(v.ok, true); assert.deepEqual(v.divergencias, [])
   assert.equal(v.bancos.omni.integridade, 'ok')
+  assert.equal(v.bancos.nucleo.linhas, ultimaLinha(ex.saida).bancos.nucleo.linhas)
 }))
 
 test('verificar aponta divergência com saída 3', async () => comPasta(async (pasta) => {
@@ -772,9 +776,11 @@ if (direto) process.exitCode = await rodarExecutor(process.argv.slice(2))
 ```
 
 - [ ] Rodar. Esperado: 5 de 5.
-- [ ] **Mutantes:**
+- [ ] **Mutantes** (executados em 10/11):
   - `verificar` sem a comparação → vermelho em "aponta divergência";
-  - `verificar` abrindo banco ausente → vermelho em "não cria banco".
+  - `verificar` abrindo banco ausente → vermelho em "não cria banco";
+  - `ok` sem exigir `existe` → vermelho em "não cria banco";
+  - `allowPositionals: true` → vermelho em "uso errado" (por isso o caso solto traz `--saida` válido).
 - [ ] Pôr `node --check runtime/casa/pacote-casa.mjs && node --check runtime/executor.mjs` no script `check` do `package.json`, logo depois do `runtime/maos-actions.mjs`.
 - [ ] `npm run check` verde lido.
 - [ ] Commit `feat(executor): exportar, importar e verificar a casa pela linha de comando`.
