@@ -10,7 +10,7 @@ import { after, before, test } from 'node:test'
 
 import { comBancoDaCasa } from '../runtime/casa/banco.mjs'
 import { listarInstalados } from '../runtime/casa/loja-nucleo.mjs'
-import { agenteFalso } from './fixtures/agente-falso.mjs'
+import { agenteFalso } from './fixtures/agente-instalavel.mjs'
 import { criarOrigem } from './fixtures/origem-selada.mjs'
 
 const RAIZ = resolve(import.meta.dirname, '..')

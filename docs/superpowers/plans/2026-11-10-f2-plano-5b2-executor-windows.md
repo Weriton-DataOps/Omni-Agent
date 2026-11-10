@@ -148,7 +148,7 @@ case 'release': {
 
 ### Tarefa 3: casa e agentes
 
-- [ ] **Passo 1: teste vermelho.** Na mesma montagem, mais `-Agente <agente falso>`. Reaproveitar o agente falso de `testes/executor-instalar.test.mjs`, movendo `agenteFalso` e o `FALSO` para `testes/apoio/agente-falso.mjs`.
+- [ ] **Passo 1: teste vermelho.** Na mesma montagem, mais `-Agente <agente falso>`. Reaproveitar o agente falso de `testes/executor-instalar.test.mjs`, movendo `agenteFalso` e o `FALSO` para `testes/fixtures/agente-instalavel.mjs` (nunca `agente-falso.mjs`: esse nome já é o agente de mentira do supervisor e do servir).
   - Esperar os passos `casa` e `agente:falso` com `ok:true`.
   - Esperar `nucleo.db` com o Omni e o `falso` instalados.
   - Na segunda vez, os dois passos com `ok:true`, e o `agente:falso` com `detalhe` dizendo `sem mudança`.

@@ -13,7 +13,7 @@ import { BANCOS } from '../runtime/casa/esquemas.mjs'
 import { credencialPorNome } from '../runtime/casa/loja-cofre.mjs'
 import { listarInstalados } from '../runtime/casa/loja-nucleo.mjs'
 import { rodarExecutor } from '../runtime/executor.mjs'
-import { agenteFalso, NODE_ATUAL } from './fixtures/agente-falso.mjs'
+import { agenteFalso, NODE_ATUAL } from './fixtures/agente-instalavel.mjs'
 
 const RAIZ = resolve(import.meta.dirname, '..')
 const VERSAO = JSON.parse(readFileSync(join(RAIZ, 'package.json'), 'utf8')).version
