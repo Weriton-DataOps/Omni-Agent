@@ -20,7 +20,6 @@
 //     shell comer as aspas (furo medido em 27/10, ponto claude-duet-agente-proativo)
 //   explicar <waId> <texto>                      resposta ao ❓ dele
 //   pendentes                                    pedidos de risco ainda abertos
-//   execucao <id> --estado andando|concluida|bloqueada|falhou --nota <texto>   (a sessão executora devolve)
 import { createRequire } from 'node:module'
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
@@ -166,14 +165,6 @@ try {
       const { explicar } = await zap()
       await explicar(args[0], args[1])
       sair({ ok: true })
-      break
-    }
-    case 'execucao': {
-      // a sessão que recebeu o trabalho devolve o andamento; a tela do Actions mostra
-      const estado = opcao('estado')
-      if (!['andando', 'concluida', 'bloqueada', 'falhou'].includes(estado)) throw new Error('--estado andando|concluida|bloqueada|falhou')
-      const ex = ilha('execucoes.js').atualizar(args[0], { estado, nota: opcao('nota') || '' })
-      sair({ ok: true, id: ex.id, estado: ex.estado })
       break
     }
     case 'pendentes': {

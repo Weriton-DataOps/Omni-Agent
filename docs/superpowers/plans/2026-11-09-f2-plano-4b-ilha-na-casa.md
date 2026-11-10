@@ -141,10 +141,11 @@ Contrato: `criarCasa({ spawn, env, raiz, limiteMs })` → `{ iniciar(), chamar(m
 
 ### Tarefa 6: retirada do que ficou sem dono
 
-- [ ] Apagar `apps/omni-ilha/actions.html`, `actions.js`, `actions-preload.js`, `oracle.js` e `scripts/omni-actions-despachar.mjs`.
-- [ ] Tirar o subcomando `execucao` (e a linha do uso) do `scripts/omni-actions.mjs`, e o teste "sessão executora devolve pelo script" do `testes/actions-organizador.test.mjs`.
-- [ ] README da ilha: a seção do Actions passa a dizer que a janela é o painel do Oráculo pela casa.
-- [ ] `grep` sem referência viva a nenhum dos removidos.
+- [x] Apagar `apps/omni-ilha/actions.html`, `actions.js`, `actions-preload.js`, `oracle.js` e `scripts/omni-actions-despachar.mjs`.
+- [x] Tirar o subcomando `execucao` (e a linha do uso) do `scripts/omni-actions.mjs`, e o teste "sessão executora devolve pelo script" do `testes/actions-organizador.test.mjs`.
+- [x] README da ilha: a seção do Actions passa a dizer que a janela é o painel do Oráculo pela casa.
+- [x] `grep` sem referência viva a nenhum dos removidos.
+  Resultado: sobra só histórico (planos, spec, `releases.json`) e o `actions-preload.js` do próprio Oráculo nos testes; o comentário do `execucoes.js` passa a dizer que ele fica só para o `mesa.js` até o plano 5. As mãos da casa (`maos-actions.mjs`) rodam o script do Oráculo, não este, então o `execucao` do Oráculo segue vivo. Ilha + organizador + mãos 81/81; fumaça repetida, saída 0.
 
 ### Tarefa 7: Electron próprio
 

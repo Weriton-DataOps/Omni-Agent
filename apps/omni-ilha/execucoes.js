@@ -3,8 +3,11 @@
 // Execuções do Actions (22/10): o Weriton manda executar um trabalho pela tela (de um ponto ou de um
 // projeto). Enquanto o Overcore não está pronto, o trabalho vai para uma sessão do Claude Code aberta no
 // VS Code — de preferência a da pasta do projeto. Cada execução é um JSON em Actions\execucoes\<id>.json,
-// com o histórico de eventos. Quem escreve: a tela (criar, responder, já olhei), o despacho
-// (scripts/omni-actions-despachar.mjs) e a sessão executora (scripts/omni-actions.mjs execucao ...).
+// com o histórico de eventos.
+//
+// Desde o plano 4b da F2 (09/11) a tela, o despacho e a devolução moram no Oráculo, pela casa. Este
+// módulo fica só porque o mesa.js ainda lê as execuções para o scripts/omni-actions.mjs da visita; sai
+// no plano 5 junto com pontos/projetos/mesa/escrita.
 //
 // Estados: na fila → enviada → andando → concluida | bloqueada (pergunta para ele) | falhou
 //          sem sessão (nenhuma sessão aberta para receber; ele abre uma e reenvia)
