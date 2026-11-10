@@ -107,23 +107,25 @@ Valores nunca aparecem. A saída é 0 quando tudo existe no Gerenciador.
 - Test: `testes/omni-desligar-5433.test.mjs`. O teste usa pastas temporárias, processos falsos, `pg_ctl` falso e um atalho temporário. Nunca toca o 5433 real.
 
 **Parâmetros e segurança:**
-- Parâmetros: `-Dados <pasta data>`, `-Backup <pasta>`, `-Inicializar <pasta>`, `-Casa <OMNI_HOME>`, `-PgCtl <exe>`, `-Executar`.
-- Sem `-Executar`, só imprime o plano em JSON e sai 0, sem mexer em nada.
+- Parâmetros: `-Dados <pasta data>`, `-Backup <pasta>` e `-Inicializar <pasta>`, **obrigatórios e sem padrão**: quem roda diz onde, sempre. Opcionais: `-Desativados` (padrão `%APPDATA%\omni\atalhos-desativados`), `-Casa <OMNI_HOME>`, `-PgCtl <exe>` (sem ele, acha o `pg_ctl.exe` ao lado do `postgres.exe` que roda com aquela pasta data), `-Porta` (5433), `-Broker` (`omni-access-broker`) e `-Executar`.
+- Trava fechado: `$ErrorActionPreference = 'Stop'` e um `trap` que sai 1 antes do passo seguinte. Faltou parâmetro, ou `-Dados` sem `PG_VERSION`: sai 2 sem tocar em nada, mesmo com `-Executar`.
+- Sem `-Executar`, só imprime o plano em JSON (recibo, porta, PIDs do broker, para onde vai a cópia e o atalho) e sai 0, sem mexer em nada.
+- Achado na escrita: no PowerShell `$broker` e `$Broker` são a mesma variável, e o `[string]` do parâmetro achatava a lista de PIDs. A lista se chama `$processosBroker`.
 
-**Pré-condição:** o `omni.db` da casa tem o recibo `postgres-5433` na `_importacoes`. Sem esse recibo, o script recusa com saída 3.
+**Pré-condição:** o `omni.db` da casa tem o recibo `postgres-5433` na `_importacoes`, lido por `node scripts/omni-importar-5433.mjs --recibo [--casa]` (só leitura; sai 0 com recibo e 3 sem). Sem esse recibo, o script recusa com saída 3.
 
-**Passos com `-Executar`:**
-1. `pg_ctl stop -D <dados> -m fast`, e espera a porta 5433 fechar.
-2. Copia `<dados>` para `<Backup>\postgresql-5433-<yyyyMMdd-HHmmss>`.
-3. Confere a cópia pela contagem de arquivos e pelo tamanho total iguais aos da origem.
-4. Para o broker pelo processo cuja linha de comando contém `omni-access-broker`, com `taskkill /T /F`.
-5. Move o `Omni Runtime.lnk` de `<Inicializar>` para `%APPDATA%\omni\atalhos-desativados`. É o mesmo padrão de quando o desktop foi fechado, e é reversível.
-6. Nunca apaga a pasta `data` original. O apagamento fica para depois da instalação real verde, à mão.
+**Passos com `-Executar`, na ordem que deixa o caminho de volta aberto até o fim:**
+1. Para o broker (cliente do PG) pelo processo cuja linha de comando contém `<Broker>.ps1`, com `taskkill /T /F`, e confere que morreu.
+2. `pg_ctl stop -D <dados> -m fast -w`; espera a porta fechar e o `postmaster.pid` sumir.
+3. Copia `<dados>` para `<Backup>\postgresql-5433-<yyyyMMdd-HHmmss>` e confere contagem de arquivos e tamanho total iguais aos da origem. Se não conferir, sai 1 e o atalho fica onde está: o próximo logon sobe tudo de novo.
+4. Só então move o `Omni Runtime.lnk` de `<Inicializar>` para `<Desativados>`. É o mesmo padrão de quando o desktop foi fechado, e é reversível.
+5. Nunca apaga a pasta `data` original. O apagamento fica para depois da instalação real verde, à mão.
 
-- [ ] **Teste vermelho:** sem `-Executar`, nada muda: a pasta, o atalho e os processos continuam iguais.
-- [ ] **Teste:** sem o recibo, sai 3.
-- [ ] **Teste:** com `-Executar`, a cópia confere, o atalho foi movido, o broker falso morreu e um processo não relacionado continuou vivo.
-- [ ] Implementar, ler o verde e commitar.
+- [x] **Teste vermelho:** sem `-Executar`, nada muda: a pasta, o atalho e os processos continuam iguais.
+- [x] **Teste:** uso errado (pasta data falsa, `-Inicializar` faltando) sai 2 sem tocar em nada, com e sem `-Executar`.
+- [x] **Teste:** sem o recibo, sai 3.
+- [x] **Teste:** com `-Executar`, a cópia confere, o atalho foi movido, o broker falso morreu e um processo não relacionado continuou vivo.
+- [x] Implementar, ler o verde e commitar.
 
 ### T4: aposentar o código do broker e do PG
 
