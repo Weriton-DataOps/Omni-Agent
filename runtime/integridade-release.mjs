@@ -8,6 +8,7 @@ const PAYLOAD_ROOTS = Object.freeze([
   { path: 'adaptadores', required: false },
   { path: 'contratos', required: true },
   { path: 'dist', required: true },
+  { path: 'executor', required: false },
   { path: 'hooks', required: true },
   { path: 'runtime', required: true },
   { path: 'scripts', required: true },
