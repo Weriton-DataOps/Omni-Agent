@@ -14,7 +14,7 @@
 //    O Escape é um atalho global registrado só enquanto a ilha está aberta com o ponteiro em cima.
 'use strict';
 
-const { app, BrowserWindow, clipboard, globalShortcut, ipcMain, screen } = require('electron');
+const { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, screen } = require('electron');
 const { spawn } = require('child_process');
 const fs = require('fs');
 const os = require('os');
@@ -25,6 +25,7 @@ const { resumo: resumoOvercore, lerAgora: lerOvercoreAgora, agir: agirOvercore, 
 const { criarCasa } = require('./casa-servir');
 const { criarPaineis } = require('./paineis');
 const { podeNavegar } = require('./agentes');
+const { instalarAgente } = require('./instalar-agente');
 const { lerSistema, processos } = require('./sistema');
 const { lerWhatsapp } = require('./whatsapp');
 const { criarMaoCofre } = require('./cofre');
@@ -454,6 +455,27 @@ ipcMain.handle('overcore:resumo', (evento) => (daIlha(evento) ? resumoOvercore()
 // os cards do Oráculo e do Actions: o resumo vem do Oráculo pela casa ({ ausente: true } sem ele instalado)
 ipcMain.handle('oracle:resumo', (evento) => (daIlha(evento) ? (paineis ? paineis.resumo('oraculo', '/v1/oraculo/resumo') : SEM_CASA) : null));
 ipcMain.handle('actions:resumo', (evento) => (daIlha(evento) ? (paineis ? paineis.resumo('oraculo', '/v1/actions/resumo') : SEM_CASA) : null));
+// ── botão INSTALAR do card apagado (F2, plano 5c): ele escolhe a pasta do agente, instalar-agente.js chama o
+// executor e registra as tarefas. Uma instalação por vez. A casa só lê os agentes ao subir, então depois de
+// instalar ela reinicia: o card acende no próximo resumo, sem reabrir a ilha.
+const RAIZ_OMNI = path.join(__dirname, '..', '..');
+let instalando = null;
+ipcMain.handle('agente:instalar', (evento, agente) => {
+  if (!daIlha(evento)) return null;
+  if (typeof agente !== 'string' || !/^[a-z][a-z0-9-]*$/.test(agente)) return { ok: false, erro: 'agente inválido' };
+  if (instalando) return { ok: false, erro: 'já tem uma instalação em curso' };
+  instalando = (async () => {
+    const escolha = await dialog.showOpenDialog({ title: `Pasta do ${agente}`, properties: ['openDirectory'] });
+    if (escolha.canceled || escolha.filePaths.length === 0) return { ok: false, cancelado: true, erro: 'nenhuma pasta escolhida' };
+    const r = await instalarAgente({ agente, pasta: escolha.filePaths[0], raizOmni: RAIZ_OMNI, prefixo: 'Omni' });
+    if ((r.ok || r.instalado) && casa) {
+      await casa.parar();
+      casa.iniciar().catch(() => { /* o erro fica no estado() e os cards mostram */ });
+    }
+    return r;
+  })().finally(() => { instalando = null; });
+  return instalando;
+});
 // ── janela do cofre (F1, plano 5, T6): as credenciais da casa. Uma só, como a do Overcore. O valor nunca
 // mora aqui: cofre-ipc.js converte e repassa à mão (cofre.js), que roda a CLI num processo à parte. A janela
 // pede ao Windows para ficar fora de captura de tela de outros programas, porque mostra o valor revelado.

@@ -28,6 +28,8 @@ contextBridge.exposeInMainWorld('ilha', {
   resumoOracle: () => ipcRenderer.invoke('oracle:resumo'),
   abrirChat: () => ipcRenderer.send('abrir-chat'),
   resumoActions: () => ipcRenderer.invoke('actions:resumo'),
+  // card apagado: escolhe a pasta do agente e instala ({ ok, erro?, tarefas? })
+  instalarAgente: (agente) => ipcRenderer.invoke('agente:instalar', String(agente)),
   // sessões do Claude Code: lista, passo a passo e a última edição (diff)
   sessoes: () => ipcRenderer.invoke('sessoes'),
   passos: (arquivo) => ipcRenderer.invoke('passos', arquivo),
