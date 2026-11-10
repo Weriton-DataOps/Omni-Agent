@@ -2,6 +2,24 @@
 // O pacote é uma pasta com nucleo.db, omni.db e manifesto.json. O cofre não entra: o blob DPAPI só
 // abre na máquina que o cifrou, e o cofre já tem o próprio pacote cifrado (cofre.mjs exportar).
 import { createHash } from 'node:crypto'
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { join, resolve } from 'node:path'
+
+import { BANCOS } from './esquemas.mjs'
+import { ESPERA_OCUPADO_MS, agoraIso, carregarSqlite, comBancoDaCasa, maquinaAtual, sha256 } from './banco.mjs'
+
+export const FORMATO_PACOTE = 'omni-casa-pacote'
+export const BANCOS_DO_PACOTE = Object.freeze(['nucleo', 'omni'])
+export const MANIFESTO = 'manifesto.json'
+
+export class PacoteCasaError extends Error {
+  constructor(codigo, mensagem, detalhes = {}) {
+    super(mensagem)
+    this.name = 'PacoteCasaError'
+    this.code = codigo
+    Object.assign(this, detalhes)
+  }
+}
 
 const ident = (nome) => `"${String(nome).replaceAll('"', '""')}"`
 
@@ -39,4 +57,51 @@ export function compararRetratos(esperado, real) {
     const r = real.tabelas[tabela] ?? null
     return e && r && e.linhas === r.linhas && e.sha256 === r.sha256 ? [] : [{ tabela, esperado: e, real: r }]
   })
+}
+
+// Arquivo de pacote ou cópia recém-chegada: sem migração, só leitura.
+function retratoDoArquivo(arquivo, env) {
+  const { DatabaseSync } = carregarSqlite(env)
+  const db = new DatabaseSync(arquivo)
+  try {
+    db.exec(`PRAGMA busy_timeout = ${ESPERA_OCUPADO_MS}`)
+    return retratoDoBanco(db)
+  } finally {
+    db.close()
+  }
+}
+
+export function resumirRetrato(retrato) {
+  const tabelas = Object.values(retrato.tabelas)
+  return { migracao: retrato.migracao, tabelas: tabelas.length, linhas: tabelas.reduce((soma, t) => soma + t.linhas, 0) }
+}
+
+// VACUUM INTO tira uma cópia consistente com a casa viva aberta (os hooks seguem escrevendo).
+// A cópia já sai em rollback journal (cabeçalho 1/1), um arquivo só: o teste confere.
+export function exportarCasa(casa, saida, { env = process.env, omni = null, agora = agoraIso(), maquina = maquinaAtual() } = {}) {
+  const destino = resolve(saida)
+  const pastaNova = !existsSync(destino)
+  if (!pastaNova && readdirSync(destino).length > 0) {
+    throw new PacoteCasaError('saida-existe', 'A pasta de saída já tem arquivos; o pacote não sobrescreve.')
+  }
+  mkdirSync(destino, { recursive: true })
+  const gravados = []
+  try {
+    const bancos = {}
+    for (const nome of BANCOS_DO_PACOTE) {
+      const arquivo = join(destino, BANCOS[nome].arquivo)
+      gravados.push(arquivo)
+      comBancoDaCasa(casa, nome, (db) => { db.prepare('VACUUM INTO ?').run(arquivo) }, env)
+      bancos[nome] = { arquivo: BANCOS[nome].arquivo, ...retratoDoArquivo(arquivo, env), sha256: sha256(readFileSync(arquivo)) }
+    }
+    const manifesto = { formato: FORMATO_PACOTE, versao: 1, criado_em: agora, maquina, omni, bancos }
+    const caminhoManifesto = join(destino, MANIFESTO)
+    gravados.push(caminhoManifesto)
+    writeFileSync(caminhoManifesto, `${JSON.stringify(manifesto, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' })
+    return { saida: destino, bancos: Object.fromEntries(BANCOS_DO_PACOTE.map((nome) => [nome, resumirRetrato(bancos[nome])])) }
+  } catch (erro) {
+    for (const arquivo of gravados) rmSync(arquivo, { force: true })
+    if (pastaNova) rmSync(destino, { recursive: true, force: true })
+    throw erro
+  }
 }

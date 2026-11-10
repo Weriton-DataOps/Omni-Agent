@@ -29,7 +29,7 @@
    - Entram todas as tabelas fora de `sqlite_%`, inclusive `_migracoes` e `_diario`.
    - O `quote()` do SQLite escapa aspas e escreve blob em hexadecimal, então a serialização não é ambígua.
 4. **A cópia sai por `VACUUM INTO`**, uma fotografia consistente mesmo com o hook escrevendo ao lado.
-   - A cópia passa a `journal_mode = DELETE`, para virar um arquivo só, sem `-wal`.
+   - A cópia sai em rollback journal, um arquivo só, sem `-wal`. Medido em 10/11: com a casa em WAL (cabeçalho 2/2), o `VACUUM INTO` já grava 1/1, então não há `PRAGMA journal_mode` a mais; o teste confere os bytes 18 e 19 do cabeçalho.
 5. **A importação confere três vezes:**
    - o pacote contra o próprio manifesto (sha256 do arquivo e retrato de cada tabela);
    - a cópia na casa contra o manifesto, antes de qualquer migração;
@@ -218,7 +218,10 @@ test('exportar grava os dois bancos e o manifesto que confere com eles', () => c
   const m = JSON.parse(readFileSync(join(saida, 'manifesto.json'), 'utf8'))
   assert.equal(m.formato, 'omni-casa-pacote'); assert.equal(m.versao, 1); assert.equal(m.omni, '9.9.9'); assert.equal(m.maquina, 'origem')
   for (const nome of ['nucleo', 'omni']) {
-    assert.equal(m.bancos[nome].sha256, sha256(readFileSync(join(saida, `${nome}.db`))))
+    const bytes = readFileSync(join(saida, `${nome}.db`))
+    assert.equal(m.bancos[nome].sha256, sha256(bytes))
+    // Bytes 18 e 19 do cabeçalho: 1 = rollback journal, 2 = WAL. Pacote é arquivo só, sem -wal.
+    assert.deepEqual([bytes[18], bytes[19]], [1, 1], `${nome}.db saiu em WAL`)
     assert.ok(m.bancos[nome].migracao >= 1)
   }
   assert.equal(m.bancos.nucleo.tabelas.maquinas.linhas, 1)
@@ -290,15 +293,7 @@ export function exportarCasa(casa, saida, { env = process.env, omni = null, agor
       const arquivo = join(destino, BANCOS[nome].arquivo)
       gravados.push(arquivo)
       comBancoDaCasa(casa, nome, (db) => { db.prepare('VACUUM INTO ?').run(arquivo) }, env)
-      const { DatabaseSync } = carregarSqlite(env)
-      const copia = new DatabaseSync(arquivo)
-      try {
-        copia.exec('PRAGMA journal_mode = DELETE')
-        bancos[nome] = { arquivo: BANCOS[nome].arquivo, ...retratoDoBanco(copia) }
-      } finally {
-        copia.close()
-      }
-      bancos[nome] = { ...bancos[nome], sha256: sha256(readFileSync(arquivo)) }
+      bancos[nome] = { arquivo: BANCOS[nome].arquivo, ...retratoDoArquivo(arquivo, env), sha256: sha256(readFileSync(arquivo)) }
     }
     const manifesto = { formato: FORMATO_PACOTE, versao: 1, criado_em: agora, maquina, omni, bancos }
     gravados.push(join(destino, MANIFESTO))
@@ -312,10 +307,10 @@ export function exportarCasa(casa, saida, { env = process.env, omni = null, agor
 }
 ```
 
-  `retratoDoArquivo` fica para a Tarefa 3; se o lint reclamar de função sem uso, ela entra na Tarefa 3.
-- [ ] Rodar. Esperado: 8 de 8.
+- [ ] Rodar. Esperado: 9 de 9.
 - [ ] **Mutantes:**
-  - sem `journal_mode = DELETE` → vermelho na asserção do sha256, se o arquivo continuar mudando depois do fechamento, ou na do `-wal`. Se ficar verde, registrar o que se viu e manter a linha pelo motivo do item 4 das decisões;
+  - `sha256: 'x'` no manifesto → vermelho na asserção do sha256;
+  - (executado em 10/11) sem `journal_mode = DELETE` ficou verde: o `VACUUM INTO` já grava em rollback. A linha saiu e a asserção do cabeçalho 1/1 guarda a propriedade;
   - sem a checagem de pasta cheia → vermelho em "recusa pasta com arquivo".
 - [ ] Commit `feat(casa): exportar a casa por VACUUM INTO com manifesto por tabela`.
 
