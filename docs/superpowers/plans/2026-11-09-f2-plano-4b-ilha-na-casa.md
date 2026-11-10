@@ -178,7 +178,12 @@ Script no rascunho da sessão, nunca no repo, no molde da prova do 4a:
 
 ### Tarefa 9: release 0.30.0
 
-- [ ] Suíte inteira (`npm test`) em segundo plano, lida até o total; `dist` sem ruído.
-- [ ] Bump 0.29.0 → 0.30.0: `plugin.json`, `package.json`, `package-lock.json`, `releases.json` e `integridade.json`.
-- [ ] Commit Weriton-DataOps, PR, CI verde, merge (`--merge --match-head-commit`), atualizar o plugin instalado, verificar a release instalada e subir o `servir` instalado na casa real (seco).
-- [ ] Linha 4b do mestre marcada como entregue.
+- [x] Suíte inteira (`npm test`) em segundo plano, lida até o total; `dist` sem ruído.
+- [x] Bump 0.29.0 → 0.30.0: `plugin.json`, `package.json`, `package-lock.json`, `releases.json` e `integridade.json`.
+- [x] Commit Weriton-DataOps, PR, CI verde, merge (`--merge --match-head-commit`), atualizar o plugin instalado, verificar a release instalada e subir o `servir` instalado na casa real (seco).
+- [x] Linha 4b do mestre marcada como entregue.
+  Resultado (10/11):
+  - Suíte: 1070 testes, 1065 passando, 4 pulados e 1 falha, a esperada (a impressão digital da integridade mudou com a saída de `scripts/omni-actions-despachar.mjs`). Depois do carimbo, integridade 6 de 6 e release 22 de 22; `dist` só com ruído de fim de linha, restaurado.
+  - Release 0.30.0 (`9eb1bed`), PR #11 com CI 4 de 4, mesclado em `6197c0b`.
+  - Plugin instalado 0.29.0 → 0.30.0: integridade verificada, impressão digital igual, 261 arquivos; os removidos ausentes e o `paineis.js` presente.
+  - `servir` instalado na casa real (seco): saúde 200 com token e 401 sem, 0 agentes, saída 0, `servir.json` limpo e nenhum token no log.
