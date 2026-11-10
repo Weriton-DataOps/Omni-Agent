@@ -234,6 +234,55 @@ function Obter-Versao {
   return $destino
 }
 
+# O executor.mjs da versão instalada: a regra (casa, agentes, tokens) é dele; aqui só se lê a última linha JSON.
+function Rodar-Executor([string]$raiz, [string[]]$argumentos) {
+  $r = Rodar $script:node (@((Join-Path $raiz 'runtime\executor.mjs')) + $argumentos) $null
+  return [pscustomobject]@{ codigo = $r.codigo; json = (UltimoJson $r) }
+}
+
+function Executor-Aceitou($e) {
+  return ($e.codigo -eq 0 -and $e.json -and $e.json.ok)
+}
+
+function Detalhe-DaRecusa($e) {
+  if ($e.json -and ($e.json.PSObject.Properties.Name -contains 'codigo')) {
+    $texto = [string]$e.json.codigo
+    if ($e.json.PSObject.Properties.Name -contains 'erro') { $texto += ': ' + $e.json.erro }
+    return $texto
+  }
+  return 'executor saiu com ' + $e.codigo
+}
+
+function Instalar-Casa([string]$raiz) {
+  $e = Rodar-Executor $raiz @('instalar')
+  if (-not (Executor-Aceitou $e)) { Falhar 'casa' (Detalhe-DaRecusa $e) }
+  $mudou = $e.json.omni.mudou
+  $estado = if ($mudou.agente -or $mudou.instalacao) { 'registrado' } else { 'sem mudança' }
+  Passo 'casa' $true ('omni ' + $e.json.omni.versao + ': ' + $estado)
+}
+
+function Nome-DoAgente([string]$pasta) {
+  try {
+    $manifesto = Get-Content -LiteralPath (Join-Path $pasta 'executor\agente.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    if ($manifesto.agente) { return [string]$manifesto.agente }
+  } catch { }
+  return Split-Path -Leaf $pasta
+}
+
+function Instalar-Agentes([string]$raiz) {
+  if (-not $Agente) { return }
+  foreach ($informada in $Agente) {
+    $pasta = Caminho-Longo $informada
+    $passo = 'agente:' + (Nome-DoAgente $pasta)
+    $e = Rodar-Executor $raiz @('instalar-agente', '--raiz', $pasta)
+    if (-not (Executor-Aceitou $e)) { Falhar $passo (Detalhe-DaRecusa $e) }
+    $mudou = $e.json.mudou
+    $detalhe = if ($mudou.agente -or $mudou.instalacao) { 'instalado ' + $e.json.versao } else { $e.json.versao + ': sem mudança' }
+    if ($e.json.tokens -and @($e.json.tokens.novos).Count -gt 0) { $detalhe += ' (tokens novos: ' + (@($e.json.tokens.novos) -join ', ') + ')' }
+    Passo $passo $true $detalhe
+  }
+}
+
 function Escrever-Atual([string]$versoes, [string]$sha, [string]$versao) {
   $arquivo = Join-Path $versoes 'atual.json'
   if (Test-Path -LiteralPath $arquivo) {
@@ -250,6 +299,8 @@ try {
       if (-not $Sha) { Uso 'falta -Sha' }
       Conferir-Prerequisitos
       $raiz = Obter-Versao
+      Instalar-Casa $raiz
+      Instalar-Agentes $raiz
     }
     default { Uso ('modo ' + $Modo + ' ainda não implementado') }
   }

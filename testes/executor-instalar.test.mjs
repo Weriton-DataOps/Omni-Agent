@@ -2,7 +2,7 @@
 // outros agentes com tokens no cofre, sha256 entregue ao instalar --stdin deles e registro só depois.
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import test from 'node:test'
@@ -13,6 +13,7 @@ import { BANCOS } from '../runtime/casa/esquemas.mjs'
 import { credencialPorNome } from '../runtime/casa/loja-cofre.mjs'
 import { listarInstalados } from '../runtime/casa/loja-nucleo.mjs'
 import { rodarExecutor } from '../runtime/executor.mjs'
+import { agenteFalso, NODE_ATUAL } from './fixtures/agente-falso.mjs'
 
 const RAIZ = resolve(import.meta.dirname, '..')
 const VERSAO = JSON.parse(readFileSync(join(RAIZ, 'package.json'), 'utf8')).version
@@ -72,31 +73,6 @@ test('instalar de novo não muda nada', async (t) => {
   assert.deepEqual(segunda.json.omni.mudou, { agente: false, instalacao: false })
 })
 
-// Agente falso de verdade: grava em recebido.json o argv e o stdin, ou sai com FALSO_SAIR.
-const FALSO = `import { readFileSync, writeFileSync } from 'node:fs'
-const args = process.argv.slice(2)
-if (process.env.FALSO_SAIR) { process.stderr.write('recusei'); process.exit(Number(process.env.FALSO_SAIR)) }
-const entrada = args.includes('--stdin') ? readFileSync(0, 'utf8') : null
-writeFileSync('recebido.json', JSON.stringify({ args, entrada }))
-process.stdout.write('{"ok":true}\\n')
-`
-
-// O requisito de Node acompanha quem roda o teste: o CI usa Node 22 e o PC usa 24. Fixar ">=24" aqui
-// faria o requer recusar o agente no CI antes de qualquer asserção sobre tokens ou núcleo.
-const NODE_ATUAL = `>=${process.versions.node.split('.')[0]}`
-
-function agenteFalso(t, mudar = (m) => m) {
-  const raiz = mkdtempSync(join(tmpdir(), 'omni-agente-falso-'))
-  t.after(() => rmSync(raiz, { recursive: true, force: true }))
-  mkdirSync(join(raiz, 'executor'))
-  writeFileSync(join(raiz, 'executor', 'falso.mjs'), FALSO)
-  const manifesto = mudar({
-    agente: 'falso', versao: '1.0.0', banco: null, requer: { node: NODE_ATUAL, agentes: ['omni>=0.26'] },
-    executor: { comando: 'node executor/falso.mjs', modos: ['instalar', 'servir'] }, tarefas: [], credenciais: []
-  })
-  writeFileSync(join(raiz, 'executor', 'agente.json'), JSON.stringify(manifesto, null, 2))
-  return raiz
-}
 const recebido = (raiz) => JSON.parse(readFileSync(join(raiz, 'recebido.json'), 'utf8'))
 const sha = (texto) => createHash('sha256').update(texto, 'utf8').digest('hex')
 const instalados = (pasta, env) => comBancoDaCasa(pasta, 'nucleo', (db) => listarInstalados(db), env).map((i) => i.agente)

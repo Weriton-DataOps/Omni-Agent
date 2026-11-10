@@ -2,11 +2,14 @@
 // programas de fora trocados por temporários e falsos. Só roda no Windows.
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { appendFileSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { after, before, test } from 'node:test'
 
+import { comBancoDaCasa } from '../runtime/casa/banco.mjs'
+import { listarInstalados } from '../runtime/casa/loja-nucleo.mjs'
+import { agenteFalso } from './fixtures/agente-falso.mjs'
 import { criarOrigem } from './fixtures/origem-selada.mjs'
 
 const RAIZ = resolve(import.meta.dirname, '..')
@@ -103,6 +106,38 @@ test('Node abaixo do mínimo para antes de baixar qualquer coisa', { skip: !wind
 
 test('o mínimo de produção é Node 24', { skip: !windows }, () => {
   assert.match(readFileSync(SCRIPT, 'utf8'), /OMNI_INSTALAR_NODE_MINIMO[^\n]*\b24\b/)
+})
+
+const instalados = (casa) => comBancoDaCasa(casa, 'nucleo', (db) => listarInstalados(db), { OMNI_HOME: casa, OMNI_CASA_BANCO: join(casa, 'banco') })
+  .map((i) => [i.agente, i.raiz])
+
+test('instalar cria a casa com o Omni da versão e instala os agentes pedidos', { skip: !windows }, (t) => {
+  const falso = agenteFalso(t)
+  const r = instalar(t, ['instalar', '-Origem', origem.repo, '-Sha', origem.sha, '-Agente', falso, ...BASICO])
+  assert.equal(r.status, 0, r.erro)
+  assert.equal(passo(r.json, 'casa').ok, true)
+  assert.equal(passo(r.json, 'agente:falso').ok, true)
+  assert.deepEqual(instalados(r.casa), [
+    ['falso', realpathSync.native(falso)],
+    ['omni', realpathSync.native(join(r.base, 'versoes', origem.sha))]
+  ])
+
+  const segunda = instalar(t, ['instalar', '-Origem', origem.repo, '-Sha', origem.sha, '-Agente', falso, ...BASICO], { base: r.base, casa: r.casa })
+  assert.equal(segunda.status, 0, segunda.erro)
+  assert.equal(passo(segunda.json, 'casa').ok, true)
+  assert.equal(passo(segunda.json, 'agente:falso').ok, true)
+  assert.match(passo(segunda.json, 'agente:falso').detalhe, /sem mudança/)
+})
+
+test('agente que recusa o instalar para o script com o código do executor', { skip: !windows }, (t) => {
+  const falso = agenteFalso(t)
+  const r = instalar(t, ['instalar', '-Origem', origem.repo, '-Sha', origem.sha, '-Agente', falso, ...BASICO], { env: { FALSO_SAIR: '3' } })
+  assert.equal(r.status, 1, r.erro)
+  assert.equal(r.json.ok, false)
+  assert.equal(passo(r.json, 'casa').ok, true)
+  assert.equal(passo(r.json, 'agente:falso').ok, false)
+  assert.match(passo(r.json, 'agente:falso').detalhe, /agente-recusou/)
+  assert.deepEqual(instalados(r.casa).map(([agente]) => agente), ['omni'])
 })
 
 test('instalar sem -Sha é uso errado', { skip: !windows }, (t) => {
