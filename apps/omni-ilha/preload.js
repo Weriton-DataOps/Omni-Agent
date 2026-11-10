@@ -18,8 +18,9 @@ contextBridge.exposeInMainWorld('ilha', {
     });
   },
   aoTecla:(cb) => { ipcRenderer.on('tecla', (_evento, tecla) => cb(String(tecla))); },
-  // o card Actions: abre a janela do depósito e pede o resumo (total e os três mais mexidos)
+  // o card Actions: abre o depósito (janela do Oráculo, pela casa) e pede o resumo; o do Oráculo abre o painel
   abrirActions: () => ipcRenderer.send('abrir-actions'),
+  abrirOraculo: () => ipcRenderer.send('abrir-oraculo'),
   abrirOvercore: () => ipcRenderer.send('abrir-overcore'),
   resumoOvercore: () => ipcRenderer.invoke('overcore:resumo'),
   abrirCofre: () => ipcRenderer.send('abrir-cofre'),

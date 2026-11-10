@@ -273,14 +273,3 @@ test('execução: o pedido montado leva instrução, contexto, regras e o jeito 
   assert.match(r, /^Resposta do Weriton/)
   assert.match(r, /usa o banco de homolog/)
 })
-
-test('execução: a sessão executora devolve pelo script; estado fora da lista é recusado', async () => {
-  const { execFileSync } = await import('node:child_process')
-  const ex$ = ilha('execucoes.js')
-  const script = fileURLToPath(new URL('../scripts/omni-actions.mjs', import.meta.url))
-  const ex = ex$.criar({ projeto: 'Omni', instrucao: 'teste' })
-  const rodar = (...a) => { try { return JSON.parse(execFileSync(process.execPath, [script, ...a], { env: { ...process.env }, encoding: 'utf8', windowsHide: true })) } catch (e) { return JSON.parse(e.stdout) } }
-  assert.equal(rodar('execucao', ex.id, '--estado', 'concluida', '--nota', 'feito, ver testes/').estado, 'concluida')
-  assert.equal(ex$.ler(ex.id).eventos.at(-1).nota, 'feito, ver testes/')
-  assert.match(rodar('execucao', ex.id, '--estado', 'na fila').erro, /--estado/)
-})

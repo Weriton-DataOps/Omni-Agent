@@ -30,7 +30,11 @@ ela na mesma mola de abrir.
     - **Actions**, no molde de um card de integração: ícone de caixa à esquerda; "Actions · Depósito"; o número
       de pontos grande em mono; os três pontos mais mexidos, com ponto colorido pelo Status e o tempo
       relativo à direita. O primeiro pulsa se foi mexido há menos de 1 h. Com decisão pendente vira
-      **N · PRA VOCÊ** (ver a janela Actions abaixo). Clicar recolhe a ilha e abre a janela Actions.
+      **N · PRA VOCÊ**. Clicar recolhe a ilha e abre o depósito na janela do Oráculo (ver abaixo).
+    - **Oráculo:** VIGIANDO / PARADO, a última vigia e os três projetos mais recentes. Clicar na cabeça do
+      card abre o painel do Oráculo.
+    - **Sem o Oráculo instalado** os dois cards ficam apagados, com INSTALAR no rótulo e "–" no número, e o
+      clique não abre nada. Com a casa ou o Oráculo fora do ar, mostram FORA DO AR e o motivo.
     - **WhatsApp:** NO AR / PAUSADA / PARADA / AUSENTE, mensagens de hoje contadas pela API (enviadas,
       recebidas e a terceiros), sessões do Claude com o MCP do WhatsApp ligado, conexão do número do Omni e
       do seu WhatsApp, chaves do serviço, chave e crédito da OpenAI, transcrição local, falhas do dia e o
@@ -86,68 +90,21 @@ O diff nunca mostra o conteúdo de arquivo sensível (`.env`, `secret`, `credenc
 `.pem`, `.key`, `id_rsa`, `pgpass`). Nesses casos aparece "conteúdo oculto". O transcript só é lido
 dentro de `~/.claude/projects` e todo texto entra no DOM por `textContent`.
 
-**A janela Actions é a mesa de decisão (21/10).** É uma janela comum: tem foco, aparece na barra de
-tarefas e usa barra de título própria. Lê o depósito `Documents\Actions` (ou `OMNI_ACTIONS`): os pontos e
-o `projetos.md`. Desenho completo em `docs\superpowers\specs\2026-10-21-actions-organizador-design.md`.
+**Actions e Oráculo moram no Oráculo (09/11, F2 plano 4b).** A ilha não lê nem grava mais o depósito: a
+mesa de decisão, a escrita, o despacho e a aba Execuções são do Oráculo, e a ilha só abre a janela dele.
 
-- **Aba Ideias:** à esquerda a mesa, nesta ordem:
-  - **Pra você**: veredito vencido com a proposta da visita, teste pronto, entrega vencida, item
-    proposto e ponto com cabeçalho quebrado;
-  - **Com potencial**: ▲ a ▲▲▲ com o motivo;
-  - **Em andamento**: semente, em teste e dormente, até 6 por coluna;
-  - **Não deram certo**: arquivados com motivo;
-  - **Última visita**.
-
-  À direita fica o ponto aberto, com os quatro botões de veredito em cima (vira projeto · entra em… ·
-  arquiva · dorme). Arquivar exige motivo, que já vem preenchido pela proposta; dormir exige data.
-- **Aba Projetos:** um card por projeto, com o próximo marco e os dias que faltam, checklist clicável,
-  ⚠ a 7 dias ou menos, vermelho vencido, "sem data ⚠" e as ideias ligadas. Item "(proposto pelo Omni)"
-  tem ✓/✕. Projeto com **Plano de origem** é espelhado: o check grava lá. Plano sumido deixa o card só
-  leitura, com aviso.
-- **Escrita:** a janela escreve. Todo pedido passa pelo main (`actions:veredito`, `actions:visto`,
-  `actions:item`), e o `escrita.js` faz a gravação:
-  - só aceita `pontos\*.md`, `projetos.md` e os planos de origem listados;
-  - grava de forma atômica, debaixo da trava `.trava` (quem perde tenta de novo uma vez);
-  - mantém o histórico só de acréscimo;
-  - recusa ponto com cabeçalho ilegível;
-  - recusa marcar item se a linha mudou desde a leitura.
-- **Card da ilha:** com decisão pendente, mostra **N · PRA VOCÊ** e as linhas do que pede, acende âmbar,
-  e a face dá uma olhada para o card quando o número sobe. Isso acontece só com a ilha aberta.
-  **Fechada, nada sinaliza** (pedido dele, 21/10): o notch fica como sempre. Sem nada pendente, o card
-  volta a ser o depósito: total e os três mais mexidos.
-- **Arquivos:**
-  - `pontos.js`: o leitor do ciclo (Estágio, Prazo do veredito, Potencial, Proposta, Pra você, Veredito);
-  - `projetos.js`: lê o `projetos.md` e os planos de origem;
-  - `mesa.js`: monta a mesa;
-  - `escrita.js`: as gravações;
-  - `actions.html`, `actions.js`, `actions-preload.js`: a janela (sandbox, nenhuma navegação).
-- **IPCs:** os da janela Actions só aceitam a própria janela, e os da ilha só respondem à ilha.
-- **Executar (22/10):** a caixa "mandar executar" fica no ponto aberto e em cada card de projeto
-  ("executar…"). Ali ele aprova, ajusta ou diz como conduzir.
-  - **Gravação:** a tela grava `Actions\execucoes\<id>.json` (`execucoes.js`), e o main chama, escondido e
-    destacado, o `scripts\omni-actions-despachar.mjs`.
-  - **Quem recebe:** o despacho escolhe a sessão do VS Code que vai receber o trabalho:
-    1. a aberta na **Pasta** do projeto (`projetos.md`), a ociosa primeiro;
-    2. senão, a do Actions;
-    3. senão, a ociosa mais nova do Omni.
-  - **Entrega:** o despacho monta o pedido (instrução, contexto do ponto e do projeto, regras, como
-    devolver) e o entrega pelo canal entre sessões, com uma sessão curta só com Read + SendMessage.
-  - **Devolução:** a sessão executora devolve com `omni-actions.mjs execucao <id> --estado
-    andando|concluida|bloqueada|falhou`.
-  - **Aba Execuções:** mostra estado, sessão, pedido e linha do tempo, e relê o disco a cada 5 s e ao
-    entrar na aba. Bloqueada tem caixa de resposta, que volta para a mesma sessão. "Sem sessão" e
-    "falhou" têm "mandar de novo". Bloqueada, sem sessão, falhou e concluída não vista sobem para o PRA
-    VOCÊ.
-  - **Overcore:** quando estiver pronto, ele toma o lugar da sessão. A aba Execuções é o embrião da
-    janela dele.
-- **Período e ordem (22/10):** no topo ficam os botões *chegou hoje · mexido hoje · 7 dias · tudo* e a
-  ordem (*mais novos · último toque · prazo · potencial*), lembrados entre aberturas.
-  - **Com período escolhido:** a mesa abre com a lista do que entrou nele, e as colunas mostram tudo,
-    sem limite de 6.
-  - **Em "tudo":** a seção **Chegaram agora** (hoje e ontem) fica logo depois do Pra você, e todo ponto
-    recente leva o selo NOVO. O que acabou de chegar nunca fica enterrado.
-  - **O que não tem data** (item de projeto) só aparece em "tudo".
-  - **Aba Execuções:** também respeita o período.
+- **A casa:** no `whenReady` a ilha sobe o `servir` do Omni (`casa-servir.js`) e para no `will-quit`; o
+  `servir` também sai sozinho quando a ilha morre (stdin fechado). O token fica no processo do main.
+- **Os cards:** `paineis.js` pergunta à casa quem está instalado (`GET /v1/agentes`) e pede o resumo em
+  nome do Oráculo (`/v1/oraculo/resumo` e `/v1/actions/resumo`).
+- **A janela do agente:** uma por agente, com o `preload` dele, `sandbox` e `contextIsolation`. Carrega
+  o `modulo` do manifesto, ou o `actions/actions.html` do Oráculo quando vem do card do Actions. Navegação
+  só dentro da pasta do agente (`podeNavegar`); janela nova é negada.
+- **`agente:api`:** a janela fala com a casa por este IPC. O agente permitido sai do mapa
+  `webContents.id → agente`, só do quadro principal; pedido de outra janela ou em nome de outro agente
+  volta `status: 0` sem tráfego.
+- **Ainda no repo até o plano 5:** `pontos.js`, `projetos.js`, `mesa.js`, `escrita.js` e `execucoes.js`,
+  usados só pelo `scripts\omni-actions.mjs` da visita.
 - **Overcore (22/10):** card próprio na coluna do meio (ícone de três nós), entre Actions e WhatsApp:
   - **Card:** NO AR / DESLIGADO, quantas execuções rodam ou pedem você e as duas primeiras. Com três
     cards, cada um mostra no máximo 2 linhas.
@@ -199,10 +156,13 @@ scratchpad da sessão. Os tokens vêm do `style.css` do port Windows dele:
   Arrastar janela/arquivo até o topo também não: abrir por hover exige que o mouse seja da ilha.
 - Nunca pega foco (`focusable:false`): o cursor de texto do seu app continua onde estava.
 - Clique é "toque": soltar o botão dentro do retângulo do elemento (`pointerup`), e não `click`. Com a
-  janela Actions existindo, mesmo minimizada, o Windows engole o botão-baixo na ilha, e sem o par não há
+  janela de um agente existindo, mesmo minimizada, o Windows engole o botão-baixo na ilha, e sem o par não há
   `click`. O teste é pelo retângulo porque o refresh de 2 s troca os nós por baixo do ponteiro.
 
-Usa o Electron já instalado em `..\omni-desktop\node_modules`; não tem `npm install` nem build.
+Tem o próprio Electron 33.4.11 (`npm ci` nesta pasta; a raiz e o CI não instalam). No Node 24 o
+postinstall do pacote morre calado no meio da extração e deixa a `dist` só com o `LICENSES`; o
+`iniciar.ps1` completa a extração pelo `tar.exe`, a partir do zip que o `npm ci` já deixou no cache
+(`iniciar.ps1 -SoPreparar` faz só isso e sai). Não tem build.
 
 ## De onde vem o dado
 

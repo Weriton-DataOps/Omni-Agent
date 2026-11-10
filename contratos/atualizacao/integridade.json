@@ -18,8 +18,8 @@
     "runtime/postgresql-5433/**"
   ],
   "identity": {
-    "version": "0.29.0",
-    "releaseFingerprint": "71e197bd2c063d1068d1c69e3285c31916fcf03eeb936eb6868c61cea67e8c8a",
+    "version": "0.30.0",
+    "releaseFingerprint": "52e80068e16e82b86f0f8a7abf1b48de67c85c6d6b58e0249aa856e29b7f85ff",
     "releaseAuditScopeStartedAt": "2026-09-09T00:00:00.000Z",
     "required": [
       "version",

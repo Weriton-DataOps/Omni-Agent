@@ -547,9 +547,25 @@
     let r = null;
     try { r = await ponte.resumoActions(); } catch { /* fica o que estava */ }
     if (!r) return;
+    // F2 (plano 4b): o depósito é do Oráculo e chega pela casa. Sem Oráculo instalado o card apaga e não
+    // abre nada; com a casa ou o Oráculo fora, mostra o motivo no lugar das linhas.
+    if (r.ausente || r.ok === false) {
+      const assinatura = JSON.stringify(['fora', !!r.ausente, r.erro]);
+      if (assinatura === assinaturaActions) return;
+      assinaturaActions = assinatura;
+      pendentesActions = 0;
+      cardActions.classList.remove('pede');
+      cardActions.classList.toggle('ausente', !!r.ausente);
+      actionsTotal.textContent = '–';
+      actionsRotulo.textContent = r.ausente ? 'INSTALAR' : 'FORA DO AR';
+      actionsLinhas.replaceChildren(no('div', 'int-vazio', r.ausente ? 'Oráculo não instalado' : r.erro || 'Oráculo fora do ar'));
+      return;
+    }
+    cardActions.classList.remove('ausente');
     // a cada 2 s chega o mesmo resumo: só refaz as linhas quando algo mudou (nem o "há 3 min" muda tão rápido)
     const praVoce = Number(r.praVoce) || 0;
-    const assinatura = JSON.stringify([r.total, praVoce, r.pedidos, r.recentes.map((p) => [p.titulo, p.status, quando(p.alteradoEm), Date.now() - p.alteradoEm < 3600e3])]);
+    const recentes = Array.isArray(r.recentes) ? r.recentes : [];
+    const assinatura = JSON.stringify([r.total, praVoce, r.pedidos, recentes.map((p) => [p.titulo, p.status, quando(p.alteradoEm), Date.now() - p.alteradoEm < 3600e3])]);
     if (assinatura === assinaturaActions) return;
     assinaturaActions = assinatura;
     // decisão pendente acende o card e a cara dá uma olhada de novidade; nada pendente, o card é o depósito
@@ -570,7 +586,7 @@
     }
     actionsTotal.textContent = String(r.total);
     actionsRotulo.textContent = r.total === 1 ? 'PONTO' : 'PONTOS';
-    const linhas = r.recentes.map((p, i) => {
+    const linhas = recentes.map((p, i) => {
       const linha = no('div', 'int-linha');
       const pt = no('i', `pt ${classeStatus(p.status)}`);
       if (i === 0 && Date.now() - p.alteradoEm < 3600e3) pt.classList.add('pulsa');
@@ -589,20 +605,26 @@
     let r = null;
     try { r = await ponte.resumoOracle(); } catch { /* fica o que estava */ }
     if (!r) return;
-    const assinatura = JSON.stringify([r.ok, r.vigiando, r.total, quando(r.ultimaVigia), r.projetos.map((p) => [p.nome, quando(p.alteradoEm)])]);
+    // F2 (plano 4b): o resumo vem do Oráculo pela casa; sem ele instalado, o card apaga (ausente)
+    const ausente = !!r.ausente;
+    const ok = !ausente && r.ok === true;
+    const projetos = ok && Array.isArray(r.projetos) ? r.projetos : [];
+    const assinatura = JSON.stringify([ausente, ok, r.erro, r.vigiando, r.total, quando(r.ultimaVigia), projetos.map((p) => [p.nome, quando(p.alteradoEm)])]);
     if (assinatura === assinaturaOracle) return;
     assinaturaOracle = assinatura;
-    cardOracle.classList.toggle('vigiando', !!r.vigiando);
-    $('oracle-estado').textContent = !r.ok ? 'SEM PASTA' : r.vigiando ? 'VIGIANDO' : 'PARADO';
-    $('oracle-total').textContent = r.ok ? String(r.total) : '–';
-    $('oracle-rotulo').textContent = r.total === 1 ? 'PROJETO' : 'PROJETOS';
-    $('oracle-detalhe').textContent = r.ultimaVigia ? `vigia ${quando(r.ultimaVigia)}` : r.ok ? 'nunca vigiou' : '';
-    const linhas = r.projetos.map((p) => {
+    cardOracle.classList.toggle('ausente', ausente);
+    cardOracle.classList.toggle('vigiando', ok && !!r.vigiando);
+    $('oracle-estado').textContent = ausente ? 'NÃO INSTALADO' : !ok ? 'FORA DO AR' : r.vigiando ? 'VIGIANDO' : 'PARADO';
+    $('oracle-total').textContent = ok ? String(r.total) : '–';
+    $('oracle-rotulo').textContent = ausente ? 'INSTALAR' : r.total === 1 ? 'PROJETO' : 'PROJETOS';
+    $('oracle-detalhe').textContent = !ok ? '' : r.ultimaVigia ? `vigia ${quando(r.ultimaVigia)}` : 'nunca vigiou';
+    const linhas = projetos.map((p) => {
       const linha = no('div', 'int-linha');
       linha.append(no('i', 'pt st-outro'), no('span', 'int-nome', p.nome), no('span', 'int-quando', quando(p.alteradoEm)));
       return linha;
     });
-    $('oracle-linhas').replaceChildren(...(linhas.length ? linhas : [no('div', 'int-vazio', r.erro || 'nenhum projeto')]));
+    const vazio = ausente ? 'Oráculo não instalado' : !ok ? r.erro || 'Oráculo fora do ar' : 'nenhum projeto';
+    $('oracle-linhas').replaceChildren(...(linhas.length ? linhas : [no('div', 'int-vazio', vazio)]));
   }
 
   // ── Overcore na coluna da direita (27/10): só as execuções que não terminaram, como pílulas de sessão ─
@@ -1181,10 +1203,17 @@
     });
   }
 
-  // o card Actions abre a janela do depósito e a ilha recolhe (sem reabrir debaixo do ponteiro)
+  // o card Actions abre o depósito (a janela do Oráculo) e a ilha recolhe (sem reabrir debaixo do
+  // ponteiro); o cabeçalho do card do Oráculo (olho, nome, números; a máquina embaixo não) abre o painel
+  // dele. Card apagado (agente não instalado) não abre nada.
   tocar(cardActions, () => {
-    if (estado !== 'aberta' || !poco.classList.contains('revelada')) return;
+    if (estado !== 'aberta' || !poco.classList.contains('revelada') || cardActions.classList.contains('ausente')) return;
     ponte.abrirActions();
+    recolherJa();
+  });
+  tocar(cardOracle.querySelector('.or-cab'), () => {
+    if (estado !== 'aberta' || !poco.classList.contains('revelada') || cardOracle.classList.contains('ausente')) return;
+    ponte.abrirOraculo();
     recolherJa();
   });
   // o card do cofre abre a janela da T6; ao voltar, a ilha relê (o que mudou lá aparece aqui)

@@ -295,6 +295,12 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .int-cab > span { font-size: 11px; color: var(--dim-2); }
 .int-cab .abre { margin-left: auto; color: var(--dim-3); font-size: 12px; transition: color .12s, translate .12s; }
 .card-actions:hover .abre { color: var(--ink); translate: 1px -1px; }
+/* F2 (plano 4b): agente não instalado apaga o card, que não reage nem abre nada */
+.card.ausente { opacity: .5; cursor: default; }
+.card-actions.ausente:hover { filter: none; }
+.card-actions.ausente:active { transform: none; }
+.card-actions.ausente .abre { visibility: hidden; }
+.card-oracle:not(.ausente) .or-cab { cursor: pointer; }
 .int-saldo { display: flex; align-items: baseline; gap: 5px; margin-top: 4px; }
 .int-saldo span { font: 700 20px/1.1 var(--mono); letter-spacing: -.02em; }
 .int-saldo i { font-weight: 600; font-size: 9px; line-height: 1; font-style: normal; letter-spacing: .08em; color: var(--dim-3); }

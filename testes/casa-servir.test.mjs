@@ -189,6 +189,14 @@ test('o agente sobe com o token dos agentes: a saúde abre, o chamar dá 403; o 
   assert.deepEqual(servir.agentes, [{ agente: 'falso', porta: saude.corpo.agentes[0].porta }])
   assert.ok(!readFileSync(arquivo, 'utf8').includes(TOKEN), 'sem token no servir.json')
 
+  // Plano 4b: a ilha lê os painéis instalados com o estado do supervisor, sem a porta do agente.
+  const telas = await chamar(c.porta, 'GET', '/v1/agentes', { token: TOKEN })
+  assert.equal(telas.status, 200)
+  assert.deepEqual(telas.corpo.agentes, [{
+    agente: 'falso', versao: '0.0.1', raiz: RAIZ, modulo: 'tela.html', preload: null, painel: null, divergente: false, estado: 'no-ar'
+  }])
+  assert.ok(!JSON.stringify(telas.corpo).includes(String(saude.corpo.agentes[0].porta)), 'a porta do agente não vai à ilha')
+
   assert.equal(await c.parar(), 0)
   assert.equal(existsSync(arquivo), false, 'o servir.json some ao sair')
 })

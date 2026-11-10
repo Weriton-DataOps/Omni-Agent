@@ -56,7 +56,8 @@ function lerCorpo(req) {
 const ROTAS_DOS_AGENTES = new Set(['GET /v1/saude', 'POST /v1/despachos'])
 const CHAMAR = /^\/v1\/agentes\/([a-z][a-z0-9-]{0,39})\/chamar$/
 
-export function criarApiOmni({ casa, token, tokenAgentes = null, versao, agentes = () => [], chamar = null, aoDespachar = null, env = process.env, iniciadoEm = agoraIso() }) {
+// interfaces (plano 4b): os painéis que a ilha monta, com o estado do supervisor; só a ilha lê.
+export function criarApiOmni({ casa, token, tokenAgentes = null, versao, agentes = () => [], interfaces = () => [], chamar = null, aoDespachar = null, env = process.env, iniciadoEm = agoraIso() }) {
   if (typeof token !== 'string' || !TOKEN.test(token)) throw new TypeError('Token da API fora do formato.')
   if (tokenAgentes !== null && (typeof tokenAgentes !== 'string' || !TOKEN.test(tokenAgentes) || tokenAgentes === token)) {
     throw new TypeError('Token dos agentes fora do formato ou igual ao da ilha.')
@@ -146,6 +147,10 @@ export function criarApiOmni({ casa, token, tokenAgentes = null, versao, agentes
       if (url.pathname === '/v1/saude') {
         if (req.method !== 'GET') return responder(res, 405, { ok: false, erro: 'Método não aceito.' }, { allow: 'GET' })
         return responder(res, 200, { ok: true, agente: 'omni', versao, iniciado_em: iniciadoEm, agentes: agentes() })
+      }
+      if (url.pathname === '/v1/agentes') {
+        if (req.method !== 'GET') return responder(res, 405, { ok: false, erro: 'Método não aceito.' }, { allow: 'GET' })
+        return responder(res, 200, { ok: true, agentes: interfaces() })
       }
       if (url.pathname === '/v1/despachos') return await despachos(req, res, url)
     } catch (erro) {

@@ -25,7 +25,7 @@ import { tokenDoAgente } from './casa/credenciais-agente.mjs'
 import { criarPonteDpapi } from './casa/dpapi.mjs'
 import { entregar } from './casa/entregar-sessao.mjs'
 import { marcarDespacho } from './casa/loja-despachos.mjs'
-import { listarServidores } from './casa/loja-nucleo.mjs'
+import { listarInterfaces, listarServidores } from './casa/loja-nucleo.mjs'
 import { sessoesVivas } from './casa/sessoes-vivas.mjs'
 import { criarSupervisor } from './casa/supervisor.mjs'
 import { arquivoServir } from './maos-actions.mjs'
@@ -128,8 +128,9 @@ export async function rodarServir(argv, {
     return 1
   }
   let agentes = []
+  let telas = []
   try {
-    agentes = comBancoDaCasa(casa, 'nucleo', (db) => listarServidores(db), env)
+    ;({ agentes, telas } = comBancoDaCasa(casa, 'nucleo', (db) => ({ agentes: listarServidores(db), telas: listarInterfaces(db) }), env))
   } catch (falha) {
     registrarDegradacao(casa, 'servir.nucleo-db', falha, env)
     log('nucleo.db indisponível: a API sobe sem supervisionar agentes')
@@ -146,6 +147,11 @@ export async function rodarServir(argv, {
   })
   const servidor = criarApiOmni({
     casa, token, tokenAgentes, versao: versaoDoOmni(), agentes: () => supervisor?.estado() ?? [], env, chamar,
+    // A ilha monta os painéis por aqui (plano 4b): o estado vem do supervisor, a porta do agente fica fora.
+    interfaces: () => {
+      const estados = supervisor?.estado() ?? []
+      return telas.map((i) => ({ ...i, estado: estados.find((e) => e.agente === i.agente)?.estado ?? 'sem-servir' }))
+    },
     aoDespachar: ({ agente }) => { carteiro?.tocar(agente) }
   })
   let real

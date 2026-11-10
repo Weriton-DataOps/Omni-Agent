@@ -292,3 +292,24 @@ export function listarServidores(db, { maquina = maquinaAtual() } = {}) {
     return [{ agente: l.agente, raiz: l.raiz, comando: executor.comando, divergente: l.sha_catalogo !== l.manifesto_sha256, rotas: manifesto.interface?.rotas ?? [] }]
   })
 }
+
+// Quem a ilha monta como painel (plano 4b): instalado aqui, com interface no manifesto do catálogo. Os
+// caminhos saem relativos como o manifesto diz; quem resolve e confere que ficam dentro da raiz é a ilha.
+// Divergente sai marcado: a tela no disco pode não ser a que o catálogo descreve.
+export function listarInterfaces(db, { maquina = maquinaAtual() } = {}) {
+  return db.prepare(`SELECT i.agente, i.raiz, i.versao_agente, i.manifesto_sha256, a.manifesto, a.manifesto_sha256 AS sha_catalogo
+    FROM instalacoes i JOIN agentes a ON a.id = i.agente AND a.apagado_em IS NULL
+    WHERE i.maquina = ? AND i.apagado_em IS NULL AND i.agente <> 'omni' ORDER BY i.agente`).all(maquina).flatMap((l) => {
+    const tela = JSON.parse(l.manifesto).interface
+    if (!tela) return []
+    return [{
+      agente: l.agente,
+      versao: l.versao_agente,
+      raiz: l.raiz,
+      modulo: tela.modulo,
+      preload: tela.preload ?? null,
+      painel: tela.painel ?? null,
+      divergente: l.sha_catalogo !== l.manifesto_sha256
+    }]
+  })
+}
