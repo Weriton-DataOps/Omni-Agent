@@ -448,6 +448,14 @@
         "O deposito Actions saiu da ilha e mora no Oraculo: actions.html, actions.js, oracle.js e scripts/omni-actions-despachar.mjs removidos, e o subcomando execucao do omni-actions.mjs tambem; quem devolve execucao sao as maos do Actions.",
         "A ilha tem o proprio Electron (33.4.11, apps/omni-ilha/package.json); o iniciar.ps1 completa a extracao quando o postinstall do Electron falha calado no Node 24, e -SoPreparar so prepara."
       ]
+    },
+    {
+      "version": "0.31.0",
+      "changes": [
+        "Pacote da casa: runtime/executor.mjs exportar tira o nucleo.db e o omni.db por VACUUM INTO com a casa viva aberta, numa pasta com manifesto.json que guarda contagem e sha256 por tabela e o sha256 de cada arquivo; o cofre fica de fora porque o blob DPAPI so abre na maquina que o cifrou.",
+        "importar confere o pacote inteiro contra o proprio manifesto antes de tocar na casa, recusa pacote de migracao mais nova que este Omni, so substitui banco existente com --substituir e leva o atual (com -wal e -shm) para antes-de-importar-<data>; qualquer falha devolve tudo ao lugar.",
+        "verificar roda integrity_check nos dois bancos sem nunca criar banco e, com --pacote, compara contagem e hash por tabela. Saida em JSON numa linha: 0 ok, 2 uso errado (sem ecoar argumento), 3 recusa ou divergencia, 1 falha inesperada registrada em degradacoes.jsonl."
+      ]
     }
   ]
 }
