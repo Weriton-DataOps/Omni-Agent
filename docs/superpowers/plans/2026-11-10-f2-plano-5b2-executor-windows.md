@@ -218,7 +218,7 @@ shell.Run """" & node & """ """ & pasta & "\vigia-servico.mjs""", 0, False
 - [ ] **Passo 1: teste vermelho.**
   - Usar um `claude` falso: um `.cmd` que grava os argumentos em `claude.log` e responde ao `plugin marketplace list` com um texto sem `omni-hub`.
   - Sem `-SemPlugin`, o log precisa ter, nesta ordem:
-    - `plugin marketplace add Weriton-DataOps/Omni-Agent`;
+    - `plugin marketplace add https://github.com/Weriton-DataOps/Omni-Agent.git` (a URL, como o `omni-hub` desta máquina, que é fonte Git e não GitHub);
     - `plugin install omni@omni-hub --scope user`.
   - Com o falso respondendo `omni-hub` no `list` e `omni@omni-hub` no `plugin list`:
     - nada de `add`;

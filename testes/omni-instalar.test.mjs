@@ -256,6 +256,65 @@ test('instalar registra o vigia do WhatsApp da versão, de 5 em 5 minutos, sem d
   assert.equal(lerTarefa(nome).argumentos, tarefa.argumentos, 'registrar de novo substitui sem duplicar')
 })
 
+// claude falso com as listagens no formato do claude de verdade ("  > nome"), com um vizinho de isca.
+const CLAUDE_FALSO = `import { appendFileSync } from 'node:fs'
+const args = process.argv.slice(2).join(' ')
+appendFileSync(new URL('./claude.log', import.meta.url), args + '\\n')
+const tem = process.env.FALSO_CLAUDE_TEM ?? ''
+if (args === 'plugin marketplace list') {
+  process.stdout.write('Configured marketplaces:\\n\\n  > outro-hub\\n    Source: Git (https://example.invalid/outro.git)\\n')
+  if (tem.includes('marketplace')) process.stdout.write('\\n  > omni-hub\\n    Source: Git (https://github.com/Weriton-DataOps/Omni-Agent.git)\\n')
+} else if (args === 'plugin list') {
+  process.stdout.write('Installed plugins:\\n\\n  > outro@outro-hub\\n    Version: 1.0.0\\n    Scope: user\\n')
+  if (tem.includes('plugin')) process.stdout.write('\\n  > omni@omni-hub\\n    Version: 0.32.0\\n    Scope: user\\n')
+} else if (process.env.FALSO_CLAUDE_SAIR) {
+  process.exit(Number(process.env.FALSO_CLAUDE_SAIR))
+}
+`
+function claudeFalso(t) {
+  const pasta = pastaTemp(t, 'omni-claude-')
+  writeFileSync(join(pasta, 'claude-falso.mjs'), CLAUDE_FALSO)
+  writeFileSync(join(pasta, 'claude.cmd'), `@"${process.execPath}" "%~dp0claude-falso.mjs" %*\r\n`)
+  const arquivo = join(pasta, 'claude.log')
+  return {
+    claude: join(pasta, 'claude.cmd'),
+    // só o que muda alguma coisa: as listagens são consulta
+    mudancas: () => (existsSync(arquivo) ? readFileSync(arquivo, 'utf8').split(/\r?\n/).filter((l) => l && !l.endsWith(' list')) : []),
+    zerar: () => rmSync(arquivo, { force: true })
+  }
+}
+const COM_PLUGIN = BASICO.filter((a) => a !== '-SemPlugin')
+
+test('plugin: adiciona o marketplace e instala, ou só atualiza o que já existe', { skip: !windows }, (t) => {
+  const { claude, mudancas, zerar } = claudeFalso(t)
+  const base = pastaTemp(t, 'omni-base-')
+  const casa = pastaTemp(t, 'omni-casa-')
+  const casos = [
+    ['', ['plugin marketplace add https://github.com/Weriton-DataOps/Omni-Agent.git', 'plugin install omni@omni-hub --scope user']],
+    ['marketplace', ['plugin marketplace update omni-hub', 'plugin install omni@omni-hub --scope user']],
+    ['marketplace plugin', ['plugin marketplace update omni-hub', 'plugin update omni@omni-hub --scope user']]
+  ]
+  for (const [tem, esperado] of casos) {
+    zerar()
+    const r = instalar(t, ['instalar', '-Origem', origem.repo, '-Sha', origem.sha, ...COM_PLUGIN], { base, casa, env: { OMNI_INSTALAR_CLAUDE: claude, FALSO_CLAUDE_TEM: tem } })
+    assert.equal(r.status, 0, r.erro)
+    assert.equal(passo(r.json, 'plugin')?.ok, true, `passo plugin com "${tem}"`)
+    assert.deepEqual(mudancas(), esperado, `com "${tem}" já presente`)
+  }
+})
+
+test('plugin: install que falha para o script; claude ausente só avisa', { skip: !windows }, (t) => {
+  const { claude } = claudeFalso(t)
+  const falhou = instalar(t, ['instalar', '-Origem', origem.repo, '-Sha', origem.sha, ...COM_PLUGIN], { env: { OMNI_INSTALAR_CLAUDE: claude, FALSO_CLAUDE_SAIR: '1' } })
+  assert.equal(falhou.status, 1, falhou.erro)
+  assert.equal(passo(falhou.json, 'plugin')?.ok, false)
+  assert.match(passo(falhou.json, 'plugin').detalhe, /saiu com 1/)
+  const ausente = instalar(t, ['instalar', '-Origem', origem.repo, '-Sha', origem.sha, ...COM_PLUGIN], { env: { OMNI_INSTALAR_CLAUDE: join(tmpdir(), 'nao-existe', 'claude.cmd') } })
+  assert.equal(ausente.status, 0, ausente.erro)
+  assert.equal(passo(ausente.json, 'plugin')?.ok, false)
+  assert.match(passo(ausente.json, 'plugin').detalhe, /claude não encontrado/)
+})
+
 test('instalar sem -Sha é uso errado', { skip: !windows }, (t) => {
   const r = instalar(t, ['instalar', ...BASICO])
   assert.equal(r.status, 2)

@@ -348,6 +348,51 @@ function Registrar-Tarefas([string]$raiz) {
   Passo 'tarefas' $true ($nome + ': a cada 5 min')
 }
 
+# O claude da extensão do VS Code não entra no PATH; o do npm global mora em %APPDATA%\npm.
+function Achar-Claude {
+  if ($env:OMNI_INSTALAR_CLAUDE) {
+    if (Test-Path -LiteralPath $env:OMNI_INSTALAR_CLAUDE) { return $env:OMNI_INSTALAR_CLAUDE }
+    return $null
+  }
+  $c = Get-Command claude -ErrorAction SilentlyContinue
+  if ($c) { return $c.Source }
+  $npm = Join-Path $env:APPDATA 'npm\claude.cmd'
+  if (Test-Path -LiteralPath $npm) { return $npm }
+  return $null
+}
+
+# As listagens do claude marcam cada item com "  > nome"; a linha inteira precisa ser o nome.
+function Listagem-Tem($r, [string]$nome) {
+  foreach ($linha in @($r.saida)) { if ($linha -match ('^\s*>\s*' + [regex]::Escape($nome) + '\s*$')) { return $true } }
+  return $false
+}
+
+function Rodar-Claude([string]$claude, [string[]]$argumentos) {
+  Log ('claude ' + ($argumentos -join ' '))
+  $r = Rodar $claude $argumentos $null
+  if ($r.codigo -ne 0) {
+    foreach ($linha in $r.saida) { [Console]::Error.WriteLine($linha) }
+    Falhar 'plugin' ('claude ' + ($argumentos -join ' ') + ' saiu com ' + $r.codigo)
+  }
+  return $r
+}
+
+function Instalar-Plugin {
+  $claude = Achar-Claude
+  if (-not $claude) { Passo 'plugin' $false 'claude não encontrado: instale o Claude Code e rode de novo'; return }
+  $mercados = Rodar-Claude $claude @('plugin', 'marketplace', 'list')
+  if (Listagem-Tem $mercados 'omni-hub') { Rodar-Claude $claude @('plugin', 'marketplace', 'update', 'omni-hub') | Out-Null }
+  else { Rodar-Claude $claude @('plugin', 'marketplace', 'add', 'https://github.com/Weriton-DataOps/Omni-Agent.git') | Out-Null }
+  $plugins = Rodar-Claude $claude @('plugin', 'list')
+  if (Listagem-Tem $plugins 'omni@omni-hub') {
+    Rodar-Claude $claude @('plugin', 'update', 'omni@omni-hub', '--scope', 'user') | Out-Null
+    Passo 'plugin' $true 'omni@omni-hub atualizado'
+  } else {
+    Rodar-Claude $claude @('plugin', 'install', 'omni@omni-hub', '--scope', 'user') | Out-Null
+    Passo 'plugin' $true 'omni@omni-hub instalado'
+  }
+}
+
 function Escrever-Atual([string]$versoes, [string]$sha, [string]$versao) {
   $arquivo = Join-Path $versoes 'atual.json'
   if (Test-Path -LiteralPath $arquivo) {
@@ -369,6 +414,7 @@ try {
       if (-not $SemIlha) { Preparar-Ilha $raiz }
       if (-not $SemWhatsApp) { Preparar-WhatsApp $raiz }
       if (-not $SemTarefas) { Registrar-Tarefas $raiz }
+      if (-not $SemPlugin) { Instalar-Plugin }
     }
     default { Uso ('modo ' + $Modo + ' ainda não implementado') }
   }
