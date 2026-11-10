@@ -191,5 +191,5 @@ roda como Node puro e não abre janela. O `iniciar.ps1` limpa essa variável ant
 ## Fora desta demo
 
 Som, enviar mensagem pelo chat, responder permissão pela ilha, sessões fora de `~/.claude/projects`, ligação
-com o Overcore, bandeja do sistema e início com o Windows. A versão de verdade vai para o `omni-desktop`
-(electron-vite + React + TypeScript).
+com o Overcore, bandeja do sistema e início com o Windows. O `omni-desktop`, que receberia a versão de verdade, foi
+aposentado em 10/11/2026; a ilha é a interface única.

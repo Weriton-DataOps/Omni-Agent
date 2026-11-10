@@ -1,7 +1,7 @@
 'use strict';
 
 // gravar.js — o Electron escondido que roda o motor na GPU e grava as provas.
-// Uso (Electron 33 do omni-desktop, com ELECTRON_RUN_AS_NODE fora do ambiente):
+// Uso (Electron 33 da própria ilha, com ELECTRON_RUN_AS_NODE fora do ambiente):
 //   electron.exe gravar.js <tarefa> [<tarefa> ...] [--graus=18]
 // Tarefas: fidelidade desempenho rasgo giro fisica determinismo videos lado vivo  (ou "tudo")
 // Cada tarefa abre provas/palco.html?tarefa=<nome> numa janela que nunca aparece; a página roda

@@ -14,7 +14,7 @@ mesmo `t` dá sempre o mesmo quadro, no vivo e no vídeo.
 
 ## Como rodar
 
-O Electron é o do omni-desktop (v33). `ELECTRON_RUN_AS_NODE` tem de estar fora do ambiente. As janelas nunca aparecem.
+O Electron é o da própria ilha (v33, em `apps/omni-ilha/node_modules`). `ELECTRON_RUN_AS_NODE` tem de estar fora do ambiente. As janelas nunca aparecem.
 
 ```
 python -I ferramentas/assar.py                         # assa as texturas (só quando a arte ou o "assar" mudam)

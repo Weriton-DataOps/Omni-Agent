@@ -32,19 +32,19 @@
     "externalCanVerifyOrClose": false
   },
   "interface": {
-    "chat": "omni-desktop-active-with-typed-body-contract",
-    "realtime": "omni-desktop-audio-surface-when-credential-available",
-    "section35": "omni-desktop-body-contract-active"
+    "chat": "claude-code-session-via-omni-plugin",
+    "realtime": "retired-with-omni-desktop",
+    "section35": "omni-desktop-body-contract-retired"
   },
   "sections": {
     "15-18": "external-execution-environment-reference-only",
     "27-30": "omni-active",
     "31": "out-of-scope-agent-selection",
     "32-34": "omni-active",
-    "35": "omni-desktop-body-contract-active",
+    "35": "omni-desktop-body-contract-retired",
     "36-37": "external-overcore",
     "38": "external-oracle",
-    "39": "omni-desktop-interface-active",
+    "39": "omni-ilha-interface-active",
     "40-46": "omni-invariants"
   }
 }

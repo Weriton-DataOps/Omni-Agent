@@ -1,10 +1,10 @@
 # Omni
 
 Núcleo canônico de um único agente pessoal: conversa, continuidade de trabalho, memória, contexto,
-execução e aprendizado operacional. A primeira interface local está em `apps/omni-desktop`, com
-texto, voz e sessões Claude/VS Code. Consulte seu README para validações e limites desta versão.
+execução e aprendizado operacional. A interface local é a ilha, em `apps/omni-ilha`. O Omni Desktop
+(o Crachá) foi aposentado em 10/11/2026, junto com o broker de acesso e o PostgreSQL 5433.
 
-O fluxo externo de tarefas do Overcore está ligado ao operador e ao Desktop, mantendo os projetos
+O fluxo externo de tarefas do Overcore está ligado ao operador, mantendo os projetos
 independentes. Consulte [configuração, evidências e limites](docs/integracoes/overcore-task-flow.md).
 
 ## O que funciona hoje

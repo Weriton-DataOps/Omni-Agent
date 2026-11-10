@@ -492,6 +492,13 @@
         "scripts/omni-conferir-cracha.mjs confere, so leitura, cada versao viva de credencial que o PG 5433 guarda como metadado contra o Gerenciador de Credenciais do Windows e o inventario do cofre.db; aposentadas podem faltar, referencia fora do formato reprova, e nenhum valor ou conta aparece no relatorio.",
         "scripts/omni-desligar-5433.ps1 desliga o PostgreSQL 5433 so com o recibo da importacao no omni.db (omni-importar-5433.mjs --recibo): sem -Executar mostra o plano; com ele para o broker, faz pg_ctl stop, copia a pasta data para um backup datado conferido e so entao guarda o atalho do logon. Pastas obrigatorias, sem padrao, e trava fechada em qualquer erro; a pasta data original nunca e apagada."
       ]
+    },
+    {
+      "version": "0.36.0",
+      "changes": [
+        "Aposentados o Omni Desktop (o Cracha), o broker de acesso e o PostgreSQL 5433 no codigo: saem apps/omni-desktop, os scripts do broker, do logon do runtime, da provisao do PG e do executor de credenciais, o grafo do broker em src e dist, adaptadores/postgresql, os testes deles e o contrato de interface do desktop. Ficam o export, o import, a conferencia do Cracha e o desligamento do 5433, que a instalacao real usa.",
+        "Os contratos de arquitetura passam a dizer que a interface local e a ilha; uma guarda nova falha se um caminho aposentado voltar ou se um arquivo vivo voltar a apontar para ele."
+      ]
     }
   ]
 }

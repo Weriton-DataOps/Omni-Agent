@@ -129,7 +129,7 @@ Valores nunca aparecem. A saída é 0 quando tudo existe no Gerenciador.
 
 ### T4: aposentar o código do broker e do PG
 
-Depende de uma decisão do Weriton: apagar o `apps/omni-desktop` (o Crachá), que é o único consumidor. Sem essa decisão, T4 fica para depois e o 6b só desliga, sem apagar código.
+Decidido pelo Weriton em 10/11/2026: o `apps/omni-desktop` (o Crachá) pode ser aposentado. O corte exato, maior que a lista abaixo, está em `2026-11-10-f2-t4-aposentar-cracha.md`.
 
 Com a decisão, T4 apaga:
 - `apps/omni-desktop`;
@@ -140,8 +140,8 @@ O importador (`omni-importar-5433`) e o `postgres-fio` do cofre ficam.
 
 ### T5: release 0.35.0
 
-- [ ] Bump, selo refeito, suíte inteira em segundo plano, `typecheck`, `check` e o `dist` sem diff.
-- [ ] PR, CI verde, merge, `plugin update` e o selo conferido.
+- [x] Bump, selo refeito, suíte inteira em segundo plano, `typecheck`, `check` e o `dist` sem diff.
+- [x] PR, CI verde, merge, `plugin update` e o selo conferido.
 
 ## Fica para o 6b (máquina)
 
