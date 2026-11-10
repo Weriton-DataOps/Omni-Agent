@@ -53,10 +53,10 @@
 - `tokenDoAgente(db, ponte, agente, papel, motivo, opcoes)` → texto, via `usarCredencial` com agente `omni`; zera o `Buffer` depois de converter.
 
 Testes (`testes/casa-credenciais-agente.test.mjs`, ponte falsa do `casa-loja-cofre.test.mjs`):
-- [ ] cria os dois na 1ª vez (`novos` = os dois), devolve sha256 hex de 64 e diferentes entre si; a 2ª chamada não cria nada e devolve os mesmos sha256;
-- [ ] o sha256 devolvido é o do valor que o `tokenDoAgente` abre; cada abertura grava um uso `entregue` para o agente `omni`;
-- [ ] a credencial guardada não autoriza outro agente (`usarCredencial` com `oraculo` → `agente-sem-acesso`);
-- [ ] agente `omni`, `dono` ou `Oráculo` → `TypeError`; papel fora da lista → `TypeError`.
+- [x] cria os dois na 1ª vez (`novos` = os dois), devolve sha256 hex de 64 e diferentes entre si; a 2ª chamada não cria nada e devolve os mesmos sha256;
+- [x] o sha256 devolvido é o do valor que o `tokenDoAgente` abre; cada abertura grava um uso `entregue` para o agente `omni`;
+- [x] a credencial guardada não autoriza outro agente (`usarCredencial` com `oraculo` → `agente-sem-acesso`);
+- [x] agente `omni`, `dono` ou `Oráculo` → `TypeError`; papel fora da lista → `TypeError`.
 
 ### T2. `chamar`: rota conferida no manifesto
 
@@ -73,12 +73,12 @@ Testes (`testes/casa-credenciais-agente.test.mjs`, ponte falsa do `casa-loja-cof
 - Chama `http://127.0.0.1:<porta><rota>` com `Host: 127.0.0.1:<porta>`, `Bearer`, `connection: close`, JSON quando há corpo. A resposta volta como `{status, corpo}`, com o JSON lido ou `null`.
 
 Testes (`testes/casa-chamar-agente.test.mjs`, servidor http de verdade na porta 0 que anota o que recebeu):
-- [ ] GET declarado `qualquer` vai com o token tela; POST `visita` com `papel: 'visita'` vai com o token visita e o corpo JSON;
-- [ ] POST `visita` pedido com papel tela → status 0, o servidor não recebe nada;
-- [ ] rota não declarada, método diferente, `..`, `//`, sem `/v1/` → status 0 sem tráfego;
-- [ ] agente fora do ar → status 0; token que lança → status 0 sem vazar a mensagem do cofre;
-- [ ] servidor que não responde → status 0 no prazo; resposta grande → status 0;
-- [ ] a query passa (`?estado=pendente`) e o padrão confere só o caminho.
+- [x] GET declarado `qualquer` vai com o token tela; POST `visita` com `papel: 'visita'` vai com o token visita e o corpo JSON;
+- [x] POST `visita` pedido com papel tela → status 0, o servidor não recebe nada;
+- [x] rota não declarada, método diferente, `..`, `//`, sem `/v1/` → status 0 sem tráfego;
+- [x] agente fora do ar → status 0; token que lança → status 0 sem vazar a mensagem do cofre;
+- [x] servidor que não responde → status 0 no prazo; resposta grande → status 0;
+- [x] a query passa (`?estado=pendente`) e o padrão confere só o caminho.
 
 ### T3. API do Omni: dois tokens e `POST /v1/agentes/:agente/chamar`
 
@@ -88,18 +88,18 @@ Testes (`testes/casa-chamar-agente.test.mjs`, servidor http de verdade na porta 
 - depois do recibo da campainha, `aoDespachar({agente, execucao, novo})` (erro dele vai para a degradação e não muda o 202).
 
 Testes (`testes/casa-api-omni.test.mjs`, novos casos):
-- [ ] token dos agentes: saúde 200, campainha 202, `chamar` 403;
-- [ ] token da ilha no `chamar` repassa agente, método, rota e corpo, papel `tela`, e devolve `{status, corpo}`;
-- [ ] corpo inválido 400; GET no `chamar` 405;
-- [ ] a campainha chama `aoDespachar` com o recibo; `aoDespachar` que lança não muda o 202.
+- [x] token dos agentes: saúde 200, campainha 202, `chamar` 403;
+- [x] token da ilha no `chamar` repassa agente, método, rota e corpo, papel `tela`, e devolve `{status, corpo}`;
+- [x] corpo inválido 400; GET no `chamar` 405;
+- [x] a campainha chama `aoDespachar` com o recibo; `aoDespachar` que lança não muda o 202.
 
 ### T4. Recibo do carteiro
 
 `marcarDespacho(db, {agente, execucao, estado, detalhe}, {maquina, agora})`: upsert pelo id `agente/execucao`; estado da lista; `detalhe` até 300 (cortado); `tentativas + 1` a cada marca; devolve a linha.
 
 Testes (`testes/casa-loja-despachos.test.mjs`):
-- [ ] marca recibo existente (estado, detalhe, tentativas 1) e cria o que não existia (o carteiro achou na fila sem campainha);
-- [ ] estado fora da lista → `DespachoError`; detalhe longo é cortado em 300.
+- [x] marca recibo existente (estado, detalhe, tentativas 1) e cria o que não existia (o carteiro achou na fila sem campainha);
+- [x] estado fora da lista → `DespachoError`; detalhe longo é cortado em 300.
 
 ### T5. Peças puras do carteiro
 
@@ -130,13 +130,13 @@ Testes (`testes/casa-entregar-sessao.test.mjs`, `claude` falso em `testes/fixtur
 - exceção em uma execução não derruba a rodada: vira log e recibo `falhou`.
 
 Testes (`testes/casa-carteiro.test.mjs`, `chamar` falso em memória que imita a fila do Oráculo):
-- [ ] fila com uma: escolhe a sessão da pasta do projeto, assume, entrega com o pedido gravado, marca `enviada` e recibo `assumido`;
-- [ ] sem sessão viva → `sem sessão`, sem `assumir`, recibo `falhou`;
-- [ ] 409 no assumir → nada é entregue, recibo `recusado`;
-- [ ] entrega falha → `falhou` com o motivo;
-- [ ] resposta a execução já entregue volta para a mesma sessão, com o pedido "Resposta do Weriton";
-- [ ] dois toques durante a rodada viram uma repetição só; `parar` espera a rodada;
-- [ ] agente sem a rota de assumir fica fora de `agentes()`.
+- [x] fila com uma: escolhe a sessão da pasta do projeto, assume, entrega com o pedido gravado, marca `enviada` e recibo `assumido`;
+- [x] sem sessão viva → `sem sessão`, sem `assumir`, recibo `falhou`;
+- [x] 409 no assumir → nada é entregue, recibo `recusado`;
+- [x] entrega falha → `falhou` com o motivo;
+- [x] resposta a execução já entregue volta para a mesma sessão, com o pedido "Resposta do Weriton";
+- [x] dois toques durante a rodada viram uma repetição só; `parar` espera a rodada;
+- [x] agente sem a rota de assumir fica fora de `agentes()`.
 
 ### T8. Mãos do Actions
 
@@ -150,8 +150,8 @@ Testes (`testes/casa-carteiro.test.mjs`, `chamar` falso em memória que imita a 
 - sem `servir.json`, pid morto, agente sem porta, script ausente ou cofre sem token → `{"ok":false,"erro":...}` no stdout e saída 1. O token nunca aparece em saída nem em erro.
 
 Testes (`testes/casa-maos-actions.test.mjs`, `rodarMaos(argv, {env, ponte, iniciar})` no mesmo processo, script falso do Oráculo que imprime os argumentos e se recebeu token):
-- [ ] passa os argumentos, `ORACULO_API` com a porta do `servir.json` e o token visita certo;
-- [ ] cada falha da lista acima dá `ok:false` e saída 1, sem token na saída.
+- [x] passa os argumentos, `ORACULO_API` com a porta do `servir.json` e o token visita certo;
+- [x] cada falha da lista acima dá `ok:false` e saída 1, sem token na saída.
 
 ### T9. O `servir` liga tudo
 
@@ -163,10 +163,10 @@ Testes (`testes/casa-maos-actions.test.mjs`, `rodarMaos(argv, {env, ponte, inici
 - campainha → `carteiro.tocar(agente)`; ao parar, `carteiro.parar()` antes do supervisor.
 
 Testes (`testes/casa-servir.test.mjs`, novos casos no mesmo processo com ponte falsa e o agente falso no modo `actions`):
-- [ ] o agente sobe com o token dos agentes, não com o da ilha; a campainha dele dá 202 e o `chamar` dele dá 403;
-- [ ] a ilha chama `GET /v1/actions/execucoes` do agente pelo `chamar` e recebe a fila; o agente falso viu o token tela;
-- [ ] com `OMNI_CARTEIRO=seco`, a campainha faz o carteiro assumir com o token visita e gravar o pedido; o recibo fica `assumido`;
-- [ ] o `servir.json` aparece com a porta do agente e some ao sair.
+- [x] o agente sobe com o token dos agentes, não com o da ilha; a campainha dele dá 202 e o `chamar` dele dá 403;
+- [x] a ilha chama `GET /v1/actions/execucoes` do agente pelo `chamar` e recebe a fila; o agente falso viu o token tela;
+- [x] com `OMNI_CARTEIRO=seco`, a campainha faz o carteiro assumir com o token visita e gravar o pedido; o recibo fica `assumido`;
+- [x] o `servir.json` aparece com a porta do agente e some ao sair.
 
 ### T10. Prova, release 0.29.0 e instalação
 
