@@ -451,6 +451,33 @@ function Guardar-ChaveAdmin([string]$raiz, [bool]$esperar) {
   Passo 'chave-admin' $true 'guardada no cofre do Windows'
 }
 
+# O serviço e a ponte que rodam de outra raiz (versão anterior, ou o repo de antes da instalação) param para a
+# versão nova subir no lugar. O pid só vale se a linha de comando for do WhatsApp do Omni e de fora desta
+# versão: pid reaproveitado por outro programa, ou processo que já é desta versão, ficam em paz. A ponte para
+# primeiro (ela retoma o pedido em curso quando volta). Devolve se parou alguma coisa.
+function Trocar-WhatsApp([string]$raiz) {
+  $dados = Pasta-DadosWhatsApp
+  $desta = (Join-Path $raiz 'servicos\whatsapp') + '\'
+  $parados = @()
+  foreach ($par in @(@('ponte', 'servicos\whatsapp\omni\ponte.mjs', 'ponte'), @('servico', 'servicos\whatsapp\dist\main.js', 'serviço'))) {
+    $arquivo = Join-Path $dados ($par[0] + '.pid')
+    if (-not (Test-Path -LiteralPath $arquivo)) { continue }
+    $id = 0
+    if (-not [int]::TryParse(([IO.File]::ReadAllText($arquivo)).Trim(), [ref]$id) -or $id -le 0) { continue }
+    $processo = Get-CimInstance Win32_Process -Filter ('ProcessId = ' + $id) -ErrorAction SilentlyContinue
+    if (-not $processo -or -not $processo.CommandLine) { continue }
+    $linha = [string]$processo.CommandLine
+    if ($linha.IndexOf($par[1], [StringComparison]::OrdinalIgnoreCase) -lt 0) { continue }
+    if ($linha.IndexOf($desta, [StringComparison]::OrdinalIgnoreCase) -ge 0) { continue }
+    Rodar 'taskkill.exe' @('/PID', [string]$id, '/T', '/F') $null | Out-Null
+    try { Wait-Process -Id $id -Timeout 15 -ErrorAction Stop } catch { }
+    $parados += ($par[2] + ' (PID ' + $id + ')')
+  }
+  if ($parados.Count -eq 0) { return $false }
+  Passo 'whatsapp-trocado' $true ('parados de fora desta versão: ' + ($parados -join ', '))
+  return $true
+}
+
 function Subir-WhatsApp([string]$raiz) {
   $r = Rodar 'powershell.exe' @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $raiz 'servicos\whatsapp\omni\iniciar.ps1')) $null
   $ok = ($r.codigo -eq 0)
@@ -597,18 +624,22 @@ try {
       $raiz = Obter-Versao
       Instalar-Comum $raiz
       if (-not $SemWhatsApp) {
-        if (-not $NaoAbrir) { Subir-WhatsApp $raiz }
+        if (-not $NaoAbrir) { Trocar-WhatsApp $raiz | Out-Null; Subir-WhatsApp $raiz }
         Guardar-ChaveAdmin $raiz (-not $NaoAbrir)
       }
       if (-not $SemIlha -and -not $NaoAbrir) { Abrir-Ilha $raiz }
     }
-    # Sem abrir a ilha nem subir o serviço: quem já está rodando segue na versão dele até o próximo logon.
+    # Sem abrir a ilha. O WhatsApp que roda de outra versão troca para esta antes da poda (senão a versão velha
+    # fica presa); o que não estava rodando continua parado, e o vigia o sobe já pela versão nova.
     'atualizar' {
       if (-not $Sha) { Uso 'falta -Sha' }
       Conferir-Prerequisitos
       $raiz = Obter-Versao
       Instalar-Comum $raiz
-      if (-not $SemWhatsApp) { Guardar-ChaveAdmin $raiz $false }
+      if (-not $SemWhatsApp) {
+        if (Trocar-WhatsApp $raiz) { Subir-WhatsApp $raiz }
+        Guardar-ChaveAdmin $raiz $false
+      }
       Podar-Versoes
     }
     'verificar' {
