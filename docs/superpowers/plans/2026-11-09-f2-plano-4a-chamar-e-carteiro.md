@@ -170,11 +170,12 @@ Testes (`testes/casa-servir.test.mjs`, novos casos no mesmo processo com ponte f
 
 ### T10. Prova, release 0.29.0 e instalação
 
-- [ ] Mutantes: um por regra que protege (escopo do papel, rota não declarada, token dos agentes no `chamar`, 409 vira `recusado`, `aoMudar`). Cada um tem de morrer pela asserção.
-- [ ] Prova com o Oráculo de verdade (cópia do `f3/lote-d`, banco temporário):
+- [x] Mutantes: um por regra que protege (escopo do papel, rota não declarada, token dos agentes no `chamar`, 409 vira `recusado`, `aoMudar`). Cada um tem de morrer pela asserção.
+- [x] Prova com o Oráculo de verdade (cópia do `f3/lote-d`, banco temporário):
   - instala os sha256 dos tokens gerados pelo `garantirTokensDoAgente` com o `instalar --stdin` dele;
   - sobe o `servir` do Omni numa casa temporária (`OMNI_CARTEIRO=seco`), cria uma execução pela rota tela do Oráculo através do `chamar` e confere que o carteiro assumiu, que o pedido foi gravado e que o `maos-actions.mjs execucao <id> --estado concluida` mudou o estado no Oráculo.
   - Nenhuma entrega a sessão real.
+  - Resultado (09/11): mutantes das cinco regras mortos pela asserção (mais os 56 do carteiro, mãos, supervisor e servir em T7–T9). Prova 22/22: Oráculo no ar pelo supervisor, `servir.json` com a porta dele, tela cria pelo `chamar`, a campainha acorda o carteiro, que assume para a sessão aberta na pasta do projeto e grava o pedido sem entregar; as mãos devolvem `concluida`; execução só com ponto e nenhuma sessão no Actions vira `sem sessão`; recibos `assumido` e `falhou` no `omni.db`, nenhum em `recebido`; nenhum token em log.
 - [ ] `npm run check` e `npm test` verdes lidos; release 0.29.0 (bump com as notas); PR; merge com CI verde; instalação e verificação da 0.29.0; `servir` instalado sobe na casa real e responde saúde.
 
 ## Fora deste plano (4b)
