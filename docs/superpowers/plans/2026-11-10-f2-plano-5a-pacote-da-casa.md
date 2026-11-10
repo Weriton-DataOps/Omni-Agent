@@ -352,7 +352,9 @@ test('banco faltando e manifesto estranho são recusados', () => comCasa((c) => 
   const saida = pacotePronto(c)
   rmSync(join(saida, 'nucleo.db'))
   assert.throws(() => conferirPacote(saida, { env: c.env }), (e) => e.code === 'pacote-corrompido' && e.divergencias[0].arquivo === 'ausente')
-  writeFileSync(join(saida, 'manifesto.json'), '{"formato":"outro"}')
+  // Manifesto inteiro, só com o formato trocado: cai pelo formato, não por falta de campo.
+  const m = JSON.parse(readFileSync(join(saida, 'manifesto.json'), 'utf8'))
+  writeFileSync(join(saida, 'manifesto.json'), JSON.stringify({ ...m, formato: 'outro' }))
   assert.throws(() => conferirPacote(saida, { env: c.env }), { code: 'pacote-invalido' })
   rmSync(join(saida, 'manifesto.json'))
   assert.throws(() => conferirPacote(saida, { env: c.env }), { code: 'pacote-invalido' })
@@ -397,10 +399,12 @@ export function conferirPacote(pasta, { env = process.env } = {}) {
 }
 ```
 
-- [ ] Rodar. Esperado: 12 de 12.
+- [ ] Rodar. Esperado: 13 de 13.
 - [ ] **Mutantes:**
   - sem a checagem do sha256 → vermelho em "só no cabeçalho";
-  - sem o retrato → vermelho em "manifesto adulterado".
+  - sem o retrato → vermelho em "manifesto adulterado";
+  - sem a checagem do `formato` → vermelho em "manifesto estranho" (por isso o manifesto adulterado é inteiro, só com o formato trocado);
+  - sem a checagem de arquivo ausente → vermelho em "banco faltando".
 - [ ] Commit `feat(casa): conferir o pacote contra o manifesto`.
 
 ### Tarefa 4: importar

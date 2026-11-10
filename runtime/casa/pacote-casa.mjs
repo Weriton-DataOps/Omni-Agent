@@ -105,3 +105,36 @@ export function exportarCasa(casa, saida, { env = process.env, omni = null, agor
     throw erro
   }
 }
+const HEX64 = /^[a-f0-9]{64}$/
+
+function lerManifestoDoPacote(pasta) {
+  let manifesto
+  try { manifesto = JSON.parse(readFileSync(join(pasta, MANIFESTO), 'utf8')) }
+  catch { throw new PacoteCasaError('pacote-invalido', 'Não achei um manifesto legível no pacote.') }
+  const valido = manifesto?.formato === FORMATO_PACOTE && manifesto.versao === 1 &&
+    BANCOS_DO_PACOTE.every((nome) => {
+      const banco = manifesto.bancos?.[nome]
+      return banco?.arquivo === BANCOS[nome].arquivo && HEX64.test(banco.sha256 ?? '') &&
+        Number.isInteger(banco.migracao) && banco.tabelas !== null && typeof banco.tabelas === 'object'
+    })
+  if (!valido) throw new PacoteCasaError('pacote-invalido', 'O manifesto não descreve um pacote da casa do Omni.')
+  return manifesto
+}
+
+// Confere o pacote contra o próprio manifesto: arquivo presente, sha256 do arquivo e retrato por tabela.
+export function conferirPacote(pasta, { env = process.env } = {}) {
+  const origem = resolve(pasta)
+  const manifesto = lerManifestoDoPacote(origem)
+  const divergencias = []
+  for (const nome of BANCOS_DO_PACOTE) {
+    const esperado = manifesto.bancos[nome]
+    const arquivo = join(origem, esperado.arquivo)
+    if (!existsSync(arquivo)) { divergencias.push({ banco: nome, arquivo: 'ausente' }); continue }
+    if (sha256(readFileSync(arquivo)) !== esperado.sha256) { divergencias.push({ banco: nome, arquivo: 'sha256' }); continue }
+    for (const d of compararRetratos(esperado, retratoDoArquivo(arquivo, env))) divergencias.push({ banco: nome, ...d })
+  }
+  if (divergencias.length > 0) {
+    throw new PacoteCasaError('pacote-corrompido', 'O pacote não confere com o próprio manifesto.', { divergencias })
+  }
+  return manifesto
+}

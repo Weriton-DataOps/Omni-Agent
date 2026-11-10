@@ -7,7 +7,7 @@ import test from 'node:test'
 import { carregarSqlite, comBancoDaCasa, sha256 } from '../runtime/casa/banco.mjs'
 import { registrarDespacho } from '../runtime/casa/loja-despachos.mjs'
 import { registrarMaquina } from '../runtime/casa/loja-nucleo.mjs'
-import { compararRetratos, exportarCasa, retratoDoBanco, retratoDaTabela } from '../runtime/casa/pacote-casa.mjs'
+import { compararRetratos, conferirPacote, exportarCasa, retratoDoBanco, retratoDaTabela } from '../runtime/casa/pacote-casa.mjs'
 
 const { DatabaseSync } = carregarSqlite()
 function comPasta(uso) {
@@ -107,4 +107,42 @@ test('exportar recusa pasta com arquivo e não toca nela', () => comCasa(({ past
   mkdirSync(saida); writeFileSync(join(saida, 'algo.txt'), 'fica')
   assert.throws(() => exportarCasa(casa, saida, { env }), { code: 'saida-existe' })
   assert.deepEqual(readdirSync(saida), ['algo.txt'])
+}))
+function pacotePronto({ pasta, casa, env }) {
+  semear(casa, env)
+  const saida = join(pasta, 'pacote')
+  exportarCasa(casa, saida, { env, omni: '9.9.9' })
+  return saida
+}
+function mexer(arquivo, sql) { const db = new DatabaseSync(arquivo); try { db.exec(sql) } finally { db.close() } }
+
+test('pacote íntegro confere', () => comCasa((c) => {
+  assert.equal(conferirPacote(pacotePronto(c), { env: c.env }).formato, 'omni-casa-pacote')
+}))
+
+test('arquivo alterado só no cabeçalho cai pelo sha256', () => comCasa((c) => {
+  const saida = pacotePronto(c)
+  mexer(join(saida, 'omni.db'), 'PRAGMA user_version = 7')
+  assert.throws(() => conferirPacote(saida, { env: c.env }), (e) => e.code === 'pacote-corrompido' && e.divergencias[0].banco === 'omni' && e.divergencias[0].arquivo === 'sha256')
+}))
+
+test('manifesto adulterado numa tabela cai pelo retrato', () => comCasa((c) => {
+  const saida = pacotePronto(c)
+  const caminho = join(saida, 'manifesto.json')
+  const m = JSON.parse(readFileSync(caminho, 'utf8'))
+  m.bancos.omni.tabelas.despachos.linhas = 2
+  writeFileSync(caminho, JSON.stringify(m))
+  assert.throws(() => conferirPacote(saida, { env: c.env }), (e) => e.code === 'pacote-corrompido' && e.divergencias.some((d) => d.tabela === 'despachos'))
+}))
+
+test('banco faltando e manifesto estranho são recusados', () => comCasa((c) => {
+  const saida = pacotePronto(c)
+  rmSync(join(saida, 'nucleo.db'))
+  assert.throws(() => conferirPacote(saida, { env: c.env }), (e) => e.code === 'pacote-corrompido' && e.divergencias[0].arquivo === 'ausente')
+  // Manifesto inteiro, só com o formato trocado: cai pelo formato, não por falta de campo.
+  const m = JSON.parse(readFileSync(join(saida, 'manifesto.json'), 'utf8'))
+  writeFileSync(join(saida, 'manifesto.json'), JSON.stringify({ ...m, formato: 'outro' }))
+  assert.throws(() => conferirPacote(saida, { env: c.env }), { code: 'pacote-invalido' })
+  rmSync(join(saida, 'manifesto.json'))
+  assert.throws(() => conferirPacote(saida, { env: c.env }), { code: 'pacote-invalido' })
 }))
