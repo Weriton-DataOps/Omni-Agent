@@ -13,6 +13,7 @@ import {
   listarInterfaces,
   listarMaquinas,
   listarServidores,
+  listarTarefas,
   registrarAgente,
   registrarMaquina,
   retirarAgente,
@@ -349,5 +350,22 @@ test('listarInterfaces entrega os instalados com interface, sem o omni, com vers
     // Outra máquina registra uma versão nova: a tela daqui pode não ser a que o catálogo descreve.
     registrarAgente(db, bytes({ ...completo(), versao: '0.4.0' }), { ...OPCOES, maquina: 'outra', raiz: RAIZ, agora: 't1' })
     assert.deepEqual(listarInterfaces(db, { maquina: 'pc' }).map((i) => [i.agente, i.versao, i.divergente]), [['exemplo', '0.3.0', true], ['nua', '0.1.0', false]])
+  })
+})
+
+test('listarTarefas entrega as tarefas dos instalados nesta máquina, com raiz e divergência', () => {
+  comNucleo((db) => {
+    // Um campo a mais na tarefa chamado agente ou raiz não engana o agendador sobre quem roda onde.
+    const atrevido = { ...minimo(), agente: 'atrevido', tarefas: [{ id: 'x', comando: 'node x.mjs', quando: { acada: 'PT1H' }, seAtrasada: false, agente: 'outro', raiz: 'C:\\outra' }] }
+    for (const m of [completo(), minimo(), atrevido]) registrarAgente(db, bytes(m), { ...OPCOES, raiz: RAIZ })
+    const [visita, vigia] = completo().tarefas
+    assert.deepEqual(listarTarefas(db, { maquina: 'pc' }), [
+      { ...atrevido.tarefas[0], agente: 'atrevido', raiz: RAIZ, divergente: false },
+      { ...visita, agente: 'exemplo', raiz: RAIZ, divergente: false },
+      { ...vigia, agente: 'exemplo', raiz: RAIZ, divergente: false }
+    ])
+    assert.deepEqual(listarTarefas(db, { maquina: 'outra' }), [])
+    registrarAgente(db, bytes({ ...completo(), versao: '0.4.0' }), { ...OPCOES, maquina: 'outra', raiz: RAIZ, agora: 't1' })
+    assert.deepEqual(listarTarefas(db, { maquina: 'pc' }).map((t) => [t.agente, t.id, t.divergente]), [['atrevido', 'x', false], ['exemplo', 'visita', true], ['exemplo', 'vigia', true]])
   })
 })
