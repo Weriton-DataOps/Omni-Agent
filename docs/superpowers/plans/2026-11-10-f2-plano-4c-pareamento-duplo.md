@@ -228,16 +228,26 @@ vistaPareamento(w) → { estado: 'pareado'|'falta-pessoal'|'falta-bot'|'falta-pr
 | sem `pareamento.json` ou `soLeitura.ok !== true` | `falta-prova` | `parear` | "o seu número ainda não foi provado só leitura" |
 | tudo certo | `pareado` | `null` | — |
 
-- [ ] **Teste vermelho**, com um caso por linha da tabela. Mais estes:
+- [x] **Teste vermelho**, com um caso por linha da tabela. Mais estes:
   - a ordem de checagem: pessoal caído e bot caído dá `falta-pessoal`;
   - `pareamento.json` com `soLeitura.ok: true`, mas `fone4` do pessoal diferente do da sonda (alguém pareou outro número depois): `falta-prova`.
-- [ ] **Vermelho visto.**
-- [ ] **Implementação:**
+- [x] **Vermelho visto:** 14 de 14 pela asserção.
+- [x] **Implementação:**
   - `lerWhatsapp` lê `pareamento.json` (falha de leitura vira `null`);
   - o renderer usa `vistaPareamento` e só pinta `ligada` (verde) com `estado === 'pareado'`;
   - nos outros estados com o serviço no ar, o card fica âmbar (`pausada` reaproveitada como `falta`, classe nova `falta` no CSS com `--cor: var(--ambar)`) e a 2ª linha vira o texto, com um botão "parear" (`ponte.abrirPareamento()`).
-- [ ] **Verde lido**, mais `ilha-cofre-card` e `ilha-agentes` como vizinhos.
-- [ ] **Commit:** `feat(ilha): card do WhatsApp só fica verde com os dois pareados e o pessoal provado`.
+- [x] **Verde lido:** 14 de 14, e 32 de 32 com `ilha-cofre-card` e `ilha-agentes`. Os 4 mutantes morreram, cada um no seu caso: prova sem `ok`, `fone4` trocado, ordem pessoal/bot, `conferindo` virando `pareado`.
+- [x] **Commit:** `c68b05d`.
+
+**Desvios da execução (T4):**
+1. **A sonda não vê sessão nenhuma numa máquina nova.** A chave de leitura só nasce no `fechar`, e o `saude.json` não traz `sessoes` sem o bot. Por isso a vista decide primeiro pelos arquivos:
+   - `ids.pessoal` e `ids.bot` vêm do `existsSync` de `sessao.id` e `sessao-bot.id`;
+   - depois vem a prova do `pareamento.json`;
+   - só então a sonda confirma o `ready` e o `fone4`.
+   Entre o `fechar` e a primeira sonda o estado é `conferindo`: âmbar, sem ação, com o texto "conferindo as duas sessões".
+2. **`ausente` fica sem ação.** Sem a pasta do WhatsApp também não há serviço, e parear daria só `servico-fora`. O texto é "WhatsApp não instalado".
+3. **O alvo é o card inteiro, não um botão.** As linhas são refeitas a cada 2 s, e um botão dentro delas trocaria de nó embaixo do ponteiro (o mesmo motivo do `tocar` por retângulo). Quando `acao === 'parear'`, o card inteiro chama `ponte.abrirPareamento()`, e a 2ª linha mostra o texto com "parear ›".
+4. **A vista é calculada no main.** O renderer não tem `require`, então `lerWhatsapp` devolve `vista` pronta.
 
 ### Tarefa 5: o pareador da ilha
 
@@ -260,10 +270,26 @@ criarPareador({ gerar, node, script, env, enviar }) → { iniciar(), cancelar(),
   5. `cancelar()` chama `kill()` no processo em curso, e a sequência não continua.
   6. Processo que sai sem `fim`: o `enviar` recebe `{ evento: 'fim', papel, ok: false, motivo: 'saiu' }`.
   7. O `env` do filho não carrega `OMNI_API_TOKEN` (a ilha guarda o token da casa no processo principal).
-- [ ] **Vermelho visto.**
-- [ ] **Implementação.** Leitura por linha, com acumulador de pedaços, e um limite de 1 MB por linha (um QR em PNG tem cerca de 10 KB).
-- [ ] **Verde lido.**
-- [ ] **Commit:** `feat(ilha): pareador roda pessoal, bot e fechar com lista fechada de eventos`.
+- [x] **Vermelho visto:** 14 de 14. São 13 pela asserção e 1 `TypeError` do esboço (`enviados[0]` vazio).
+- [x] **Implementação.** Leitura por linha, com acumulador de pedaços, e um limite de 1 MB por linha (um QR em PNG tem cerca de 10 KB). Estes pontos vão além do plano:
+  - `continuar()`, que é o ajuste da T6;
+  - `iniciar(desde)`, para o "tentar de novo" voltar ao passo que falhou;
+  - `detalhe` na lista fechada, com os números mascarados de novo;
+  - motivo `sem-node` quando o Node não existe;
+  - `chaveStdin` opcional, só para a prova;
+  - o papel do evento é o do passo em curso, não o que o filho diz;
+  - a cauda de uma linha gigante é descartada junto com ela.
+- [x] **Verde lido:** 14 de 14, e 9 de 9 mutantes mortos, cada um no seu teste:
+  - token da casa herdado;
+  - prefixo do QR;
+  - papel vindo do filho;
+  - cancelar sem marca;
+  - cauda da linha gigante. Este sobreviveu na 1ª rodada, e o teste passou a usar uma cauda com JSON válido;
+  - `sem-node`;
+  - `continuar()` pedido cedo;
+  - detalhe sem máscara;
+  - dois processos ao mesmo tempo.
+- [x] **Commit:** `feat(ilha): pareador roda pessoal, bot e fechar com lista fechada de eventos`.
 
 ### Tarefa 6: a janela "Parear WhatsApp"
 
