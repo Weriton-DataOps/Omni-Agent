@@ -136,7 +136,9 @@ async function rodarRoteiro(tarefa, pedido, ctx) {
   const valores = { MOTIVO: pedido.motivo, VISITA: visita, HOJE: hojeBr(quando), ACTIONS: actions, OMNI: raizOmni, [variavelDoAgente(tarefa.agente)]: raiz }
   const variaveis = tarefa.variaveis ?? []
   let ordem = preencherRoteiro(texto, variaveis, valores)
-  if (pedido.seco) ordem = `VISITA A SECO: trabalhe só em ${actions} (cópia). Não use avisar nem risco.\n\n${ordem}`
+  // A seco, as mãos ficam desligadas: o servir do agente fixa a raiz do Actions quando sobe (a de verdade),
+  // então porta e token levariam a escrita da visita para fora da cópia. Medido na prova do plano 5c.
+  if (pedido.seco) ordem = `VISITA A SECO: trabalhe só em ${actions} (cópia). Não use avisar nem risco. As mãos do ${tarefa.agente} ficam desligadas (o servidor dele aponta para o Actions de verdade): leia pelo disco e só grave o registro da visita.\n\n${ordem}`
 
   const ambiente = { ...env, OMNI_VISITA_ID: visita, OMNI_ACTIONS: actions }
   delete ambiente.ELECTRON_RUN_AS_NODE
@@ -145,7 +147,7 @@ async function rodarRoteiro(tarefa, pedido, ctx) {
   delete ambiente[`${prefixo}_API`]
   delete ambiente[`${prefixo}_TOKEN`]
   if (pedido.seco) ambiente.OMNI_VISITA_SECO = '1'
-  const serve = comBancoDaCasa(casa, 'nucleo', (db) => listarServidores(db).some((s) => s.agente === tarefa.agente), env)
+  const serve = !pedido.seco && comBancoDaCasa(casa, 'nucleo', (db) => listarServidores(db).some((s) => s.agente === tarefa.agente), env)
   if (serve) {
     const porta = await esperarPorta(casa, env, vivo, tarefa.agente, esperaMs)
     ambiente[`${prefixo}_API`] = `http://127.0.0.1:${porta}/v1`
