@@ -1,5 +1,8 @@
 # Corpo do Omni Desktop
 
+> **Histórico.** O Omni Desktop foi aposentado em 10/11/2026 (F2, T4), e o `contratos/interface/omni-desktop.json`
+> saiu junto. A interface local é a ilha, em `apps/omni-ilha`. Este documento fica como registro.
+
 O Omni Desktop e o corpo local do Omni: apresenta conversa, voz, fila de subagentes e controles de
 sessoes externas. Ele nao altera a identidade do Omni nem vira uma segunda fonte de memoria.
 

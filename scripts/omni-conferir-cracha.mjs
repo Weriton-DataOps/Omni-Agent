@@ -1,6 +1,6 @@
 // Conferência do Crachá (F2, plano 6a, T2), só leitura. O PG 5433 guarda as versões de credencial do
 // Crachá como metadado; o segredo de cada uma mora no Gerenciador de Credenciais do Windows, no alvo
-// Omni/UserCredential/<x>, citado no PG como credential-ref:windows-<x> (scripts/omni-access-broker.ps1).
+// Omni/UserCredential/<x>, citado no PG como credential-ref:windows-<x> (era o broker de acesso, aposentado no T4).
 // Antes de desligar o 5433, cada versão viva precisa existir no Gerenciador; o relatório diz também se o
 // cofre.db da casa já a inventaria. Nenhum valor passa por aqui: a exportação não tem coluna de segredo
 // nem de conta, e o relatório só leva id, serviço, status e alvo.

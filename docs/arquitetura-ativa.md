@@ -53,7 +53,7 @@ fora do Git.
 | identidade ativa | `contratos/personalidade/manifest.json` |
 | identidade verificável da release | `contratos/atualizacao/integridade.json` |
 | papel operacional | `contratos/arquitetura/invariantes.json` |
-| corpo local e limites da interface | `contratos/interface/omni-desktop.json` + `apps/omni-desktop/src/main/body-contract.ts` |
+| interface local | `apps/omni-ilha` (o contrato de corpo do desktop foi aposentado em 10/11/2026) |
 | sensores | `hooks/hooks.json` + `runtime/observador.mjs` |
 | ciclo vivo | `runtime/ciclo-operacional.mjs` |
 | autoridade responsável | `contratos/operacao/autoridade.json` |
@@ -179,8 +179,8 @@ o conjunto completo de gates prova aderência comportamental.
 
 ## Estado da interface
 
-O aplicativo `apps/omni-desktop` adiciona os canais de texto e voz ao núcleo existente. Cada envio
-monta o contexto canônico antes da inferência; sessão Claude, memória local e sincronização
-PostgreSQL usam as mesmas fontes do Omni. O Overcore permanece fora desta integração.
-O estado de implantação e os gates pendentes estão em
+A interface local é a ilha (`apps/omni-ilha`), única desde 21/10/2026. Ela lê o estado da casa e das
+sessões direto do disco. O Omni Desktop, o broker de acesso e o PostgreSQL 5433 foram aposentados em
+10/11/2026 (`docs/superpowers/plans/2026-11-10-f2-t4-aposentar-cracha.md`); memória, missões e
+aprendizado operacional moram no `omni.db`. O histórico do desktop fica em
 `docs/planejamento/2026-09-09-omni-desktop.md`.
