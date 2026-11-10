@@ -9,7 +9,8 @@ import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { lerSegredo, NOMES } from './cofre.mjs'
 
-export const BASE = 'http://127.0.0.1:2785'
+// OMNI_WHATSAPP_BASE só existe para provas com serviço falso; em produção fica o padrão.
+export const BASE = process.env.OMNI_WHATSAPP_BASE || 'http://127.0.0.1:2785'
 export const RUN = join(process.env.APPDATA, 'omni', 'whatsapp')
 export const arquivo = nome => join(RUN, nome)
 export const sessaoPessoal = () => readFileSync(arquivo('sessao.id'), 'utf8').trim()
