@@ -130,13 +130,14 @@ Contrato: `criarCasa({ spawn, env, raiz, limiteMs })` → `{ iniciar(), chamar(m
 
 **Arquivos:** `apps/omni-ilha/main.js`, `preload.js`, `renderer.js`, `index.html`.
 
-- [ ] Sobe a casa no `whenReady` (`criarCasa`), com `parar()` no `will-quit`. Também sai pelo stdin quando a ilha morre.
-- [ ] `abrirAgente(agente, aba)`: uma janela por agente, com o `preload` do agente (sandbox, contextIsolation), `loadFile(modulo)`, `will-navigate` pela `podeNavegar`, `setWindowOpenHandler` negado e o mapa `webContents.id → agente` para o `agente:api`.
-- [ ] `ipcMain.handle('agente:api', …)`: o `permitido` sai do mapa da janela que pediu, e janela desconhecida dá `status: 0`.
-- [ ] `oracle:resumo` → `GET /v1/oraculo/resumo`; `actions:resumo` → `GET /v1/actions/resumo`, ambos com `permitido: 'oraculo'`. Agente não instalado vira `{ ausente: true }`. Erro vira o formato antigo de falha do card (`ok: false`, `erro`).
-- [ ] `abrir-actions` → `abrirAgente('oraculo', 'ideias')`; sem Oráculo instalado, não abre nada.
-- [ ] Saem os `require` de `pontos`, `mesa`, `escrita`, `execucoes` e `oracle`, os `actions:*` da janela local, o `despachar` e o `abrirActions` antigo. O gancho de teste troca `janelaActions` por `janelaAgente(agente)` e passa a receber `casa`.
-- [ ] Renderer: com `ausente`, os cards ganham a classe `ausente`, mostram "instalar" no lugar do número e o clique não abre nada. O CSS do `.ausente` usa `opacity` e o cursor padrão.
+- [x] Sobe a casa no `whenReady` (`criarCasa`), com `parar()` no `will-quit`. Também sai pelo stdin quando a ilha morre.
+- [x] `abrirAgente(agente, pagina)`: uma janela por agente, com o `preload` do agente (sandbox, contextIsolation), `loadFile(modulo)` ou de uma página dentro da pasta do agente, `will-navigate`/`will-redirect` pela `podeNavegar`, `setWindowOpenHandler` negado e o mapa `webContents.id → agente` para o `agente:api`.
+- [x] `ipcMain.handle('agente:api', …)`: o `permitido` sai do mapa da janela que pediu, só do quadro principal, e janela desconhecida dá `status: 0`.
+- [x] `oracle:resumo` → `GET /v1/oraculo/resumo`; `actions:resumo` → `GET /v1/actions/resumo`, ambos com `permitido: 'oraculo'` (em `paineis.js`). Agente não instalado vira `{ ausente: true }`. Casa fora ou erro do agente vira `ok: false` com o motivo, nunca `ausente`.
+- [x] `abrir-actions` → `abrirAgente('oraculo', 'actions/actions.html')` (o depósito do Oráculo é página, não aba); a cabeça do card do Oráculo abre o painel por `abrir-oraculo`. Sem Oráculo instalado, nada abre.
+- [x] Saem os `require` de `pontos`, `mesa`, `escrita`, `execucoes` e `oracle`, os `actions:*` da janela local, o `despachar` e o `abrirActions` antigo. O gancho de teste troca `janelaActions` por `janelaAgente(agente)` e passa a receber `casa`, `paineis` e `abrirAgente`.
+- [x] Renderer: com `ausente`, os cards ganham a classe `ausente`, mostram "INSTALAR" no rótulo e "–" no número, e o clique não abre nada; casa fora mostra "FORA DO AR" com o motivo. O CSS do `.ausente` usa `opacity` e o cursor padrão.
+  Resultado: `ilha-paineis` 7/7 (mutantes: três sobreviventes viraram caso novo ou linha apagada); ilha + organizador 73/73; fumaça no Electron escondido com casa vazia: casa sobe, os dois resumos `ausente`, `abrirAgente('oraculo')` falso sem janela, pedido sem dono recusado, saída 0.
 
 ### Tarefa 6: retirada do que ficou sem dono
 

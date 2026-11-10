@@ -18,14 +18,12 @@ const { app, BrowserWindow, clipboard, globalShortcut, ipcMain, screen } = requi
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { pathToFileURL } = require('url');
 const { lerSessoes, lerPassos, lerDiff } = require('./sessoes');
-const { listarPontos, lerPonto } = require('./pontos');
-const { montarMesa } = require('./mesa');
-const { spawn } = require('child_process');
 const { resumo: resumoOvercore, lerAgora: lerOvercoreAgora, agir: agirOvercore, ligar: ligarOvercore } = require('./overcore');
-const { resumo: resumoOracle } = require('./oracle');
-const { registrarVeredito, dispensarPraVoce, mexerNoItem } = require('./escrita');
-const { criar: criarExecucao, responder: responderExecucao, atualizar: atualizarExecucao, visto: execucaoVista } = require('./execucoes');
+const { criarCasa } = require('./casa-servir');
+const { criarPaineis } = require('./paineis');
+const { podeNavegar } = require('./agentes');
 const { lerSistema, processos } = require('./sistema');
 const { lerWhatsapp } = require('./whatsapp');
 const { criarMaoCofre } = require('./cofre');
@@ -67,6 +65,10 @@ let cursorEnviado = { x: -1e6, y: -1e6 }; // última posição repassada para a 
 let escapeLigado = false;
 let quedas = [];
 let lerCursor = () => screen.getCursorScreenPoint();
+// F2 (plano 4b): a casa (runtime/servir.mjs, processo à parte) e os painéis dos agentes que ela serve.
+// Nascem no whenReady da instância única; antes disso os cards recebem "a casa ainda não subiu".
+let casa = null;
+let paineis = null;
 
 // Instância única: a segunda sai sem criar janela nem sonda (o whenReady dispara mesmo depois do quit).
 const trava = app.requestSingleInstanceLock();
@@ -227,12 +229,20 @@ if (trava) app.whenReady().then(() => {
   caixa = janela.getBounds();
   if (ESCONDIDA) janela.webContents.setFrameRate(60);
 
+  // A casa sobe já; os cards e as janelas dos agentes esperam a mesma subida (iniciar é memoizado).
+  casa = criarCasa();
+  paineis = criarPaineis({ chamar: casa.chamar });
+  casa.iniciar().catch(() => { /* o erro fica no estado() e os cards mostram */ });
+
   if (process.env.OMNI_ILHA_TESTE) {
     require(process.env.OMNI_ILHA_TESTE)({
       app,
       janela,
+      casa,
+      paineis,
       trocarCursor: (fn) => { lerCursor = fn; },
-      janelaActions: () => janelaActions,
+      janelaAgente: (nome) => janelasAgente.get(nome)?.janela ?? null,
+      abrirAgente: (nome, pagina) => abrirAgente(nome, pagina),
       janelaOvercore: () => janelaOvercore,
       janelaCofre: () => janelaCofre,
       abrirCofre: () => abrirCofre(),
@@ -294,7 +304,7 @@ ipcMain.on('escape', (evento, ligar) => {
 });
 
 // Sessões do Claude Code: a vista Início (pílulas) e a vista Chat (passos e a última edição como diff).
-// Só a ilha pergunta; a janela Actions não lê transcript.
+// Só a ilha pergunta; janela de agente não lê transcript.
 const daIlha = (evento) => janela && evento.sender === janela.webContents;
 ipcMain.handle('sessoes', (evento) => (daIlha(evento) ? lerSessoes() : []));
 ipcMain.handle('passos', (evento, arquivo) => (daIlha(evento) ? lerPassos(arquivo) : []));
@@ -304,59 +314,99 @@ ipcMain.handle('fechar', (evento) => { if (daIlha(evento)) app.quit(); });
 ipcMain.handle('sistema', (evento) => (daIlha(evento) ? lerSistema(app) : null));
 ipcMain.handle('whatsapp', (evento) => (daIlha(evento) ? lerWhatsapp(processos()) : null));
 
-// ── janela Actions (19/10): o único card do menu abre o depósito Documents\Actions numa janela normal ──
-// Ao contrário da ilha, esta tem foco, Alt-Tab e barra de tarefas: é onde se lê e, depois, se mexe. Uma só:
-// clicar de novo traz a que já existe. Na bancada (ESCONDIDA) ela nasce fora da tela e nunca aparece.
-let janelaActions = null;
+// ── janelas dos agentes (F2, plano 4b): o painel que cada agente declara na `interface` do agente.json,
+// com o preload dele, numa janela normal (foco, Alt-Tab, barra de tarefas). Uma por agente: clicar de novo
+// traz a que existe. A janela só navega dentro da pasta da interface e, pelo agente:api, só fala com o
+// agente que a abriu: o dono sai do mapa abaixo, nunca do que o renderer declara. Na bancada (ESCONDIDA)
+// ela nasce fora da tela e nunca aparece.
+const janelasAgente = new Map(); // agente → { janela, agente: o montado da agentes.js }
+const donoDaJanela = new Map(); // webContents.id → agente
+const abrindo = new Set();
+// O depósito Actions é uma página dentro do painel do Oráculo (antes era a janela local desta pasta).
+const PAGINA_ACTIONS = 'actions/actions.html';
 
-const ABAS = new Set(['ideias', 'projetos', 'execucoes']);
-function abrirActions(aba = '') {
-  aba = ABAS.has(aba) ? aba : '';
-  if (janelaActions && !janelaActions.isDestroyed()) {
-    if (janelaActions.isMinimized()) janelaActions.restore();
-    if (!ESCONDIDA) { janelaActions.show(); janelaActions.focus(); }
-    if (aba) janelaActions.webContents.send('aba', aba);
-    return;
-  }
-  const area = screen.getPrimaryDisplay().workArea;
-  const largura = Math.min(1180, area.width - 80);
-  const altura = Math.min(760, area.height - 80);
-  janelaActions = new BrowserWindow({
-    width: largura,
-    height: altura,
-    x: Math.round(area.x + (area.width - largura) / 2),
-    y: Math.round(area.y + (area.height - altura) / 2),
-    minWidth: 640,
-    minHeight: 400,
-    show: false,
-    title: 'Actions',
-    icon: ICONE,
-    backgroundColor: '#121419',
-    titleBarStyle: 'hidden',
-    titleBarOverlay: { color: '#121419', symbolColor: '#9aa2b5', height: 40 },
-    webPreferences: {
-      preload: path.join(__dirname, 'actions-preload.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-      offscreen: ESCONDIDA,
-    },
-  });
-  // a janela só mostra o depósito: link nenhum navega nem abre outra janela
-  janelaActions.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-  janelaActions.webContents.on('will-navigate', (ev) => ev.preventDefault());
-  janelaActions.on('closed', () => { janelaActions = null; });
-  janelaActions.once('ready-to-show', () => { if (!ESCONDIDA) janelaActions?.show(); });
-  janelaActions.loadFile(path.join(__dirname, 'actions.html'), aba ? { hash: aba } : undefined);
+// Uma página dentro da pasta da interface do agente, ou null se sai dela ou não existe.
+function paginaDoAgente(a, pagina) {
+  const alvo = path.resolve(a.pasta, pagina);
+  return podeNavegar(pathToFileURL(alvo).href, a.pasta) && fs.existsSync(alvo) ? alvo : null;
 }
 
-const daJanelaActions = (evento) => janelaActions && !janelaActions.isDestroyed() && evento.sender === janelaActions.webContents;
+const mesmaPagina = (url, arquivo) => {
+  try { return new URL(url).pathname.toLowerCase() === pathToFileURL(arquivo).pathname.toLowerCase(); } catch { return false; }
+};
 
-ipcMain.on('abrir-actions', (evento, aba) => {
-  if (!janela || evento.sender !== janela.webContents) return;
+async function abrirAgente(nome, pagina = null) {
+  const aberta = janelasAgente.get(nome);
+  if (aberta && !aberta.janela.isDestroyed()) {
+    const w = aberta.janela;
+    if (w.isMinimized()) w.restore();
+    if (!ESCONDIDA) { w.show(); w.focus(); }
+    const alvo = pagina ? paginaDoAgente(aberta.agente, pagina) : null;
+    if (alvo && !mesmaPagina(w.webContents.getURL(), alvo)) w.loadFile(alvo);
+    return true;
+  }
+  if (!paineis || abrindo.has(nome)) return false;
+  abrindo.add(nome);
+  try {
+    const a = await paineis.agente(nome);
+    if (!a || !a.instalado) return false; // agente fora da casa: o card já está apagado, nada abre
+    const arquivo = pagina ? paginaDoAgente(a, pagina) : a.modulo;
+    if (!arquivo) return false;
+    const area = screen.getPrimaryDisplay().workArea;
+    const largura = Math.min(1180, area.width - 80);
+    const altura = Math.min(760, area.height - 80);
+    const w = new BrowserWindow({
+      width: largura, height: altura,
+      x: Math.round(area.x + (area.width - largura) / 2), y: Math.round(area.y + (area.height - altura) / 2),
+      minWidth: 640, minHeight: 400, show: false, title: a.nome, icon: ICONE, backgroundColor: '#121419',
+      titleBarStyle: 'hidden', titleBarOverlay: { color: '#121419', symbolColor: '#9aa2b5', height: 40 },
+      webPreferences: {
+        preload: a.preload ?? undefined,
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+        webviewTag: false,
+        offscreen: ESCONDIDA,
+      },
+    });
+    const id = w.webContents.id;
+    donoDaJanela.set(id, nome);
+    janelasAgente.set(nome, { janela: w, agente: a });
+    const barrar = (ev, url) => { if (!podeNavegar(url, a.pasta)) ev.preventDefault(); };
+    w.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    w.webContents.on('will-navigate', barrar);
+    w.webContents.on('will-redirect', barrar);
+    w.on('closed', () => {
+      donoDaJanela.delete(id);
+      if (janelasAgente.get(nome)?.janela === w) janelasAgente.delete(nome);
+    });
+    w.once('ready-to-show', () => { if (!ESCONDIDA && !w.isDestroyed()) w.show(); });
+    w.loadFile(arquivo);
+    return true;
+  } finally {
+    abrindo.delete(nome);
+  }
+}
+
+// O canal das janelas de agente: o dono é a janela que pediu (só o quadro principal dela). Janela que não
+// é de agente nenhum recebe status 0 pelo porteiro, sem tráfego.
+const SEM_CASA = { ok: false, erro: 'a casa ainda não subiu' };
+ipcMain.handle('agente:api', (evento, entrada) => {
+  if (!paineis) return { status: 0, corpo: SEM_CASA };
+  const doQuadroPrincipal = evento.senderFrame && evento.senderFrame === evento.sender.mainFrame;
+  return paineis.pedir(entrada, doQuadroPrincipal ? donoDaJanela.get(evento.sender.id) : undefined);
+});
+
+ipcMain.on('abrir-actions', (evento) => {
+  if (!daIlha(evento)) return;
   // o Esc global da ilha engoliria o Esc da janela nova: o renderer já o solta ao recolher, aqui é o cinto
   ligarEscape(false);
-  abrirActions(String(aba || ''));
+  abrirAgente('oraculo', PAGINA_ACTIONS);
+});
+ipcMain.on('abrir-oraculo', (evento) => {
+  if (!daIlha(evento)) return;
+  ligarEscape(false);
+  abrirAgente('oraculo');
 });
 // ── janela do Overcore (22/10): própria, separada do Actions (pedido dele). Uma só; clicar de novo traz a
 // que existe. O token nunca entra aqui: overcore.js chama scripts/omni-overcore.mjs num processo à parte.
@@ -390,7 +440,9 @@ ipcMain.on('abrir-overcore', (evento) => {
   abrirOvercore();
 });
 ipcMain.handle('overcore:resumo', (evento) => (daIlha(evento) ? resumoOvercore() : null));
-ipcMain.handle('oracle:resumo', (evento) => (daIlha(evento) ? resumoOracle() : null));
+// os cards do Oráculo e do Actions: o resumo vem do Oráculo pela casa ({ ausente: true } sem ele instalado)
+ipcMain.handle('oracle:resumo', (evento) => (daIlha(evento) ? (paineis ? paineis.resumo('oraculo', '/v1/oraculo/resumo') : SEM_CASA) : null));
+ipcMain.handle('actions:resumo', (evento) => (daIlha(evento) ? (paineis ? paineis.resumo('oraculo', '/v1/actions/resumo') : SEM_CASA) : null));
 // ── janela do cofre (F1, plano 5, T6): as credenciais da casa. Uma só, como a do Overcore. O valor nunca
 // mora aqui: cofre-ipc.js converte e repassa à mão (cofre.js), que roda a CLI num processo à parte. A janela
 // pede ao Windows para ficar fora de captura de tela de outros programas, porque mostra o valor revelado.
@@ -459,54 +511,11 @@ ipcMain.on('abrir-chat', (evento) => {
 ipcMain.handle('overcore:lista', async (evento) => (daJanelaOvercore(evento) ? lerOvercoreAgora() : null));
 ipcMain.handle('overcore:acao', async (evento, acao, id) => (daJanelaOvercore(evento) ? agirOvercore(String(acao), String(id)) : null));
 ipcMain.handle('overcore:ligar', (evento) => (daJanelaOvercore(evento) ? ligarOvercore() : null));
-// o card Actions da ilha: quantos pontos há, quantas decisões esperam por ele e as linhas do card (o que
-// pede ele, ou os três mais mexidos quando nada pede). O texto dos pontos continua só na janela Actions.
-ipcMain.handle('actions:resumo', (evento) => {
-  if (!daIlha(evento)) return null;
-  const { pontos } = listarPontos();
-  let praVoce = [];
-  try { praVoce = montarMesa().praVoce; } catch { /* projetos.md quebrado não apaga o card */ }
-  return {
-    total: pontos.length,
-    praVoce: praVoce.length,
-    pedidos: praVoce.slice(0, 3).map((p) => ({ tipo: p.tipo, titulo: p.titulo, texto: String(p.texto).slice(0, 80) })),
-    recentes: pontos.slice(0, 3).map((p) => ({ slug: p.slug, titulo: p.titulo, status: p.status.slice(0, 80), alteradoEm: p.alteradoEm })),
-  };
-});
-ipcMain.handle('actions:listar', (evento) => (daJanelaActions(evento) ? listarPontos() : null));
-ipcMain.handle('actions:ler', (evento, slug) => (daJanelaActions(evento) ? lerPonto(slug) : null));
-ipcMain.handle('actions:mesa', (evento) => (daJanelaActions(evento) ? montarMesa() : null));
-// escrita: só a janela Actions pede, e o main valida tudo (escrita.js recusa caminho fora do depósito)
-const escrever = (fn) => { try { return { ok: true, dados: fn() ?? null }; } catch (e) { return { ok: false, erro: String(e?.message || e) }; } };
-ipcMain.handle('actions:veredito', (evento, slug, dados) => (daJanelaActions(evento)
-  ? escrever(() => { registrarVeredito(String(slug), { tipo: String(dados?.tipo || ''), motivo: String(dados?.motivo || ''), projeto: String(dados?.projeto || ''), ate: String(dados?.ate || '') }); })
-  : null));
-ipcMain.handle('actions:visto', (evento, slug) => (daJanelaActions(evento) ? escrever(() => { dispensarPraVoce(String(slug)); }) : null));
-// executar: a tela grava a execução e o despacho (processo à parte, escondido) leva até a sessão certa
-const DESPACHO = path.join(__dirname, '..', '..', 'scripts', 'omni-actions-despachar.mjs');
-function despachar(id) {
-  if (process.env.OMNI_ACTIONS_SEM_DESPACHO === '1') return; // bancada: grava, não entrega
-  // o electron da ilha vira node (mesmo jeito da sonda do WhatsApp); destacado, sobrevive à ilha fechar
-  const p = spawn(process.execPath, [DESPACHO, id], {
-    cwd: path.dirname(DESPACHO), windowsHide: true, detached: true, stdio: 'ignore',
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
-  });
-  p.on('error', () => { /* a execução fica na fila e a tela mostra */ });
-  p.unref();
-}
-ipcMain.handle('actions:executar', (evento, dados) => (daJanelaActions(evento)
-  ? escrever(() => { const ex = criarExecucao({ slug: String(dados?.slug || ''), projeto: String(dados?.projeto || ''), instrucao: String(dados?.instrucao || '') }); despachar(ex.id); return ex.id; })
-  : null));
-ipcMain.handle('actions:responder', (evento, id, texto) => (daJanelaActions(evento)
-  ? escrever(() => { responderExecucao(String(id), String(texto || '')); despachar(String(id)); })
-  : null));
-ipcMain.handle('actions:reenviar', (evento, id) => (daJanelaActions(evento)
-  ? escrever(() => { atualizarExecucao(String(id), { estado: 'na fila', nota: 'reenviada pela tela' }); despachar(String(id)); })
-  : null));
-ipcMain.handle('actions:execucao-vista', (evento, id) => (daJanelaActions(evento) ? escrever(() => { execucaoVista(String(id)); }) : null));
-ipcMain.handle('actions:item', (evento, ref, acao) => (daJanelaActions(evento)
-  ? escrever(() => mexerNoItem({ arquivo: String(ref?.arquivo || ''), linha: Number(ref?.linha), bruto: String(ref?.bruto ?? '') }, String(acao)))
-  : null));
 
-app.on('will-quit', () => globalShortcut.unregisterAll());
+// A casa sai junto: fecha o stdin do servir (que sai sozinho) e, se ele empacar, mata em 5 s. Se a ilha
+// morrer sem passar aqui, o stdin fecha do mesmo jeito.
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll();
+  casa?.parar().catch(() => { /* já saiu */ });
+});
 app.on('window-all-closed', () => app.quit());
