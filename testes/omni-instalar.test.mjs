@@ -287,6 +287,33 @@ test('instalar registra o vigia do WhatsApp da versão, de 5 em 5 minutos, sem d
   assert.equal(lerTarefa(nome).argumentos, tarefa.argumentos, 'registrar de novo substitui sem duplicar')
 })
 
+test('instalar registra as tarefas dos agentes e o verificar confere', { skip: !windows }, (t) => {
+  const prefixo = `${PREFIXO_TESTE}${randomBytes(4).toString('hex')}`
+  const nome = `${prefixo} - falso - limpeza`
+  t.after(() => { removerTarefa(nome); removerTarefa(`${prefixo} - vigia do WhatsApp`) })
+  const falso = agenteFalso(t, (m) => ({ ...m, tarefas: [{ id: 'limpeza', comando: 'echo limpo', quando: { diaria: '04:00' }, seAtrasada: false }] }))
+  const cintos = cintosFixos(t, prefixo)
+  const r = instalar(t, ['instalar', '-Origem', origem.repo, '-Sha', origem.sha, '-Agente', falso, ...BASICO.filter((a) => a !== '-SemTarefas'), ...cintos])
+  assert.equal(r.status, 0, r.erro)
+  assert.equal(passo(r.json, 'tarefas-agentes')?.ok, true, r.erro)
+  assert.match(passo(r.json, 'tarefas-agentes').detalhe, /1 registrada/)
+  const tarefa = lerTarefa(nome)
+  assert.ok(tarefa, 'a tarefa do agente existe')
+  const vbs = join(realpathSync.native(r.base), 'versoes', origem.sha, 'scripts', 'omni-tarefa.vbs')
+  assert.equal(tarefa.argumentos.toLowerCase(), `"${vbs}" falso limpeza agendada`.toLowerCase())
+  assert.equal(tarefa.resultado, NUNCA_RODOU)
+
+  const v = instalar(t, ['verificar', ...cintos], { base: r.base, casa: r.casa })
+  assert.equal(v.status, 0, v.erro)
+  assert.equal(passo(v.json, 'tarefas-agentes')?.ok, true, v.erro)
+
+  removerTarefa(nome)
+  const sumiu = instalar(t, ['verificar', ...cintos], { base: r.base, casa: r.casa })
+  assert.equal(sumiu.status, 1, sumiu.erro)
+  assert.equal(passo(sumiu.json, 'tarefas-agentes')?.ok, false, JSON.stringify(sumiu.json))
+  assert.match(passo(sumiu.json, 'tarefas-agentes').detalhe, new RegExp(`${nome}: não existe`))
+})
+
 // claude falso com as listagens no formato do claude de verdade ("  > nome"), com um vizinho de isca.
 const CLAUDE_FALSO = `import { appendFileSync } from 'node:fs'
 const args = process.argv.slice(2).join(' ')

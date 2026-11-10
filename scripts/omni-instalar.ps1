@@ -348,6 +348,30 @@ function Registrar-Tarefas([string]$raiz) {
     Register-ScheduledTask -TaskName $nome -Action $acao -Trigger $gatilho -Settings $regras -Principal $quem -Description 'Vigia do serviço WhatsApp do Omni (versão instalada).' -Force -ErrorAction Stop | Out-Null
   } catch { Falhar 'tarefas' ('não registrou ' + $nome + ': ' + $_.Exception.Message) }
   Passo 'tarefas' $true ($nome + ': a cada 5 min')
+  $r = Rodar-TarefasDosAgentes $raiz 'registrar'
+  if (-not $r.ok) { Falhar 'tarefas-agentes' (Detalhe-DasTarefas $r) }
+  $feito = [string]@($r.json.registradas).Count + ' registrada(s)'
+  if (@($r.json.podadas).Count) { $feito += ', podadas: ' + (@($r.json.podadas) -join ', ') }
+  if (@($r.json.puladas).Count) { $feito += ', puladas por divergência: ' + (@($r.json.puladas) -join ', ') }
+  Passo 'tarefas-agentes' $true $feito $r.json
+}
+
+# As tarefas que os agentes instalados declaram (scripts\omni-tarefas.ps1 da versão), com o mesmo node do
+# instalador; o JSON da última linha volta inteiro.
+function Rodar-TarefasDosAgentes([string]$raiz, [string]$modo) {
+  if (-not $env:OMNI_NODE -and $script:node) { $env:OMNI_NODE = $script:node }
+  $ps1 = Join-Path $raiz 'scripts\omni-tarefas.ps1'
+  $r = Rodar 'powershell.exe' @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $ps1, '-Modo', $modo, '-Prefixo', $PrefixoTarefa, '-Raiz', $raiz) $null
+  $json = UltimoJson $r
+  return [pscustomobject]@{ ok = ($r.codigo -eq 0 -and $json -and $json.ok); json = $json; codigo = $r.codigo }
+}
+
+function Detalhe-DasTarefas($r) {
+  if (-not $r.json) { return 'omni-tarefas.ps1 saiu com ' + $r.codigo }
+  $partes = @(@($r.json.divergencias) | Where-Object { $_ })
+  if ($r.json.PSObject.Properties.Name -contains 'erro') { $partes = @([string]$r.json.erro) + $partes }
+  if ($partes.Count -eq 0) { return 'omni-tarefas.ps1 saiu com ' + $r.codigo }
+  return ($partes -join '; ')
 }
 
 # O claude da extensão do VS Code não entra no PATH; o do npm global mora em %APPDATA%\npm.
@@ -546,6 +570,9 @@ function Verificar-Tarefas([string]$raiz) {
   $argumentos = [string]$tarefa.Actions[0].Arguments
   if ($argumentos -eq $vbs) { Passo 'tarefas' $true ($nome + ' na versão atual') }
   else { Passo 'tarefas' $false ($nome + ' aponta para ' + $argumentos) }
+  $r = Rodar-TarefasDosAgentes $raiz 'verificar'
+  if ($r.ok) { Passo 'tarefas-agentes' $true 'as tarefas dos agentes apontam para a versão atual' $r.json }
+  else { Passo 'tarefas-agentes' $false (Detalhe-DasTarefas $r) $r.json }
 }
 
 # exportar e importar são do executor.mjs da versão atual; o JSON dele volta inteiro no passo.
