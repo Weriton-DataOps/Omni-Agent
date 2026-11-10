@@ -283,6 +283,55 @@ function Instalar-Agentes([string]$raiz) {
   }
 }
 
+function Achar-Npm {
+  if ($env:OMNI_INSTALAR_NPM) { return $env:OMNI_INSTALAR_NPM }
+  $c = Get-Command npm.cmd -ErrorAction SilentlyContinue
+  if ($c) { return $c.Source }
+  return $null
+}
+
+function Rodar-Npm([string]$passo, [string]$pasta, [string[]]$argumentos) {
+  $npm = Achar-Npm
+  if (-not $npm) { Falhar $passo 'npm não encontrado (vem com o Node)' }
+  Log ('npm ' + ($argumentos -join ' ') + ' em ' + $pasta)
+  $r = Rodar $npm $argumentos $pasta
+  foreach ($linha in $r.saida) { [Console]::Error.WriteLine($linha) }
+  if ($r.codigo -ne 0) { Falhar $passo ('npm ' + ($argumentos -join ' ') + ' saiu com ' + $r.codigo) }
+}
+
+# Mesmo molde do atalho do WhatsApp que já roda nesta casa: conhost sem janela chamando o PowerShell.
+function Criar-Atalho([string]$pasta, [string]$nome, [string]$ps1, [string]$icone) {
+  [IO.Directory]::CreateDirectory($pasta) | Out-Null
+  $pasta = Caminho-Longo $pasta
+  $atalho = (New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $pasta ($nome + '.lnk')))
+  $atalho.TargetPath = Join-Path $env:SystemRoot 'System32\conhost.exe'
+  $atalho.Arguments = '--headless powershell.exe -NoProfile -ExecutionPolicy Bypass -File "' + $ps1 + '"'
+  $atalho.WorkingDirectory = Split-Path -Parent $ps1
+  if ($icone -and (Test-Path -LiteralPath $icone)) { $atalho.IconLocation = $icone }
+  $atalho.Save()
+  return (Join-Path $pasta ($nome + '.lnk'))
+}
+
+function Preparar-Ilha([string]$raiz) {
+  $ilha = Join-Path $raiz 'apps\omni-ilha'
+  Rodar-Npm 'ilha' $ilha @('ci')
+  # O postinstall do Electron morre calado no Node 24; o -SoPreparar termina a extração pelo cache.
+  $r = Rodar 'powershell.exe' @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $ilha 'iniciar.ps1'), '-SoPreparar') $null
+  if ($r.codigo -ne 0) { Falhar 'ilha' ('o Electron da ilha não ficou pronto (saída ' + $r.codigo + ')') }
+  $pastas = if ($PastaAtalhos) { @($PastaAtalhos) } else { @([Environment]::GetFolderPath('Desktop'), [Environment]::GetFolderPath('Programs')) }
+  $criados = foreach ($pasta in $pastas) { Criar-Atalho $pasta 'Omni Ilha' (Join-Path $ilha 'iniciar.ps1') (Join-Path $ilha 'omni.ico') }
+  Passo 'ilha' $true ('Electron pronto; atalho em ' + (@($criados) -join ', '))
+}
+
+function Preparar-WhatsApp([string]$raiz) {
+  $servico = Join-Path $raiz 'servicos\whatsapp'
+  Rodar-Npm 'whatsapp' $servico @('ci')
+  Rodar-Npm 'whatsapp' $servico @('run', 'build')
+  $pasta = if ($PastaInicializar) { $PastaInicializar } else { [Environment]::GetFolderPath('Startup') }
+  $criado = Criar-Atalho $pasta 'Omni WhatsApp' (Join-Path $servico 'omni\iniciar.ps1') $null
+  Passo 'whatsapp' $true ('serviço compilado; sobe no logon por ' + $criado)
+}
+
 function Escrever-Atual([string]$versoes, [string]$sha, [string]$versao) {
   $arquivo = Join-Path $versoes 'atual.json'
   if (Test-Path -LiteralPath $arquivo) {
@@ -301,6 +350,8 @@ try {
       $raiz = Obter-Versao
       Instalar-Casa $raiz
       Instalar-Agentes $raiz
+      if (-not $SemIlha) { Preparar-Ilha $raiz }
+      if (-not $SemWhatsApp) { Preparar-WhatsApp $raiz }
     }
     default { Uso ('modo ' + $Modo + ' ainda não implementado') }
   }

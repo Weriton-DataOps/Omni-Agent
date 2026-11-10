@@ -2,7 +2,7 @@
 // programas de fora trocados por temporários e falsos. Só roda no Windows.
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { appendFileSync, existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { after, before, test } from 'node:test'
@@ -138,6 +138,75 @@ test('agente que recusa o instalar para o script com o código do executor', { s
   assert.equal(passo(r.json, 'agente:falso').ok, false)
   assert.match(passo(r.json, 'agente:falso').detalhe, /agente-recusou/)
   assert.deepEqual(instalados(r.casa).map(([agente]) => agente), ['omni'])
+})
+
+// npm falso: anota "<pasta> | <argumentos>" em npm.log ao lado dele e, no ci, deixa um electron.exe vazio
+// (o iniciar.ps1 -SoPreparar da ilha só completa o Electron quando ele falta).
+const NPM_FALSO = `@echo off
+>>"%~dp0npm.log" echo %CD% ^| %*
+if defined FALSO_NPM_SAIR exit /b %FALSO_NPM_SAIR%
+if "%1"=="ci" (
+  if not exist node_modules\\electron\\dist mkdir node_modules\\electron\\dist
+  type nul > node_modules\\electron\\dist\\electron.exe
+)
+exit /b 0
+`
+
+function npmFalso(t) {
+  const pasta = pastaTemp(t, 'omni-npm-')
+  writeFileSync(join(pasta, 'npm.cmd'), NPM_FALSO)
+  return { npm: join(pasta, 'npm.cmd'), chamadas: () => (existsSync(join(pasta, 'npm.log')) ? readFileSync(join(pasta, 'npm.log'), 'utf8') : '')
+    .split(/\r?\n/).filter(Boolean).map((l) => { const [cd, args] = l.split(' | '); return { cd: cd.trim(), args: (args ?? '').trim() } }) }
+}
+
+function lerAtalho(arquivo) {
+  const r = spawnSync('powershell.exe', ['-NoProfile', '-Command',
+    `$l = (New-Object -ComObject WScript.Shell).CreateShortcut('${arquivo.replaceAll("'", "''")}'); [pscustomobject]@{ alvo = $l.TargetPath; argumentos = $l.Arguments } | ConvertTo-Json -Compress`], { encoding: 'utf8' })
+  return JSON.parse(r.stdout)
+}
+
+const SEM_ILHA_E_WHATSAPP = BASICO.filter((a) => a !== '-SemIlha' && a !== '-SemWhatsApp')
+
+test('instalar prepara a ilha e o WhatsApp dentro da versão e cria os atalhos para lá', { skip: !windows }, (t) => {
+  const { npm, chamadas } = npmFalso(t)
+  const atalhos = pastaTemp(t, 'omni-atalhos-')
+  const inicializar = pastaTemp(t, 'omni-inicializar-')
+  const r = instalar(t, ['instalar', '-Origem', origem.repo, '-Sha', origem.sha, ...SEM_ILHA_E_WHATSAPP, '-PastaAtalhos', atalhos, '-PastaInicializar', inicializar],
+    { env: { OMNI_INSTALAR_NPM: npm } })
+  assert.equal(r.status, 0, r.erro)
+  assert.equal(passo(r.json, 'ilha').ok, true)
+  assert.equal(passo(r.json, 'whatsapp').ok, true)
+
+  const versao = realpathSync.native(join(r.base, 'versoes', origem.sha))
+  const ilha = join(versao, 'apps', 'omni-ilha')
+  const whatsapp = join(versao, 'servicos', 'whatsapp')
+  const feitas = chamadas().map((c) => `${c.cd.toLowerCase()} | ${c.args}`)
+  assert.deepEqual(feitas, [`${ilha.toLowerCase()} | ci`, `${whatsapp.toLowerCase()} | ci`, `${whatsapp.toLowerCase()} | run build`])
+
+  const atalhoIlha = lerAtalho(join(atalhos, 'Omni Ilha.lnk'))
+  assert.match(atalhoIlha.alvo, /\\System32\\conhost\.exe$/i)
+  assert.ok(atalhoIlha.argumentos.startsWith('--headless powershell.exe -NoProfile -ExecutionPolicy Bypass -File '), atalhoIlha.argumentos)
+  assert.ok(atalhoIlha.argumentos.toLowerCase().includes(`"${join(ilha, 'iniciar.ps1').toLowerCase()}"`), atalhoIlha.argumentos)
+  const atalhoWhatsapp = lerAtalho(join(inicializar, 'Omni WhatsApp.lnk'))
+  assert.match(atalhoWhatsapp.alvo, /\\System32\\conhost\.exe$/i)
+  assert.ok(atalhoWhatsapp.argumentos.toLowerCase().includes(`"${join(whatsapp, 'omni', 'iniciar.ps1').toLowerCase()}"`), atalhoWhatsapp.argumentos)
+  for (const a of [atalhoIlha, atalhoWhatsapp]) assert.doesNotMatch(a.argumentos, /Documents\\Omni/i)
+  assert.deepEqual(readdirSync(atalhos), ['Omni Ilha.lnk'])
+  assert.deepEqual(readdirSync(inicializar), ['Omni WhatsApp.lnk'])
+})
+
+test('npm que falha para a instalação no passo da ilha, sem atalho', { skip: !windows }, (t) => {
+  const { npm } = npmFalso(t)
+  const atalhos = pastaTemp(t, 'omni-atalhos-')
+  const inicializar = pastaTemp(t, 'omni-inicializar-')
+  const r = instalar(t, ['instalar', '-Origem', origem.repo, '-Sha', origem.sha, ...SEM_ILHA_E_WHATSAPP, '-PastaAtalhos', atalhos, '-PastaInicializar', inicializar],
+    { env: { OMNI_INSTALAR_NPM: npm, FALSO_NPM_SAIR: '1' } })
+  assert.equal(r.status, 1, r.erro)
+  assert.equal(passo(r.json, 'ilha').ok, false)
+  assert.match(passo(r.json, 'ilha').detalhe, /npm ci/)
+  assert.equal(passo(r.json, 'whatsapp'), undefined)
+  assert.deepEqual(readdirSync(atalhos), [])
+  assert.deepEqual(readdirSync(inicializar), [])
 })
 
 test('instalar sem -Sha é uso errado', { skip: !windows }, (t) => {
