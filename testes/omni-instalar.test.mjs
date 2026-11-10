@@ -1,7 +1,7 @@
 // O executor do Windows (F2, plano 5b-2): scripts/omni-instalar.ps1 de verdade, com pasta base, casa e
 // programas de fora trocados por temporários e falsos. Só roda no Windows.
 import assert from 'node:assert/strict'
-import { spawnSync } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -502,6 +502,80 @@ test('atualizar troca a versão atual, repontua os atalhos e guarda só a anteri
   assert.equal(passo(volta.json, 'versao').detalhe, 'já instalada')
   assert.deepEqual([lerAtual(r.base).sha, lerAtual(r.base).anterior], [shaB, shaC])
   assert.deepEqual(pastasDeVersao(r.base), [shaB, shaC].sort())
+})
+
+// A troca do WhatsApp (plano 6a, T1). O iniciar.ps1 de mentira só anota de onde rodou, na pasta de dados do
+// teste; a marca aleatória deixa cada commit diferente. O serviço e a ponte de mentira são node parados num
+// setInterval com o caminho do WhatsApp na linha de comando: nenhum teste chega perto do serviço de verdade.
+const comIniciarFalso = (repo) => writeFileSync(join(repo, 'servicos', 'whatsapp', 'omni', 'iniciar.ps1'),
+  `# iniciar de teste ${randomBytes(4).toString('hex')}\r\n[IO.File]::AppendAllText((Join-Path $env:OMNI_INSTALAR_WHATSAPP_DADOS 'subiu.log'), $PSScriptRoot + [Environment]::NewLine)\r\n`)
+
+function processoFalso(t, ...linha) {
+  const p = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)', ...linha], { stdio: 'ignore', windowsHide: true })
+  t.after(() => { try { process.kill(p.pid) } catch { /* já saiu */ } })
+  return p.pid
+}
+const vivo = (pid) => { try { process.kill(pid, 0); return true } catch { return false } }
+const subidas = (dados) => (existsSync(join(dados, 'subiu.log')) ? readFileSync(join(dados, 'subiu.log'), 'utf8') : '')
+  .split(/\r?\n/).filter(Boolean).map((l) => l.toLowerCase())
+const pastaDoWhatsapp = (base, sha) => join(realpathSync.native(join(base, 'versoes', sha)), 'servicos', 'whatsapp')
+
+test('atualizar troca o serviço e a ponte que rodam da versão anterior e deixa em paz o que não é dela', { skip: !windows }, async (t) => {
+  const { npm } = npmFalso(t)
+  const cintos = cintosFixos(t)
+  const dados = pastaTemp(t, 'omni-wa-')
+  const env = { OMNI_INSTALAR_NPM: npm, OMNI_INSTALAR_WHATSAPP_DADOS: dados }
+  const shaA = await origem.commitar(comIniciarFalso)
+  const shaB = await origem.commitar(comIniciarFalso)
+  const r = instalar(t, ['instalar', '-Origem', origem.repo, '-Sha', shaA, ...SEM_ILHA_E_WHATSAPP, ...cintos], { env })
+  assert.equal(r.status, 0, r.erro)
+  assert.deepEqual(subidas(dados), [], 'o instalar com -NaoAbrir não sobe o serviço')
+
+  const servico = processoFalso(t, join(pastaDoWhatsapp(r.base, shaA), 'dist', 'main.js'))
+  const ponte = processoFalso(t, join(pastaDoWhatsapp(r.base, shaA), 'omni', 'ponte.mjs'))
+  writeFileSync(join(dados, 'servico.pid'), `${servico}\r\n`)
+  writeFileSync(join(dados, 'ponte.pid'), `${ponte}\r\n`)
+  const b = instalar(t, ['atualizar', '-Origem', origem.repo, '-Sha', shaB, ...SEM_ILHA_E_WHATSAPP, ...cintos], { base: r.base, casa: r.casa, env })
+  assert.equal(b.status, 0, b.erro)
+  assert.equal(passo(b.json, 'whatsapp-trocado')?.ok, true, 'passo whatsapp-trocado')
+  assert.match(passo(b.json, 'whatsapp-trocado').detalhe, new RegExp(`serviço \\(PID ${servico}\\)`))
+  assert.match(passo(b.json, 'whatsapp-trocado').detalhe, new RegExp(`ponte \\(PID ${ponte}\\)`))
+  assert.equal(vivo(servico), false, 'o serviço da versão anterior parou')
+  assert.equal(vivo(ponte), false, 'a ponte da versão anterior parou')
+  assert.deepEqual(subidas(dados), [join(pastaDoWhatsapp(r.base, shaB), 'omni').toLowerCase()], 'subiu pelo iniciar.ps1 da versão nova')
+  assert.equal(passo(b.json, 'whatsapp-no-ar')?.ok, true)
+
+  // pid reaproveitado por outro programa e ponte que já roda da versão atual: nada é parado nem subido.
+  const estranho = processoFalso(t)
+  const ponteAtual = processoFalso(t, join(pastaDoWhatsapp(r.base, shaB), 'omni', 'ponte.mjs'))
+  writeFileSync(join(dados, 'servico.pid'), `${estranho}\r\n`)
+  writeFileSync(join(dados, 'ponte.pid'), `${ponteAtual}\r\n`)
+  const c = instalar(t, ['atualizar', '-Origem', origem.repo, '-Sha', shaB, ...SEM_ILHA_E_WHATSAPP, ...cintos], { base: r.base, casa: r.casa, env })
+  assert.equal(c.status, 0, c.erro)
+  assert.equal(passo(c.json, 'whatsapp-trocado'), undefined)
+  assert.equal(passo(c.json, 'whatsapp-no-ar'), undefined)
+  assert.equal(vivo(estranho), true, 'o pid de outro programa fica vivo')
+  assert.equal(vivo(ponteAtual), true, 'a ponte da versão atual fica viva')
+  assert.equal(subidas(dados).length, 1)
+})
+
+test('instalar troca o serviço que roda de fora das versões e sobe o da versão instalada', { skip: !windows }, async (t) => {
+  const { npm } = npmFalso(t)
+  const dados = pastaTemp(t, 'omni-wa-')
+  mkdirSync(join(dados, 'data'))
+  writeFileSync(join(dados, 'data', '.api-key'), `chave-de-teste-${randomBytes(8).toString('hex')}\n`)
+  const sha = await origem.commitar(comIniciarFalso)
+  const fora = pastaTemp(t, 'omni-fora-')
+  const servico = processoFalso(t, join(fora, 'servicos', 'whatsapp', 'dist', 'main.js'))
+  writeFileSync(join(dados, 'servico.pid'), `${servico}\r\n`)
+  const abrindo = BASICO.filter((a) => a !== '-SemWhatsApp' && a !== '-NaoAbrir')
+  const r = instalar(t, ['instalar', '-Origem', origem.repo, '-Sha', sha, ...abrindo], { env: { OMNI_INSTALAR_NPM: npm, OMNI_INSTALAR_WHATSAPP_DADOS: dados } })
+  assert.equal(r.status, 0, r.erro)
+  assert.match(passo(r.json, 'whatsapp-trocado')?.detalhe ?? '', new RegExp(`serviço \\(PID ${servico}\\)`))
+  assert.equal(vivo(servico), false)
+  assert.deepEqual(subidas(dados), [join(pastaDoWhatsapp(r.base, sha), 'omni').toLowerCase()])
+  assert.equal(passo(r.json, 'whatsapp-no-ar')?.ok, true)
+  assert.equal(passo(r.json, 'chave-admin')?.ok, true)
 })
 
 test('exportar e importar repassam ao executor da versão atual e devolvem o JSON dele', { skip: !windows }, (t) => {

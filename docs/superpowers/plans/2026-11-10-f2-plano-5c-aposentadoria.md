@@ -265,4 +265,4 @@ O `.vbs` recebe `agente id motivo` e roda `node "<pasta>\..\runtime\tarefa-agent
 
 - [x] Bump 0.33.0 → 0.34.0 nos seis lugares, notas no `releases.json` e a impressão digital por último (`f38cce2`; selo refeito em `78ad9c6`).
 - [x] No plano-mestre `2026-11-09-f2-casa-instalavel.md`, a linha 5c vira entregue; a linha 6 ganha "desregistrar a tarefa real `Omni Actions - visita`".
-- [ ] Suíte inteira, typecheck e check; depois PR, CI verde, merge e `plugin update`, com o selo conferido.
+- [x] Suíte inteira, typecheck e check; depois PR, CI verde, merge e `plugin update`, com o selo conferido (PR #16, `e71dae7`).
