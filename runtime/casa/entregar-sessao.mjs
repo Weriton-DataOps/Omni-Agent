@@ -11,7 +11,7 @@ export function claudePadrao(env = process.env) {
   return env.OMNI_CLAUDE_EXE || join(env.APPDATA ?? '', 'npm', 'node_modules', '@anthropic-ai', 'claude-code', 'bin', 'claude.exe')
 }
 
-function matarArvore(filho) {
+export function matarArvore(filho) {
   if (process.platform === 'win32') {
     try { spawn('taskkill', ['/PID', String(filho.pid), '/T', '/F'], { windowsHide: true }).on('error', () => {}) } catch { /* já saiu */ }
   } else {
@@ -19,7 +19,8 @@ function matarArvore(filho) {
   }
 }
 
-function resultado(saida, erro) {
+// O .result da última linha JSON do `claude -p --output-format json`; sem ela, o fim do stderr.
+export function resultadoDoClaude(saida, erro) {
   const ultima = saida.trim().split('\n').filter(Boolean).pop()
   if (ultima) {
     try { return String(JSON.parse(ultima).result ?? '') } catch { /* cai no stderr */ }
@@ -57,7 +58,7 @@ export function entregar(nome, arquivoPedido, { claude, pastaPedidos, cwd = past
     filho.stdin.on('error', () => { /* o filho morreu antes de ler a ordem; o close conta a história */ })
     filho.on('error', (e) => fim({ ok: false, motivo: String(e.message).slice(0, 300) }))
     filho.on('close', () => {
-      const r = resultado(saida, erro)
+      const r = resultadoDoClaude(saida, erro)
       fim(/ENVIADO/.test(r) && !/FALHOU/.test(r) ? { ok: true } : { ok: false, motivo: r.slice(0, 300) || 'saída vazia da entrega' })
     })
     filho.stdin.end(ordem)
