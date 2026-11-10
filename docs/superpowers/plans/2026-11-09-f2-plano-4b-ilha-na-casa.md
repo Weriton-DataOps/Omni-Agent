@@ -122,9 +122,9 @@ Contrato: `criarCasa({ spawn, env, raiz, limiteMs })` → `{ iniciar(), chamar(m
   - cada conhecido que falta vira `{ agente, nome, instalado: false }`.
 - `podeNavegar(url, pasta)`: só `file:` cujo caminho fica dentro da `pasta`.
 
-- [ ] **Testes vermelhos (agente-api):** pedido certo → POST no chamar com corpo sem `null`; agente de outra janela → status 0 sem chamar; método e rota inválidos → status 0; corpo grande → status 0; Omni 503 → status 0 com o erro; resposta 200 → `{ status, corpo }` do agente.
-- [ ] **Testes vermelhos (agentes):** contenção (`../fora.html`, absoluto, inexistente), divergente, conhecido ausente, `podeNavegar` (dentro, subpasta, fora, `https:`, `file:` com `..` codificado).
-- [ ] Implementação e verde lido.
+- [x] **Testes vermelhos (agente-api):** pedido certo → POST no chamar com corpo sem `null`; agente de outra janela → status 0 sem chamar; método e rota inválidos → status 0; corpo grande → status 0; Omni 503 → status 0 com o erro; resposta 200 → `{ status, corpo }` do agente.
+- [x] **Testes vermelhos (agentes):** contenção (`../fora.html`, absoluto, inexistente), divergente, conhecido ausente, `podeNavegar` (dentro, subpasta, fora, `https:`, `file:` com `..` codificado).
+- [x] Implementação e verde lido. Resultado: 9/9; 16 mutantes, 16 mortos (três precisaram de caso novo: outro drive, painel na rede e 403 da casa com corpo de cara boa).
 
 ### Tarefa 5: o main da ilha passa a falar só com a casa
 
