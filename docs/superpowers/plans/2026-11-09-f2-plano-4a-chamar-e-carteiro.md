@@ -176,7 +176,8 @@ Testes (`testes/casa-servir.test.mjs`, novos casos no mesmo processo com ponte f
   - sobe o `servir` do Omni numa casa temporária (`OMNI_CARTEIRO=seco`), cria uma execução pela rota tela do Oráculo através do `chamar` e confere que o carteiro assumiu, que o pedido foi gravado e que o `maos-actions.mjs execucao <id> --estado concluida` mudou o estado no Oráculo.
   - Nenhuma entrega a sessão real.
   - Resultado (09/11): mutantes das cinco regras mortos pela asserção (mais os 56 do carteiro, mãos, supervisor e servir em T7–T9). Prova 22/22: Oráculo no ar pelo supervisor, `servir.json` com a porta dele, tela cria pelo `chamar`, a campainha acorda o carteiro, que assume para a sessão aberta na pasta do projeto e grava o pedido sem entregar; as mãos devolvem `concluida`; execução só com ponto e nenhuma sessão no Actions vira `sem sessão`; recibos `assumido` e `falhou` no `omni.db`, nenhum em `recebido`; nenhum token em log.
-- [ ] `npm run check` e `npm test` verdes lidos; release 0.29.0 (bump com as notas); PR; merge com CI verde; instalação e verificação da 0.29.0; `servir` instalado sobe na casa real e responde saúde.
+- [x] `npm run check` e `npm test` verdes lidos; release 0.29.0 (bump com as notas); PR; merge com CI verde; instalação e verificação da 0.29.0; `servir` instalado sobe na casa real e responde saúde.
+  - Resultado (09/11): PR #10 mesclado no main (437bff0) com CI verde; 0.29.0 instalada e verificada (integridade verified, fingerprint bate, 262 arquivos). Na casa real, com carteiro seco: saúde 200 na versão 0.29.0, 401 sem token, 0 agentes registrados, servir.json no ar durante e apagado na saída, saída 0, nenhum token no log.
 
 ## Fora deste plano (4b)
 

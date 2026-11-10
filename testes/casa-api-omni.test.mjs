@@ -162,3 +162,22 @@ test('a campainha avisa aoDespachar com o recibo, e erro dele não muda o 202', 
     { agente: 'oraculo', execucao: EXECUCAO, id: `oraculo/${EXECUCAO}`, novo: false }
   ])
 })
+
+// F2, plano 4b: a ilha descobre os painéis pela casa. Só o token da ilha lê a lista.
+test('GET /v1/agentes entrega as interfaces à ilha; o token dos agentes leva 403 e POST leva 405', async (t) => {
+  const lista = [{ agente: 'exemplo', versao: '0.3.0', modulo: 'interface/index.html', estado: 'no-ar' }]
+  const porta = await subir(t, { tokenAgentes: AGENTES, interfaces: () => lista })
+  const r = await chamar(porta, 'GET', '/v1/agentes', { token: TOKEN })
+  assert.equal(r.status, 200)
+  assert.equal(r.headers['cache-control'], 'no-store')
+  assert.deepEqual(r.corpo, { ok: true, agentes: lista })
+  assert.equal((await chamar(porta, 'GET', '/v1/agentes', { token: AGENTES })).status, 403)
+  const post = await chamar(porta, 'POST', '/v1/agentes', { token: TOKEN, corpo: {} })
+  assert.equal(post.status, 405)
+  assert.equal(post.headers.allow, 'GET')
+})
+
+test('GET /v1/agentes sem interfaces ligadas responde lista vazia', async (t) => {
+  const porta = await subir(t)
+  assert.deepEqual((await chamar(porta, 'GET', '/v1/agentes', { token: TOKEN })).corpo, { ok: true, agentes: [] })
+})

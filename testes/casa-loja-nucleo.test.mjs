@@ -10,6 +10,7 @@ import {
   NucleoError,
   lerManifesto,
   listarInstalados,
+  listarInterfaces,
   listarMaquinas,
   listarServidores,
   registrarAgente,
@@ -331,5 +332,22 @@ test('listarServidores entrega quem tem o modo servir nesta máquina, marca dive
     // Outra máquina registra uma versão nova: o catálogo muda e a instalação daqui fica para trás.
     registrarAgente(db, bytes({ ...completo(), versao: '0.4.0' }), { ...OPCOES, maquina: 'outra', raiz: RAIZ, agora: 't1' })
     assert.deepEqual(listarServidores(db, { maquina: 'pc' }).map((s) => [s.agente, s.divergente]), [['exemplo', true], ['mudo', false]])
+  })
+})
+
+test('listarInterfaces entrega os instalados com interface, sem o omni, com versão e divergência', () => {
+  comNucleo((db) => {
+    const semTela = { ...minimo(), agente: 'semtela', executor: { comando: 'node s.mjs', modos: ['servir'] } }
+    const omni = { ...minimo(), agente: 'omni', interface: { modulo: 'x.html' } }
+    const nua = { ...minimo(), agente: 'nua', interface: { modulo: 'tela/nua.html' } }
+    for (const m of [completo(), semTela, omni, nua]) registrarAgente(db, bytes(m), { ...OPCOES, raiz: RAIZ })
+    assert.deepEqual(listarInterfaces(db, { maquina: 'pc' }), [
+      { agente: 'exemplo', versao: '0.3.0', raiz: RAIZ, modulo: 'interface/index.html', preload: 'interface/preload.js', painel: 'Exemplo', divergente: false },
+      { agente: 'nua', versao: '0.1.0', raiz: RAIZ, modulo: 'tela/nua.html', preload: null, painel: null, divergente: false }
+    ])
+    assert.deepEqual(listarInterfaces(db, { maquina: 'outra' }), [])
+    // Outra máquina registra uma versão nova: a tela daqui pode não ser a que o catálogo descreve.
+    registrarAgente(db, bytes({ ...completo(), versao: '0.4.0' }), { ...OPCOES, maquina: 'outra', raiz: RAIZ, agora: 't1' })
+    assert.deepEqual(listarInterfaces(db, { maquina: 'pc' }).map((i) => [i.agente, i.versao, i.divergente]), [['exemplo', '0.3.0', true], ['nua', '0.1.0', false]])
   })
 })
