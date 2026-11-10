@@ -484,6 +484,14 @@
         "O card apagado da ilha instala o agente: escolhe a pasta, confere o executor/agente.json, chama o instalar-agente da versao em uso e so com o aceite registra as tarefas.",
         "A visita das 7h do Actions passa a ser a tarefa actions-visita do Oraculo. Saem da ilha os modulos do deposito (pontos, mesa, escrita, projetos, execucoes) e a visita velha (.ps1, .vbs, .md e o agendador); o scripts/omni-actions.mjs fica so com o WhatsApp (avisar, risco, aprovacao, usar, explicar, pendentes) e a ponte acorda a visita pela tarefa do Oraculo."
       ]
+    },
+    {
+      "version": "0.35.0",
+      "changes": [
+        "O instalar e o atualizar trocam o WhatsApp que roda de outra versao: param a ponte e o servico pelos .pid da pasta de dados so quando a linha de comando e mesmo deles e de fora desta versao, e sobem os desta versao pelo iniciar.ps1; o que nao estava rodando continua parado, e a pasta de dados com a sessao nao e tocada.",
+        "scripts/omni-conferir-cracha.mjs confere, so leitura, cada versao viva de credencial que o PG 5433 guarda como metadado contra o Gerenciador de Credenciais do Windows e o inventario do cofre.db; aposentadas podem faltar, referencia fora do formato reprova, e nenhum valor ou conta aparece no relatorio.",
+        "scripts/omni-desligar-5433.ps1 desliga o PostgreSQL 5433 so com o recibo da importacao no omni.db (omni-importar-5433.mjs --recibo): sem -Executar mostra o plano; com ele para o broker, faz pg_ctl stop, copia a pasta data para um backup datado conferido e so entao guarda o atalho do logon. Pastas obrigatorias, sem padrao, e trava fechada em qualquer erro; a pasta data original nunca e apagada."
+      ]
     }
   ]
 }
