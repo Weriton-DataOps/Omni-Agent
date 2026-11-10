@@ -1,6 +1,6 @@
 {
   "agente": "omni",
-  "versao": "0.31.0",
+  "versao": "0.32.0",
   "banco": "omni.db",
   "migracoes": "runtime/casa/esquemas.mjs",
   "requer": {

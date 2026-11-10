@@ -456,6 +456,15 @@
         "importar confere o pacote inteiro contra o proprio manifesto antes de tocar na casa, recusa pacote de migracao mais nova que este Omni, so substitui banco existente com --substituir e leva o atual (com -wal e -shm) para antes-de-importar-<data>; qualquer falha devolve tudo ao lugar.",
         "verificar roda integrity_check nos dois bancos sem nunca criar banco e, com --pacote, compara contagem e hash por tabela. Saida em JSON numa linha: 0 ok, 2 uso errado (sem ecoar argumento), 3 recusa ou divergencia, 1 falha inesperada registrada em degradacoes.jsonl."
       ]
+    },
+    {
+      "version": "0.32.0",
+      "changes": [
+        "O Omni tem manifesto proprio: executor/agente.json (agente omni, banco omni.db, executor node runtime/executor.mjs com instalar, importar, exportar e verificar), e a pasta executor/ entra no payload da release.",
+        "executor.mjs instalar cria a casa com os tres bancos migrados (nucleo, omni e cofre) e registra o Omni desta release no nucleo; rodar de novo nao muda nada.",
+        "executor.mjs instalar-agente --raiz <pasta> confere os requisitos do manifesto (node e agentes, inclusive a versao do Omni), gera os tokens tela e visita no cofre so para quem tem servir, entrega apenas os sha256 ao instalar --stdin do agente e so registra no nucleo depois que ele aceita; agente que recusa nao entra na lista do supervisor.",
+        "Um servir por casa: um segundo runtime/servir.mjs na mesma casa recusa com saida 1 e recusa:true sem tocar no servir.json de quem esta no ar; servir.json de pid morto nao bloqueia."
+      ]
     }
   ]
 }
