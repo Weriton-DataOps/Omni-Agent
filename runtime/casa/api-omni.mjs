@@ -51,9 +51,18 @@ function lerCorpo(req) {
   })
 }
 
-export function criarApiOmni({ casa, token, versao, agentes = () => [], env = process.env, iniciadoEm = agoraIso() }) {
+// Dois tokens (plano 4a): o da ilha vale em toda rota; o dos agentes, que o supervisor entrega a cada
+// servir, só lê a saúde e toca a campainha. Um agente não usa o chamar para falar com outro agente.
+const ROTAS_DOS_AGENTES = new Set(['GET /v1/saude', 'POST /v1/despachos'])
+const CHAMAR = /^\/v1\/agentes\/([a-z][a-z0-9-]{0,39})\/chamar$/
+
+export function criarApiOmni({ casa, token, tokenAgentes = null, versao, agentes = () => [], chamar = null, aoDespachar = null, env = process.env, iniciadoEm = agoraIso() }) {
   if (typeof token !== 'string' || !TOKEN.test(token)) throw new TypeError('Token da API fora do formato.')
+  if (tokenAgentes !== null && (typeof tokenAgentes !== 'string' || !TOKEN.test(tokenAgentes) || tokenAgentes === token)) {
+    throw new TypeError('Token dos agentes fora do formato ou igual ao da ilha.')
+  }
   const esperado = resumo(token)
+  const esperadoAgentes = tokenAgentes === null ? null : resumo(tokenAgentes)
 
   const servidor = createServer((req, res) => {
     atender(req, res).catch((erro) => {
@@ -64,9 +73,31 @@ export function criarApiOmni({ casa, token, versao, agentes = () => [], env = pr
   servidor.headersTimeout = 5_000
   servidor.requestTimeout = 10_000
 
-  function autorizado(cabecalho) {
+  // Devolve quem é: 'ilha', 'agentes' ou null. As duas comparações rodam sempre (tempo igual).
+  function quem(cabecalho) {
     const achado = /^Bearer (\S+)$/.exec(cabecalho ?? '')
-    return achado !== null && timingSafeEqual(resumo(achado[1] ?? ''), esperado)
+    if (achado === null) return null
+    const apresentado = resumo(achado[1])
+    const ilha = timingSafeEqual(apresentado, esperado)
+    const agente = esperadoAgentes !== null && timingSafeEqual(apresentado, esperadoAgentes)
+    return ilha ? 'ilha' : agente ? 'agentes' : null
+  }
+
+  async function chamarAgente(req, res, agente) {
+    if (req.method !== 'POST') return responder(res, 405, { ok: false, erro: 'Método não aceito.' }, { allow: 'POST' })
+    let corpo
+    try {
+      corpo = await lerCorpo(req)
+    } catch (erro) {
+      if (erro instanceof CorpoGrande) return responder(res, 413, { ok: false, erro: `Corpo acima de ${LIMITE_CORPO} bytes.` }, { connection: 'close' })
+      if (erro instanceof JsonInvalido) return responder(res, 400, { ok: false, erro: 'O corpo não é JSON válido.' })
+      throw erro
+    }
+    const valido = corpo !== null && typeof corpo === 'object' && !Array.isArray(corpo) && typeof corpo.metodo === 'string' && typeof corpo.rota === 'string'
+    if (!valido) return responder(res, 400, { ok: false, erro: 'O corpo precisa de metodo e rota em texto.' })
+    if (typeof chamar !== 'function') return responder(res, 503, { ok: false, erro: 'O chamar não está ligado neste servir.' })
+    const resposta = await chamar(agente, corpo.metodo, corpo.rota, corpo.corpo, { papel: 'tela' })
+    return responder(res, 200, { status: resposta.status, corpo: resposta.corpo })
   }
 
   function noBanco(uso) {
@@ -90,6 +121,9 @@ export function criarApiOmni({ casa, token, versao, agentes = () => [], env = pr
       throw erro
     }
     const recibo = noBanco((db) => registrarDespacho(db, corpo))
+    if (typeof aoDespachar === 'function') {
+      try { aoDespachar({ agente: corpo.agente, execucao: corpo.execucao, ...recibo }) } catch (erro) { registrarDegradacao(casa, 'api.omni.campainha', erro, env) }
+    }
     return responder(res, 202, { ok: true, ...recibo })
   }
 
@@ -98,10 +132,16 @@ export function criarApiOmni({ casa, token, versao, agentes = () => [], env = pr
     if (req.headers.host !== `127.0.0.1:${porta}`) {
       return responder(res, 421, { ok: false, erro: 'Use http://127.0.0.1:<porta>.' }, { connection: 'close' })
     }
-    if (!autorizado(req.headers.authorization)) {
+    const papel = quem(req.headers.authorization)
+    if (papel === null) {
       return responder(res, 401, { ok: false, erro: 'Token ausente ou inválido.' }, { connection: 'close' })
     }
     const url = new URL(req.url ?? '/', `http://127.0.0.1:${porta}`)
+    if (papel === 'agentes' && !ROTAS_DOS_AGENTES.has(`${req.method} ${url.pathname}`)) {
+      return responder(res, 403, { ok: false, erro: 'O token dos agentes só lê a saúde e toca a campainha.' }, { connection: 'close' })
+    }
+    const alvo = CHAMAR.exec(url.pathname)
+    if (alvo) return await chamarAgente(req, res, alvo[1])
     try {
       if (url.pathname === '/v1/saude') {
         if (req.method !== 'GET') return responder(res, 405, { ok: false, erro: 'Método não aceito.' }, { allow: 'GET' })
