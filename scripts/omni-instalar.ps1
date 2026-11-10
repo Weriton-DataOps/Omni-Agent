@@ -103,7 +103,7 @@ function Escrever-Json([string]$arquivo, $objeto) {
   Move-Item -LiteralPath $temporario -Destination $arquivo -Force
 }
 
-# O Move-Item e o Remove-Item do PowerShell 5.1 se perdem em caminho curto 8.3 (C:\Users\FULANO~1, que é
+# O Move-Item e o Remove-Item do PowerShell 5.1 se perdem em caminho curto 8.3 (o perfil FULANO~1, que é
 # como o %TEMP% costuma chegar) e lançam erro terminal até com SilentlyContinue: a pasta base vira a forma
 # longa logo no começo.
 function Caminho-Longo([string]$pasta) {
@@ -332,6 +332,22 @@ function Preparar-WhatsApp([string]$raiz) {
   Passo 'whatsapp' $true ('serviço compilado; sobe no logon por ' + $criado)
 }
 
+# O vigia do WhatsApp roda pela versão instalada, de 5 em 5 minutos, mesmo molde do omni-actions-agendar.ps1.
+# O primeiro disparo fica 5 minutos à frente: registrar nunca acorda o vigia na hora (ele mexe no WhatsApp
+# de verdade), e o -StartWhenAvailable não tem início perdido para recuperar. -Force substitui a anterior.
+function Registrar-Tarefas([string]$raiz) {
+  $nome = $PrefixoTarefa + ' - vigia do WhatsApp'
+  $vbs = Join-Path $raiz 'servicos\whatsapp\omni\vigia-servico.vbs'
+  try {
+    $acao = New-ScheduledTaskAction -Execute 'wscript.exe' -Argument ('"' + $vbs + '"') -WorkingDirectory (Split-Path -Parent $vbs)
+    $gatilho = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(5) -RepetitionInterval (New-TimeSpan -Minutes 5)
+    $regras = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Minutes 10) -MultipleInstances IgnoreNew
+    $quem = New-ScheduledTaskPrincipal -UserId ($env:USERDOMAIN + '\' + $env:USERNAME) -LogonType Interactive -RunLevel Limited
+    Register-ScheduledTask -TaskName $nome -Action $acao -Trigger $gatilho -Settings $regras -Principal $quem -Description 'Vigia do serviço WhatsApp do Omni (versão instalada).' -Force -ErrorAction Stop | Out-Null
+  } catch { Falhar 'tarefas' ('não registrou ' + $nome + ': ' + $_.Exception.Message) }
+  Passo 'tarefas' $true ($nome + ': a cada 5 min')
+}
+
 function Escrever-Atual([string]$versoes, [string]$sha, [string]$versao) {
   $arquivo = Join-Path $versoes 'atual.json'
   if (Test-Path -LiteralPath $arquivo) {
@@ -352,6 +368,7 @@ try {
       Instalar-Agentes $raiz
       if (-not $SemIlha) { Preparar-Ilha $raiz }
       if (-not $SemWhatsApp) { Preparar-WhatsApp $raiz }
+      if (-not $SemTarefas) { Registrar-Tarefas $raiz }
     }
     default { Uso ('modo ' + $Modo + ' ainda não implementado') }
   }

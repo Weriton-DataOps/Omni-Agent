@@ -2,6 +2,7 @@
 // programas de fora trocados por temporários e falsos. Só roda no Windows.
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
+import { randomBytes } from 'node:crypto'
 import { appendFileSync, existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -21,9 +22,18 @@ const windows = process.platform === 'win32'
 // Tudo que mexe no Windows de verdade fica desligado por padrão; cada teste liga o que examina.
 const BASICO = ['-SemIlha', '-SemWhatsApp', '-SemTarefas', '-SemPlugin', '-NaoAbrir', '-SemWinget']
 
+// A tarefa de verdade desta máquina se chama "Omni - vigia do WhatsApp". Todo teste roda com um prefixo
+// OmniTeste, para nenhum descuido (um -SemTarefas esquecido, um mutante) sobrescrever a real, e o after
+// varre qualquer OmniTeste que tenha sobrado.
+const PREFIXO_TESTE = 'OmniTeste'
+function powershell(comando, env = {}) {
+  return spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', comando], { encoding: 'utf8', env: { ...process.env, ...env } })
+}
+const varrerTarefasDeTeste = () => powershell(`Get-ScheduledTask -TaskName '${PREFIXO_TESTE}*' -ErrorAction SilentlyContinue | Unregister-ScheduledTask -Confirm:$false`)
+
 let origem
 before(async () => { if (windows) origem = await criarOrigem() })
-after(() => origem?.apagar())
+after(() => { origem?.apagar(); if (windows) varrerTarefasDeTeste() })
 
 function pastaTemp(t, prefixo) {
   const pasta = mkdtempSync(join(tmpdir(), prefixo))
@@ -32,7 +42,8 @@ function pastaTemp(t, prefixo) {
 }
 
 function instalar(t, argumentos, { base = pastaTemp(t, 'omni-base-'), casa = pastaTemp(t, 'omni-casa-'), env = {} } = {}) {
-  const r = spawnSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', SCRIPT, ...argumentos, '-Base', base], {
+  const prefixo = argumentos.includes('-PrefixoTarefa') ? [] : ['-PrefixoTarefa', `${PREFIXO_TESTE}Nunca`]
+  const r = spawnSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', SCRIPT, ...argumentos, ...prefixo, '-Base', base], {
     encoding: 'utf8',
     timeout: 180_000,
     env: {
@@ -65,6 +76,7 @@ test('instalar busca o commit, confere a impressão digital e promove para verso
   assert.equal(atual.sha, origem.sha)
   assert.equal(atual.versao, VERSAO)
   assert.deepEqual(versoes(r.base).sort(), [origem.sha, 'atual.json'].sort(), 'nenhuma pasta temporária sobra')
+  assert.equal(passo(r.json, 'tarefas'), undefined, '-SemTarefas não registra nada')
 })
 
 test('a mesma versão de novo não baixa nem reescreve', { skip: !windows }, (t) => {
@@ -207,6 +219,41 @@ test('npm que falha para a instalação no passo da ilha, sem atalho', { skip: !
   assert.equal(passo(r.json, 'whatsapp'), undefined)
   assert.deepEqual(readdirSync(atalhos), [])
   assert.deepEqual(readdirSync(inicializar), [])
+})
+
+// 267011 = 0x41303, SCHED_S_TASK_HAS_NOT_RUN: o registro não pode acordar o vigia (que mexe no WhatsApp real).
+const NUNCA_RODOU = 267011
+function lerTarefa(nome) {
+  const r = powershell(`$t = Get-ScheduledTask -TaskName $env:NOME_TAREFA -ErrorAction SilentlyContinue
+if (-not $t) { 'null' } else {
+  $i = $t | Get-ScheduledTaskInfo
+  [ordered]@{ execute = $t.Actions[0].Execute; argumentos = $t.Actions[0].Arguments; intervalo = $t.Triggers[0].Repetition.Interval;
+    limite = $t.Settings.ExecutionTimeLimit; logon = [string]$t.Principal.LogonType; nivel = [string]$t.Principal.RunLevel; resultado = $i.LastTaskResult } | ConvertTo-Json -Compress
+}`, { NOME_TAREFA: nome })
+  return JSON.parse(r.stdout.trim().split(/\r?\n/).pop())
+}
+const removerTarefa = (nome) => powershell('Unregister-ScheduledTask -TaskName $env:NOME_TAREFA -Confirm:$false -ErrorAction SilentlyContinue', { NOME_TAREFA: nome })
+
+test('instalar registra o vigia do WhatsApp da versão, de 5 em 5 minutos, sem disparar na hora', { skip: !windows }, (t) => {
+  const prefixo = `${PREFIXO_TESTE}${randomBytes(4).toString('hex')}`
+  const nome = `${prefixo} - vigia do WhatsApp`
+  t.after(() => { removerTarefa(nome); assert.equal(lerTarefa(nome), null, 'a tarefa de teste sumiu') })
+  const r = instalar(t, ['instalar', '-Origem', origem.repo, '-Sha', origem.sha, ...BASICO.filter((a) => a !== '-SemTarefas'), '-PrefixoTarefa', prefixo])
+  assert.equal(r.status, 0, r.erro)
+  assert.equal(passo(r.json, 'tarefas')?.ok, true, 'passo tarefas')
+  assert.match(passo(r.json, 'tarefas').detalhe, new RegExp(prefixo))
+  const tarefa = lerTarefa(nome)
+  assert.ok(tarefa, 'a tarefa existe')
+  assert.equal(tarefa.execute.toLowerCase(), 'wscript.exe')
+  const vbs = join(realpathSync.native(r.base), 'versoes', origem.sha, 'servicos', 'whatsapp', 'omni', 'vigia-servico.vbs')
+  assert.equal(tarefa.argumentos.toLowerCase(), `"${vbs}"`.toLowerCase())
+  assert.equal(tarefa.intervalo, 'PT5M')
+  assert.equal(tarefa.limite, 'PT10M')
+  assert.deepEqual([tarefa.logon, tarefa.nivel], ['Interactive', 'Limited'])
+  assert.equal(tarefa.resultado, NUNCA_RODOU)
+  const segunda = instalar(t, ['instalar', '-Origem', origem.repo, '-Sha', origem.sha, ...BASICO.filter((a) => a !== '-SemTarefas'), '-PrefixoTarefa', prefixo], { base: r.base, casa: r.casa })
+  assert.equal(segunda.status, 0, segunda.erro)
+  assert.equal(lerTarefa(nome).argumentos, tarefa.argumentos, 'registrar de novo substitui sem duplicar')
 })
 
 test('instalar sem -Sha é uso errado', { skip: !windows }, (t) => {
