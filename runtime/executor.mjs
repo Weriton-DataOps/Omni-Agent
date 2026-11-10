@@ -11,7 +11,8 @@ import { arquivoDoBanco, comBancoDaCasa, registrarDegradacao } from './casa/banc
 import {
   BANCOS_DO_PACOTE, PacoteCasaError, compararRetratos, conferirPacote, exportarCasa, importarCasa, resumirRetrato, retratoDoBanco
 } from './casa/pacote-casa.mjs'
-import { InstalarError, instalarCasa } from './casa/instalar-casa.mjs'
+import { criarPonteDpapi } from './casa/dpapi.mjs'
+import { InstalarError, instalarAgente, instalarCasa } from './casa/instalar-casa.mjs'
 import { NucleoError } from './casa/loja-nucleo.mjs'
 import { casaDoNucleo } from './nucleo.mjs'
 
@@ -20,7 +21,8 @@ const USO = `uso: node runtime/executor.mjs <comando> [opções]
   exportar --saida <pasta>   (nucleo.db e omni.db por VACUUM INTO, com manifesto)
   importar --pacote <pasta> [--substituir]   (confere tudo antes; o banco atual vai para backup datado)
   verificar [--pacote <pasta>]   (integridade do SQLite; com --pacote, contagem e hash por tabela)
-  instalar   (cria a casa com os três bancos e registra o Omni desta release)`
+  instalar   (cria a casa com os três bancos e registra o Omni desta release)
+  instalar-agente --raiz <pasta>   (requisitos, tokens no cofre, instalar --stdin do agente e registro no núcleo)`
 class UsoError extends Error {}
 
 function lerOpcoes(argumentos, opcoes, obrigatorias = []) {
@@ -53,7 +55,7 @@ function verificarCasa(casa, pacote, env) {
   return { ok, bancos, ...(manifesto ? { pacote: { criado_em: manifesto.criado_em, omni: manifesto.omni }, divergencias } : {}) }
 }
 
-export async function rodarExecutor(argv, { saida = process.stdout, erro = process.stderr, env = process.env } = {}) {
+export async function rodarExecutor(argv, { saida = process.stdout, erro = process.stderr, env = process.env, ponte = null } = {}) {
   const casa = casaDoNucleo(env)
   const escrever = (objeto) => saida.write(`${JSON.stringify(objeto)}\n`)
   const [comando, ...resto] = argv
@@ -78,6 +80,15 @@ export async function rodarExecutor(argv, { saida = process.stdout, erro = proce
       case 'instalar': {
         lerOpcoes(resto, {})
         escrever({ ok: true, ...instalarCasa(casa, RAIZ, { env }) })
+        return 0
+      }
+      case 'instalar-agente': {
+        const o = lerOpcoes(resto, { raiz: { type: 'string' } }, ['raiz'])
+        let aberta = ponte // a ponte DPAPI só sobe se o agente precisar de token
+        const r = instalarAgente(casa, resolve(o.raiz), {
+          env, versaoOmni: versaoDoOmni(), ponte: () => (aberta ??= criarPonteDpapi()), log: (texto) => erro.write(`${texto}\n`)
+        })
+        escrever({ ok: true, ...r })
         return 0
       }
       default: throw new UsoError(comando === undefined ? 'falta o comando' : 'comando desconhecido')
