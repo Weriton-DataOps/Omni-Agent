@@ -140,7 +140,7 @@ Testes (`testes/casa-carteiro.test.mjs`, `chamar` falso em memória que imita a 
 
 ### T8. Mãos do Actions
 
-`runtime/supervisor.mjs`: `aoMudar()` opcional, chamado quando um agente entra no ar ou sai dele.
+`runtime/casa/supervisor.mjs`: `aoMudar()` opcional, chamado quando um agente entra no ar ou sai dele.
 
 `runtime/servir.mjs` grava `<pasta do banco>/servir.json` = `{pid, porta, agentes:[{agente, porta}]}` (sem token) ao subir e a cada `aoMudar`, e apaga ao sair.
 

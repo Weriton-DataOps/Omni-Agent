@@ -56,6 +56,33 @@ test('sobe, lê a porta da 1ª linha, passa a API por env e para quando pedem', 
   assert.equal(unico().pid, null)
 })
 
+test('aoMudar avisa quando o agente entra no ar e quando sai dele; erro dele vira log', async (t) => {
+  const vistos = []
+  const { supervisor, logs, unico } = preparar(t, 'no-ar', {
+    opcoes: { aoMudar: () => { vistos.push(unico().estado); if (vistos.length === 1) throw new Error('disco cheio') } }
+  })
+  supervisor.iniciar()
+  await ate(() => vistos.length === 1)
+  assert.deepEqual(vistos, ['no-ar'])
+  assert.ok(logs.some((l) => /aoMudar: disco cheio/.test(l)), logs.join('\n'))
+  process.kill(unico().pid)
+  await ate(() => vistos.length >= 2)
+  assert.equal(vistos[1], 'esperando', 'a queda avisa depois de sair do ar')
+  await ate(() => vistos.length >= 3)
+  assert.equal(vistos[2], 'no-ar', 'a volta avisa de novo')
+  await supervisor.parar()
+  assert.deepEqual(vistos.slice(3), ['parado'], 'parar também tira do ar')
+})
+
+test('quem nunca entra no ar não chama o aoMudar', async (t) => {
+  let vezes = 0
+  const { supervisor, unico } = preparar(t, 'uso', { opcoes: { aoMudar: () => { vezes += 1 } } })
+  supervisor.iniciar()
+  await ate(() => unico().estado === 'recusado')
+  await daquiA(200)
+  assert.equal(vezes, 0)
+})
+
 test('saída 2 é recusa permanente: uma subida só', async (t) => {
   const { supervisor, subidas, unico } = preparar(t, 'uso')
   supervisor.iniciar()
