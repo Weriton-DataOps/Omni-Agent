@@ -42,14 +42,15 @@ function valorDeUmaLinha(valor) {
   return Buffer.isBuffer(valor) && valor.length > 0 && !valor.includes(10) && !valor.includes(13);
 }
 
-function falhaDaSonda(r, origem) {
+// A mesma sonda serve à casa (casa-servir.js, plano 4b): só muda quem pede o Node.
+function falhaDaSonda(r, origem, quem = 'o cofre') {
   const sem = (erro) => ({ ok: false, codigo: 'sem-node', erro });
   if (r.motivo === 'sem-node' || r.motivo === 'nao-abriu') return sem(`não achei o Node do sistema (${origem})`);
   if (r.motivo !== null || r.codigo !== 0) return sem(`o Node do sistema não respondeu à sonda (${origem})`);
   const v = lerJson(r.stdout);
   if (!v || typeof v !== 'object') return sem('a sonda do Node respondeu algo ilegível');
-  if (v.electron) return sem(`${origem} é um Electron; o cofre pede o Node do sistema, 22.13 ou mais novo`);
-  if (!versaoServe(v.node)) return sem(`o cofre pede o Node 22.13 ou mais novo; ${origem} é o ${String(v.node).slice(0, 20)}`);
+  if (v.electron) return sem(`${origem} é um Electron; ${quem} pede o Node do sistema, 22.13 ou mais novo`);
+  if (!versaoServe(v.node)) return sem(`${quem} pede o Node 22.13 ou mais novo; ${origem} é o ${String(v.node).slice(0, 20)}`);
   return null;
 }
 
@@ -169,4 +170,4 @@ function criarMaoCofre({ spawn = childProcess.spawn, env = process.env, cli = CL
   };
 }
 
-module.exports = { criarMaoCofre, versaoServe, LIMITES };
+module.exports = { criarMaoCofre, versaoServe, falhaDaSonda, LIMITES, SONDA, AVISO };

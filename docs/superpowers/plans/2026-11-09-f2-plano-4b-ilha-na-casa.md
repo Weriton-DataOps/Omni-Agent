@@ -97,12 +97,12 @@ Contrato: `criarCasa({ spawn, env, raiz, limiteMs })` → `{ iniciar(), chamar(m
 - `parar()` fecha o stdin e espera a saída por até 5 s (depois, `kill`).
 - `estado()` → `{ porta, pid, erro }`, sem token.
 
-- [ ] **Testes vermelhos:**
+- [x] **Testes vermelhos:**
   1. Casa de verdade em pasta temporária (`OMNI_NODE=process.execPath`, `OMNI_HOME` e `OMNI_CASA_BANCO` temporários): `chamar('GET','/v1/saude')` sobe sozinho e devolve 200 com `agente: 'omni'`; `estado()` não traz o token; `parar()` → o filho sai 0.
   2. Spawn falso com a sonda respondendo Electron: `iniciar()` → `{ ok: false }` com "Electron"; o `servir` nunca é chamado; `chamar` → `status: 0`.
   3. Spawn falso com a 1ª linha `{"ok":false,"erro":"omni.db indisponível"}`: `iniciar()` → `{ ok: false, erro: 'omni.db indisponível' }`; uma 2ª chamada sobe de novo (duas subidas contadas).
   4. O env do `servir` não tem `ELECTRON_RUN_AS_NODE`; o da sonda tem.
-- [ ] Implementação e verde lido.
+- [x] Implementação e verde lido. Resultado: 6/6 em `ilha-casa-servir`, 10/10 no cofre; 7 mutantes, 7 mortos pela asserção.
 
 ### Tarefa 4: `agente-api.js` e `agentes.js`
 
