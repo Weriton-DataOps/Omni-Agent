@@ -2,31 +2,22 @@
 // para versoes\<sha> depois que `executor.mjs release` dela sai 0 com a impressão digital batendo.
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { appendFileSync, cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { appendFileSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import test from 'node:test'
 
-import { calcularFingerprintPayload } from '../runtime/integridade-release.mjs'
+import { copiarPayloadSelado } from './fixtures/origem-selada.mjs'
 
 const RAIZ = resolve(import.meta.dirname, '..')
 const VERSAO = JSON.parse(readFileSync(join(RAIZ, 'package.json'), 'utf8')).version
-const PASTAS = ['.claude-plugin', 'adaptadores', 'contratos', 'dist', 'executor', 'hooks', 'runtime', 'scripts', 'skills']
 
 // Cópia do payload com o contrato selado para a própria cópia: o teste não depende de o ramo estar
 // com a impressão digital em dia (ela só é carimbada no bump da release).
 async function copiarPayload(t) {
   const copia = mkdtempSync(join(tmpdir(), 'omni-release-'))
   t.after(() => rmSync(copia, { recursive: true, force: true }))
-  for (const pasta of PASTAS) {
-    if (existsSync(join(RAIZ, pasta))) cpSync(join(RAIZ, pasta), join(copia, pasta), { recursive: true, filter: (o) => !o.includes('postgresql-5433') })
-  }
-  cpSync(join(RAIZ, 'package.json'), join(copia, 'package.json'))
-  const contrato = join(copia, 'contratos', 'atualizacao', 'integridade.json')
-  const json = JSON.parse(readFileSync(contrato, 'utf8'))
-  json.identity.releaseFingerprint = (await calcularFingerprintPayload(copia)).fingerprint
-  writeFileSync(contrato, `${JSON.stringify(json, null, 2)}\n`)
-  return copia
+  return copiarPayloadSelado(copia)
 }
 
 function rodar(raiz, argv) {
