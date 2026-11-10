@@ -1,5 +1,5 @@
-// Executor do Omni (§4.2, §5): exportar, importar, verificar e instalar a casa. O atualizar chega com
-// o zip da release (plano 5b-2), que chama este mesmo arquivo.
+// Executor do Omni (§4.2, §5): exportar, importar, verificar e instalar a casa, e conferir a própria
+// release. O omni-instalar.ps1 (plano 5b-2) chama este mesmo arquivo dentro de versoes\<sha>.
 // A saída é JSON numa linha. Códigos de saída: 0 ok; 2 uso errado; 3 recusa ou divergência;
 // 1 falha inesperada (vai para degradacoes.jsonl).
 import { existsSync, readFileSync } from 'node:fs'
@@ -14,6 +14,7 @@ import {
 import { criarPonteDpapi } from './casa/dpapi.mjs'
 import { InstalarError, instalarAgente, instalarCasa } from './casa/instalar-casa.mjs'
 import { NucleoError } from './casa/loja-nucleo.mjs'
+import { verificarIntegridadeRelease } from './integridade-release.mjs'
 import { casaDoNucleo } from './nucleo.mjs'
 
 const RAIZ = dirname(dirname(fileURLToPath(import.meta.url)))
@@ -22,7 +23,8 @@ const USO = `uso: node runtime/executor.mjs <comando> [opções]
   importar --pacote <pasta> [--substituir]   (confere tudo antes; o banco atual vai para backup datado)
   verificar [--pacote <pasta>]   (integridade do SQLite; com --pacote, contagem e hash por tabela)
   instalar   (cria a casa com os três bancos e registra o Omni desta release)
-  instalar-agente --raiz <pasta>   (requisitos, tokens no cofre, instalar --stdin do agente e registro no núcleo)`
+  instalar-agente --raiz <pasta>   (requisitos, tokens no cofre, instalar --stdin do agente e registro no núcleo)
+  release   (confere a impressão digital desta versão contra o contrato dela)`
 class UsoError extends Error {}
 
 function lerOpcoes(argumentos, opcoes, obrigatorias = []) {
@@ -89,6 +91,13 @@ export async function rodarExecutor(argv, { saida = process.stdout, erro = proce
           env, versaoOmni: versaoDoOmni(), ponte: () => (aberta ??= criarPonteDpapi()), log: (texto) => erro.write(`${texto}\n`)
         })
         escrever({ ok: true, ...r })
+        return 0
+      }
+      case 'release': {
+        lerOpcoes(resto, {})
+        const r = await verificarIntegridadeRelease(RAIZ)
+        if (r.status !== 'verified') { escrever({ ok: false, codigo: 'integridade', estado: r.status }); return 3 }
+        escrever({ ok: true, versao: r.releaseVersion, fingerprint: r.fingerprint })
         return 0
       }
       default: throw new UsoError(comando === undefined ? 'falta o comando' : 'comando desconhecido')

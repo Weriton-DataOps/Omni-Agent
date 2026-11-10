@@ -465,6 +465,16 @@
         "executor.mjs instalar-agente --raiz <pasta> confere os requisitos do manifesto (node e agentes, inclusive a versao do Omni), gera os tokens tela e visita no cofre so para quem tem servir, entrega apenas os sha256 ao instalar --stdin do agente e so registra no nucleo depois que ele aceita; agente que recusa nao entra na lista do supervisor.",
         "Um servir por casa: um segundo runtime/servir.mjs na mesma casa recusa com saida 1 e recusa:true sem tocar no servir.json de quem esta no ar; servir.json de pid morto nao bloqueia."
       ]
+    },
+    {
+      "version": "0.33.0",
+      "changes": [
+        "scripts/omni-instalar.ps1 instala o Omni no Windows a partir de um commit: baixa o zip do sha (ou empacota de -Origem), confere a impressao digital do proprio payload numa pasta temporaria e so entao promove para <Base>\\versoes\\<sha>; atual.json aponta para a versao. Log no stderr e a ultima linha do stdout e um JSON {ok, modo, sha, versao, passos}; saida 0 ok, 1 falha, 2 uso errado.",
+        "instalar confere Node 24 ou mais (winget quando falta), cria a casa pelo executor.mjs da versao, instala os agentes de -Agente, prepara a ilha (npm ci e o Electron) e o servico WhatsApp (npm ci e build) dentro da versao e cria os atalhos da ilha e do WhatsApp no logon apontando para ela.",
+        "instalar registra a tarefa do vigia do WhatsApp (wscript no vigia-servico.vbs da versao, de 5 em 5 minutos, sem disparar no registro), adiciona o marketplace omni-hub e instala ou atualiza o plugin, sobe o servico, guarda a chave admin no cofre do Windows so pelo stdin e abre a ilha pedindo o pareamento.",
+        "atualizar troca a versao atual e refaz os passos idempotentes sem abrir a ilha; ficam so a atual e a anterior (o caminho de volta), e pasta com processo rodando nao e tocada. verificar confere release, casa, atalhos e tarefa da versao atual. exportar e importar repassam ao executor.mjs da versao atual.",
+        "O vigia-servico.vbs nao tem mais caminho chumbado: chama o vigia-servico.mjs da propria pasta com o node do OMNI_NODE ou do PATH."
+      ]
     }
   ]
 }
