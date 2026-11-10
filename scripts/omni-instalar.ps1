@@ -49,8 +49,10 @@ $FALHOU = 'omni-instalar: passo falhou'
 
 function Log([string]$texto) { [Console]::Error.WriteLine('omni-instalar: ' + $texto) }
 
-function Passo([string]$nome, [bool]$ok, [string]$detalhe) {
-  [void]$script:passos.Add([ordered]@{ passo = $nome; ok = $ok; detalhe = $detalhe })
+function Passo([string]$nome, [bool]$ok, [string]$detalhe, $resultado = $null) {
+  $registro = [ordered]@{ passo = $nome; ok = $ok; detalhe = $detalhe }
+  if ($null -ne $resultado) { $registro.resultado = $resultado }
+  [void]$script:passos.Add($registro)
   $marca = if ($ok) { 'ok' } else { 'FALHOU' }
   Log ($marca + ' ' + $nome + ': ' + $detalhe)
 }
@@ -62,7 +64,7 @@ function Falhar([string]$nome, [string]$detalhe) {
 
 function Terminar([int]$codigo) {
   $resultado = [ordered]@{ ok = ($codigo -eq 0); modo = $Modo; sha = $script:shaInstalado; versao = $script:versaoInstalada; passos = @($script:passos) }
-  [Console]::Out.WriteLine(($resultado | ConvertTo-Json -Compress -Depth 6))
+  [Console]::Out.WriteLine(($resultado | ConvertTo-Json -Compress -Depth 12))
   exit $codigo
 }
 
@@ -440,12 +442,122 @@ function Abrir-Ilha([string]$raiz) {
   Passo 'ilha-aberta' $true 'ilha aberta pedindo o pareamento'
 }
 
+function Ler-Atual {
+  $arquivo = Join-Path $Base 'versoes\atual.json'
+  if (-not (Test-Path -LiteralPath $arquivo)) { return $null }
+  try { return (Get-Content -LiteralPath $arquivo -Raw -Encoding UTF8 | ConvertFrom-Json) } catch { return $null }
+}
+
+# atual.json de antes do campo `anterior` não o tem, e o StrictMode não deixa ler propriedade ausente.
+function Campo($objeto, [string]$nome) {
+  if ($null -eq $objeto -or -not ($objeto.PSObject.Properties.Name -contains $nome)) { return $null }
+  return $objeto.$nome
+}
+
+# `anterior` é o caminho de volta: a versão que era a atual até esta troca. A poda nunca a apaga.
 function Escrever-Atual([string]$versoes, [string]$sha, [string]$versao) {
-  $arquivo = Join-Path $versoes 'atual.json'
-  if (Test-Path -LiteralPath $arquivo) {
-    try { $atual = Get-Content -LiteralPath $arquivo -Raw -Encoding UTF8 | ConvertFrom-Json; if ($atual.sha -eq $sha) { return } } catch { }
+  $atual = Ler-Atual
+  if ((Campo $atual 'sha') -eq $sha) { return }
+  $anterior = Campo $atual 'sha'
+  Escrever-Json (Join-Path $versoes 'atual.json') ([ordered]@{ sha = $sha; versao = $versao; anterior = $anterior; instalada_em = (Get-Date).ToUniversalTime().ToString('o') })
+}
+
+# Ficam a atual e a anterior. Cada pasta velha é renomeada antes de ir embora: se algum processo ainda
+# roda dela, o Windows recusa a troca de nome e ela fica inteira, em vez de meio apagada.
+function Podar-Versoes {
+  $versoes = Join-Path $Base 'versoes'
+  $atual = Ler-Atual
+  $manter = @((Campo $atual 'sha'), (Campo $atual 'anterior')) | Where-Object { $_ }
+  $apagadas = @(); $presas = @()
+  foreach ($pasta in @(Get-ChildItem -LiteralPath $versoes -Directory)) {
+    $nome = $pasta.Name
+    if ($nome -match '^\.[0-9a-f]{40}\.podando$') { try { Apagar-Pasta $pasta.FullName } catch { }; continue }
+    if ($nome -notmatch '^[0-9a-f]{40}$' -or $manter -contains $nome) { continue }
+    $lixo = Join-Path $versoes ('.' + $nome + '.podando')
+    try { [IO.Directory]::Move($pasta.FullName, $lixo) } catch { $presas += $nome.Substring(0, 12); continue }
+    try { Apagar-Pasta $lixo } catch { Log ('sobrou ' + $lixo + ': ' + $_.Exception.Message) }
+    $apagadas += $nome.Substring(0, 12)
   }
-  Escrever-Json $arquivo ([ordered]@{ sha = $sha; versao = $versao; instalada_em = (Get-Date).ToUniversalTime().ToString('o') })
+  $detalhe = if ($apagadas.Count -gt 0) { 'apagadas: ' + ($apagadas -join ', ') } else { 'nada a apagar' }
+  if ($presas.Count -gt 0) { $detalhe += '; em uso, ficaram: ' + ($presas -join ', ') }
+  Passo 'poda' $true $detalhe
+}
+
+# Os passos que o instalar e o atualizar dividem; todos podem rodar de novo sem estrago.
+function Instalar-Comum([string]$raiz) {
+  Instalar-Casa $raiz
+  Instalar-Agentes $raiz
+  if (-not $SemIlha) { Preparar-Ilha $raiz }
+  if (-not $SemWhatsApp) { Preparar-WhatsApp $raiz }
+  if (-not $SemTarefas) { Registrar-Tarefas $raiz }
+  if (-not $SemPlugin) { Instalar-Plugin }
+}
+
+# A versão que o atual.json aponta, para os modos que não baixam nada.
+function Raiz-Atual([string]$passo) {
+  $atual = Ler-Atual
+  if (-not (Campo $atual 'sha')) { Falhar 'versao' 'nada instalado: falta versoes\atual.json' }
+  $script:shaInstalado = [string]$atual.sha
+  $script:versaoInstalada = [string](Campo $atual 'versao')
+  $raiz = Join-Path $Base ('versoes\' + $atual.sha)
+  if (-not (Test-Path -LiteralPath (Join-Path $raiz 'runtime\executor.mjs'))) { Falhar $passo ('a versão atual ' + $atual.sha + ' não está em versoes') }
+  return $raiz
+}
+
+function Verificar-Release([string]$raiz) {
+  $conferida = Conferir-Release $raiz
+  if ($conferida.ok) { $script:versaoInstalada = $conferida.versao; Passo 'release' $true ($conferida.versao + ' confere') }
+  else { Passo 'release' $false ('integridade: ' + $conferida.estado) }
+}
+
+function Verificar-Casa([string]$raiz) {
+  $e = Rodar-Executor $raiz @('verificar')
+  $ok = Executor-Aceitou $e
+  $detalhe = if ($ok) { 'bancos íntegros' } elseif ($e.json -and ($e.json.PSObject.Properties.Name -contains 'codigo')) { Detalhe-DaRecusa $e } else { 'executor verificar saiu com ' + $e.codigo }
+  Passo 'casa' $ok $detalhe $e.json
+}
+
+# Cada atalho que existe precisa chamar o iniciar.ps1 da versão atual; pasta sem atalho não reprova.
+function Verificar-Atalhos([string]$raiz) {
+  $pastasIlha = if ($PastaAtalhos) { @($PastaAtalhos) } else { @([Environment]::GetFolderPath('Desktop'), [Environment]::GetFolderPath('Programs')) }
+  $inicializar = if ($PastaInicializar) { $PastaInicializar } else { [Environment]::GetFolderPath('Startup') }
+  $esperados = @()
+  foreach ($pasta in $pastasIlha) { $esperados += , @((Join-Path $pasta 'Omni Ilha.lnk'), (Join-Path $raiz 'apps\omni-ilha\iniciar.ps1')) }
+  $esperados += , @((Join-Path $inicializar 'Omni WhatsApp.lnk'), (Join-Path $raiz 'servicos\whatsapp\omni\iniciar.ps1'))
+  $shell = New-Object -ComObject WScript.Shell
+  $vistos = 0; $tortos = @()
+  foreach ($par in $esperados) {
+    if (-not (Test-Path -LiteralPath $par[0])) { continue }
+    $vistos++
+    $argumentos = [string]$shell.CreateShortcut($par[0]).Arguments
+    if ($argumentos.IndexOf('"' + $par[1] + '"', [StringComparison]::OrdinalIgnoreCase) -lt 0) { $tortos += $par[0] }
+  }
+  if ($vistos -eq 0) { return }
+  if ($tortos.Count -gt 0) { Passo 'atalhos' $false ('fora da versão atual: ' + ($tortos -join ', ')) }
+  else { Passo 'atalhos' $true ($vistos.ToString() + ' na versão atual') }
+}
+
+function Verificar-Tarefas([string]$raiz) {
+  $nome = $PrefixoTarefa + ' - vigia do WhatsApp'
+  $tarefa = $null
+  try { $tarefa = Get-ScheduledTask -TaskName $nome -ErrorAction Stop } catch { }
+  if (-not $tarefa) { return }
+  $vbs = '"' + (Join-Path $raiz 'servicos\whatsapp\omni\vigia-servico.vbs') + '"'
+  $argumentos = [string]$tarefa.Actions[0].Arguments
+  if ($argumentos -eq $vbs) { Passo 'tarefas' $true ($nome + ' na versão atual') }
+  else { Passo 'tarefas' $false ($nome + ' aponta para ' + $argumentos) }
+}
+
+# exportar e importar são do executor.mjs da versão atual; o JSON dele volta inteiro no passo.
+function Repassar-Executor([string]$raiz, [string]$passo, [string[]]$argumentos, [string]$feito) {
+  $e = Rodar-Executor $raiz $argumentos
+  if (Executor-Aceitou $e) { Passo $passo $true $feito $e.json; return }
+  Passo $passo $false (Detalhe-DaRecusa $e) $e.json
+  throw $FALHOU
+}
+
+function Caminho-Absoluto([string]$caminho) {
+  return $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($caminho)
 }
 
 try {
@@ -456,19 +568,44 @@ try {
       if (-not $Sha) { Uso 'falta -Sha' }
       Conferir-Prerequisitos
       $raiz = Obter-Versao
-      Instalar-Casa $raiz
-      Instalar-Agentes $raiz
-      if (-not $SemIlha) { Preparar-Ilha $raiz }
-      if (-not $SemWhatsApp) { Preparar-WhatsApp $raiz }
-      if (-not $SemTarefas) { Registrar-Tarefas $raiz }
-      if (-not $SemPlugin) { Instalar-Plugin }
+      Instalar-Comum $raiz
       if (-not $SemWhatsApp) {
         if (-not $NaoAbrir) { Subir-WhatsApp $raiz }
         Guardar-ChaveAdmin $raiz (-not $NaoAbrir)
       }
       if (-not $SemIlha -and -not $NaoAbrir) { Abrir-Ilha $raiz }
     }
-    default { Uso ('modo ' + $Modo + ' ainda não implementado') }
+    # Sem abrir a ilha nem subir o serviço: quem já está rodando segue na versão dele até o próximo logon.
+    'atualizar' {
+      if (-not $Sha) { Uso 'falta -Sha' }
+      Conferir-Prerequisitos
+      $raiz = Obter-Versao
+      Instalar-Comum $raiz
+      if (-not $SemWhatsApp) { Guardar-ChaveAdmin $raiz $false }
+      Podar-Versoes
+    }
+    'verificar' {
+      Conferir-Prerequisitos
+      $raiz = Raiz-Atual 'release'
+      Verificar-Release $raiz
+      Verificar-Casa $raiz
+      Verificar-Atalhos $raiz
+      Verificar-Tarefas $raiz
+      if (@($script:passos | Where-Object { -not $_.ok }).Count -gt 0) { Terminar 1 }
+    }
+    'exportar' {
+      if (-not $Saida) { Uso 'falta -Saida' }
+      Conferir-Prerequisitos
+      $raiz = Raiz-Atual 'exportar'
+      $destino = Caminho-Absoluto $Saida
+      Repassar-Executor $raiz 'exportar' @('exportar', '--saida', $destino) ('pacote em ' + $destino)
+    }
+    'importar' {
+      if (-not $Pacote) { Uso 'falta -Pacote' }
+      Conferir-Prerequisitos
+      $raiz = Raiz-Atual 'importar'
+      Repassar-Executor $raiz 'importar' @('importar', '--pacote', (Caminho-Absoluto $Pacote)) 'casa importada'
+    }
   }
   Terminar 0
 } catch {

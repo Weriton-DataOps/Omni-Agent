@@ -380,6 +380,132 @@ test('sem .api-key o passo avisa e a instalação segue', { skip: !windows }, (t
   assert.equal(existsSync(admin), false)
 })
 
+// Os modos de manutenção (T8) leem a versão atual do atual.json; os cintos de atalho e tarefa precisam ser
+// os mesmos do instalar que os criou.
+function cintosFixos(t, prefixo = `${PREFIXO_TESTE}Nunca`) {
+  return ['-PrefixoTarefa', prefixo, '-PastaAtalhos', pastaTemp(t, 'omni-atalhos-'), '-PastaInicializar', pastaTemp(t, 'omni-inicializar-')]
+}
+const lerAtual = (base) => JSON.parse(readFileSync(join(base, 'versoes', 'atual.json'), 'utf8'))
+const pastasDeVersao = (base) => versoes(base).filter((n) => /^[0-9a-f]{40}$/.test(n)).sort()
+
+test('verificar confere release, casa, atalhos e tarefa da versão atual', { skip: !windows }, (t) => {
+  const { npm } = npmFalso(t)
+  const prefixo = `${PREFIXO_TESTE}${randomBytes(4).toString('hex')}`
+  t.after(() => removerTarefa(`${prefixo} - vigia do WhatsApp`))
+  const cintos = cintosFixos(t, prefixo)
+  const env = { OMNI_INSTALAR_NPM: npm }
+  const sem = SEM_ILHA_E_WHATSAPP.filter((a) => a !== '-SemTarefas')
+  const r = instalar(t, ['instalar', '-Origem', origem.repo, '-Sha', origem.sha, ...sem, ...cintos], { env })
+  assert.equal(r.status, 0, r.erro)
+
+  const v = instalar(t, ['verificar', ...cintos], { base: r.base, casa: r.casa, env })
+  assert.equal(v.status, 0, v.erro)
+  assert.equal(v.json.ok, true)
+  assert.equal(v.json.sha, origem.sha)
+  for (const nome of ['release', 'casa', 'atalhos', 'tarefas']) assert.equal(passo(v.json, nome)?.ok, true, `passo ${nome}: ${passo(v.json, nome)?.detalhe}`)
+
+  // Atalho apontando para fora da versão atual é falha, não aviso.
+  const outra = cintosFixos(t, prefixo)
+  const fora = instalar(t, ['verificar', '-PrefixoTarefa', prefixo, '-PastaAtalhos', outra[3], '-PastaInicializar', cintos[5]], { base: r.base, casa: r.casa, env })
+  assert.equal(passo(fora.json, 'atalhos')?.ok, true, 'pasta sem atalho nenhum não reprova')
+  const lnk = join(cintos[3], 'Omni Ilha.lnk')
+  powershell(`$l = (New-Object -ComObject WScript.Shell).CreateShortcut($env:LNK); $l.Arguments = '--headless powershell.exe -File "C:\\outra\\iniciar.ps1"'; $l.Save()`, { LNK: lnk })
+  const torto = instalar(t, ['verificar', ...cintos], { base: r.base, casa: r.casa, env })
+  assert.equal(torto.status, 1, torto.erro)
+  assert.equal(passo(torto.json, 'atalhos')?.ok, false)
+  assert.match(passo(torto.json, 'atalhos').detalhe, /Omni Ilha/)
+})
+
+test('verificar com atual.json apontando para um sha sem pasta sai 1', { skip: !windows }, (t) => {
+  const r = instalar(t, ['instalar', '-Origem', origem.repo, '-Sha', origem.sha, ...BASICO])
+  assert.equal(r.status, 0, r.erro)
+  const atual = lerAtual(r.base)
+  writeFileSync(join(r.base, 'versoes', 'atual.json'), JSON.stringify({ ...atual, sha: 'e'.repeat(40) }))
+  const v = instalar(t, ['verificar', ...BASICO], { base: r.base, casa: r.casa })
+  assert.equal(v.status, 1, v.erro)
+  assert.equal(v.json.ok, false)
+  assert.equal(passo(v.json, 'release')?.ok, false)
+  assert.match(passo(v.json, 'release').detalhe, /eeeeeeee/)
+})
+
+test('verificar sem nada instalado sai 1', { skip: !windows }, (t) => {
+  const v = instalar(t, ['verificar', ...BASICO])
+  assert.equal(v.status, 1, v.erro)
+  assert.equal(passo(v.json, 'versao')?.ok, false)
+})
+
+test('atualizar troca a versão atual, repontua os atalhos e guarda só a anterior como volta', { skip: !windows }, async (t) => {
+  const { npm } = npmFalso(t)
+  const cintos = cintosFixos(t)
+  const env = { OMNI_INSTALAR_NPM: npm }
+  const marcar = (n) => (repo) => appendFileSync(join(repo, 'runtime', 'servir.mjs'), `\n// versao de teste ${n}\n`)
+  const shaA = origem.sha
+  const shaB = await origem.commitar(marcar('B'))
+  const shaC = await origem.commitar(marcar('C'))
+
+  const r = instalar(t, ['instalar', '-Origem', origem.repo, '-Sha', shaA, ...SEM_ILHA_E_WHATSAPP, ...cintos], { env })
+  assert.equal(r.status, 0, r.erro)
+  const atalhoDaIlha = () => lerAtalho(join(cintos[3], 'Omni Ilha.lnk')).argumentos.toLowerCase()
+  const atalhoDoWhatsapp = () => lerAtalho(join(cintos[5], 'Omni WhatsApp.lnk')).argumentos.toLowerCase()
+  const versao = (sha) => realpathSync.native(join(r.base, 'versoes', sha)).toLowerCase()
+
+  const b = instalar(t, ['atualizar', '-Origem', origem.repo, '-Sha', shaB, ...SEM_ILHA_E_WHATSAPP, ...cintos], { base: r.base, casa: r.casa, env })
+  assert.equal(b.status, 0, b.erro)
+  assert.equal(b.json.modo, 'atualizar')
+  assert.equal(lerAtual(r.base).sha, shaB)
+  assert.equal(lerAtual(r.base).anterior, shaA)
+  assert.deepEqual(pastasDeVersao(r.base), [shaA, shaB].sort(), 'a anterior fica como caminho de volta')
+  assert.ok(atalhoDaIlha().includes(versao(shaB)), atalhoDaIlha())
+  assert.ok(atalhoDoWhatsapp().includes(versao(shaB)), atalhoDoWhatsapp())
+  for (const nome of ['casa', 'ilha', 'whatsapp', 'poda']) assert.equal(passo(b.json, nome)?.ok, true, `passo ${nome}`)
+  assert.equal(passo(b.json, 'ilha-aberta'), undefined, 'atualizar não reabre a ilha')
+  assert.equal(passo(b.json, 'whatsapp-no-ar'), undefined, 'nem sobe o serviço')
+  assert.deepEqual(instalados(r.casa).find(([agente]) => agente === 'omni'), ['omni', realpathSync.native(join(r.base, 'versoes', shaB))])
+
+  const c = instalar(t, ['atualizar', '-Origem', origem.repo, '-Sha', shaC, ...SEM_ILHA_E_WHATSAPP, ...cintos], { base: r.base, casa: r.casa, env })
+  assert.equal(c.status, 0, c.erro)
+  assert.deepEqual(pastasDeVersao(r.base), [shaB, shaC].sort(), 'a mais antiga some; ficam a atual e a anterior')
+  assert.match(passo(c.json, 'poda').detalhe, new RegExp(shaA.slice(0, 12)))
+  assert.deepEqual(versoes(r.base).filter((n) => n.startsWith('.')), [], 'nenhuma pasta temporária sobra')
+  assert.ok(atalhoDaIlha().includes(versao(shaC)), atalhoDaIlha())
+
+  // Voltar para a anterior é só atualizar para ela: nada é baixado de novo e ela continua guardada.
+  const volta = instalar(t, ['atualizar', '-Origem', origem.repo, '-Sha', shaB, ...SEM_ILHA_E_WHATSAPP, ...cintos], { base: r.base, casa: r.casa, env })
+  assert.equal(volta.status, 0, volta.erro)
+  assert.equal(passo(volta.json, 'versao').detalhe, 'já instalada')
+  assert.deepEqual([lerAtual(r.base).sha, lerAtual(r.base).anterior], [shaB, shaC])
+  assert.deepEqual(pastasDeVersao(r.base), [shaB, shaC].sort())
+})
+
+test('exportar e importar repassam ao executor da versão atual e devolvem o JSON dele', { skip: !windows }, (t) => {
+  const r = instalar(t, ['instalar', '-Origem', origem.repo, '-Sha', origem.sha, ...BASICO])
+  assert.equal(r.status, 0, r.erro)
+  const saida = join(pastaTemp(t, 'omni-pacote-'), 'casa.omnicasa')
+  const e = instalar(t, ['exportar', '-Saida', saida, ...BASICO], { base: r.base, casa: r.casa })
+  assert.equal(e.status, 0, e.erro)
+  assert.equal(passo(e.json, 'exportar')?.ok, true)
+  assert.equal(passo(e.json, 'exportar').resultado.ok, true)
+  assert.ok(existsSync(saida), 'o pacote foi escrito')
+
+  const outraCasa = pastaTemp(t, 'omni-casa-')
+  const i = instalar(t, ['importar', '-Pacote', saida, ...BASICO], { base: r.base, casa: outraCasa })
+  assert.equal(i.status, 0, i.erro)
+  assert.equal(passo(i.json, 'importar')?.ok, true)
+  assert.equal(passo(i.json, 'importar').resultado.ok, true)
+  assert.deepEqual(instalados(outraCasa), instalados(r.casa))
+
+  // A casa já ocupada recusa sem --substituir: o código do executor chega no passo e a saída é 1.
+  const de_novo = instalar(t, ['importar', '-Pacote', saida, ...BASICO], { base: r.base, casa: outraCasa })
+  assert.equal(de_novo.status, 1, de_novo.erro)
+  assert.equal(passo(de_novo.json, 'importar')?.ok, false)
+  assert.equal(passo(de_novo.json, 'importar').resultado.ok, false)
+})
+
+test('exportar sem -Saida e importar sem -Pacote são uso errado', { skip: !windows }, (t) => {
+  assert.equal(instalar(t, ['exportar', ...BASICO]).status, 2)
+  assert.equal(instalar(t, ['importar', ...BASICO]).status, 2)
+})
+
 test('instalar sem -Sha é uso errado', { skip: !windows }, (t) => {
   const r = instalar(t, ['instalar', ...BASICO])
   assert.equal(r.status, 2)

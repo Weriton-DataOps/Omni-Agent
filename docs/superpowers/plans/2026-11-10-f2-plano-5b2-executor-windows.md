@@ -262,6 +262,8 @@ shell.Run """" & node & """ """ & pasta & "\vigia-servico.mjs""", 0, False
 - [ ] **Passo 2:** vermelho.
 - [ ] **Passo 3: implementar.**
   - `atualizar` = `Obter-Versao`, mais os passos idempotentes do `instalar` (casa, ilha, WhatsApp, atalhos, tarefas e plugin), mais a poda das versões. `atualizar` não reabre a ilha nem pede pareamento.
+  - `atual.json` ganha `anterior` (a atual até a troca); a poda guarda `sha` e `anterior` e renomeia cada pasta velha para `.<sha>.podando` antes de apagar, então pasta com processo rodando fica inteira e é listada como "em uso".
+  - O serviço WhatsApp que já roda segue na versão dele até o próximo logon; reiniciá-lo na troca é do plano 6.
   - O cofre do Omni (`runtime/cofre.mjs exportar|importar`) fica fora deste modo. A frase-mestra é digitada na ilha (§8.4), e o card Cofre já faz isso.
 - [ ] **Passo 4:** verde.
 
