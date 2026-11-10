@@ -26,6 +26,7 @@ import { escolherFormato, instrucaoAudio, separarResposta, cortarPedidoDeEnter }
 import { destinatarioConhecido, responderInformativo } from './terceiros.mjs'
 import { ehDocumento, pareceAudio, descreverDocumento, nomeNaMidia, notaDoArquivo } from './documento.mjs'
 import { registrarResposta, pendentes, consultar } from './aprovacoes.mjs'
+import { comandoDaVisita } from './visita.mjs'
 import { registrarResposta as respostaAoSentinel } from '../../sentinel/pedidos.mjs'
 
 const CLAUDE = process.env.OMNI_CLAUDE_EXE || arquivoNpm('@anthropic-ai/claude-code/bin/claude.exe')
@@ -481,12 +482,12 @@ async function vigiarReacoes(mensagens) {
   }
 }
 
-// a visita roda fora daqui (tarefa própria, escondida, com trava): a ponte só dispara e segue
-const VISITA = fileURLToPath(new URL('../../../scripts/omni-actions-visita.ps1', import.meta.url))
+// a visita roda fora daqui (tarefa actions-visita do Oráculo, escondida, com trava): a ponte só dispara e segue
 function chamarVisita(motivo) {
-  if (!existsSync(VISITA)) { log(`visita: ${VISITA} não existe`); return }
+  const [comando, args] = comandoDaVisita(motivo)
+  if (!existsSync(args[0])) { log(`visita: ${args[0]} não existe`); return }
   try {
-    const p = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', VISITA, '-Motivo', motivo], { windowsHide: true, detached: true, stdio: 'ignore' })
+    const p = spawn(comando, args, { windowsHide: true, detached: true, stdio: 'ignore' })
     p.unref()
     log(`visita do Actions chamada (${motivo})`)
   } catch (e) { log(`visita: ${e.message}`) }

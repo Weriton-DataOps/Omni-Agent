@@ -103,8 +103,12 @@ mesa de decisão, a escrita, o despacho e a aba Execuções são do Oráculo, e 
 - **`agente:api`:** a janela fala com a casa por este IPC. O agente permitido sai do mapa
   `webContents.id → agente`, só do quadro principal; pedido de outra janela ou em nome de outro agente
   volta `status: 0` sem tráfego.
-- **Ainda no repo até o plano 5:** `pontos.js`, `projetos.js`, `mesa.js`, `escrita.js` e `execucoes.js`,
-  usados só pelo `scripts\omni-actions.mjs` da visita.
+- **O depósito saiu da ilha (plano 5c):** pontos, projetos, mesa e execuções moram no Oráculo. O
+  `scripts\omni-actions.mjs` do Omni ficou só com o WhatsApp da visita (avisos, pedidos de risco e
+  aprovação por reação).
+- **Card apagado:** agente ausente aparece esmaecido; o clique escolhe a pasta do agente, instala pelo
+  executor (`instalar-agente.js`) e registra as tarefas dele. Depois a ilha reinicia a casa, que só lê os
+  agentes ao subir.
 - **Overcore (22/10):** card próprio na coluna do meio (ícone de três nós), entre Actions e WhatsApp:
   - **Card:** NO AR / DESLIGADO, quantas execuções rodam ou pedem você e as duas primeiras. Com três
     cards, cada um mostra no máximo 2 linhas.
@@ -122,8 +126,9 @@ mesa de decisão, a escrita, o despacho e a aba Execuções são do Oráculo, e 
     retomar/cancelar que a própria execução oferece.
 - **Pílulas de sessão:** mostram o nome entre sessões ("overcore-3e", "omni-24"), lido de
   `~/.claude/sessions/<pid>.json` (só processo vivo). É o nome para dizer "manda para a X".
-- **A visita:** quem mexe no depósito quando ele não está olhando é a visita
-  (`scripts\omni-actions-visita.ps1`, tarefa agendada das 7h), sempre por `scripts\omni-actions.mjs`.
+- **A visita:** quem mexe no depósito quando ele não está olhando é a tarefa `actions-visita` do Oráculo
+  (7h, registrada pelo `omni-tarefas.ps1` e rodada pelo `runtime\tarefa-agente.mjs`). A ponte do
+  WhatsApp chama a mesma tarefa quando ele reage a um pedido de risco (`servicos\whatsapp\omni\visita.mjs`).
 
 ## Visual
 

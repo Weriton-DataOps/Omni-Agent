@@ -1212,14 +1212,31 @@
 
   // o card Actions abre o depósito (a janela do Oráculo) e a ilha recolhe (sem reabrir debaixo do
   // ponteiro); o cabeçalho do card do Oráculo (olho, nome, números; a máquina embaixo não) abre o painel
-  // dele. Card apagado (agente não instalado) não abre nada.
+  // dele. Card apagado (agente não instalado) vira o INSTALAR (plano 5c): a ilha recolhe para a escolha da
+  // pasta não nascer embaixo dela, o rótulo mostra o andamento e a falha vai para a linha do card. O próximo
+  // resumo depois da instalação acende o card sozinho (a casa reinicia e passa a ver o agente).
+  let instalandoAgente = false;
+  async function instalarDoCard(rotulo, linhas) {
+    if (instalandoAgente) return;
+    instalandoAgente = true;
+    rotulo.textContent = 'INSTALANDO…';
+    recolherJa();
+    let r = null;
+    try { r = await ponte.instalarAgente('oraculo'); } catch { r = { ok: false, erro: 'a ilha não conseguiu pedir a instalação' }; }
+    instalandoAgente = false;
+    if (!r || r.cancelado) { rotulo.textContent = 'INSTALAR'; return; }
+    rotulo.textContent = r.ok ? 'INSTALADO' : 'FALHOU';
+    if (!r.ok) linhas.replaceChildren(no('div', 'int-vazio', r.erro || 'a instalação falhou'));
+  }
   tocar(cardActions, () => {
-    if (estado !== 'aberta' || !poco.classList.contains('revelada') || cardActions.classList.contains('ausente')) return;
+    if (estado !== 'aberta' || !poco.classList.contains('revelada')) return;
+    if (cardActions.classList.contains('ausente')) { instalarDoCard(actionsRotulo, actionsLinhas); return; }
     ponte.abrirActions();
     recolherJa();
   });
   tocar(cardOracle.querySelector('.or-cab'), () => {
-    if (estado !== 'aberta' || !poco.classList.contains('revelada') || cardOracle.classList.contains('ausente')) return;
+    if (estado !== 'aberta' || !poco.classList.contains('revelada')) return;
+    if (cardOracle.classList.contains('ausente')) { instalarDoCard($('oracle-rotulo'), $('oracle-linhas')); return; }
     ponte.abrirOraculo();
     recolherJa();
   });

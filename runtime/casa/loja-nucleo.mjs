@@ -293,6 +293,18 @@ export function listarServidores(db, { maquina = maquinaAtual() } = {}) {
   })
 }
 
+// O que o agendador do Windows registra nesta máquina (plano 5c): as tarefas do manifesto do catálogo de
+// cada instalado aqui, com a raiz da instalação. Agente, raiz e divergência vêm da linha, nunca da tarefa.
+// Divergente sai marcado: quem registra pula e quem roda recusa.
+export function listarTarefas(db, { maquina = maquinaAtual() } = {}) {
+  return db.prepare(`SELECT i.agente, i.raiz, i.manifesto_sha256, a.manifesto, a.manifesto_sha256 AS sha_catalogo
+    FROM instalacoes i JOIN agentes a ON a.id = i.agente AND a.apagado_em IS NULL
+    WHERE i.maquina = ? AND i.apagado_em IS NULL ORDER BY i.agente`).all(maquina).flatMap((l) => {
+    const tarefas = JSON.parse(l.manifesto).tarefas
+    return (Array.isArray(tarefas) ? tarefas : []).map((t) => ({ ...t, agente: l.agente, raiz: l.raiz, divergente: l.sha_catalogo !== l.manifesto_sha256 }))
+  })
+}
+
 // Quem a ilha monta como painel (plano 4b): instalado aqui, com interface no manifesto do catálogo. Os
 // caminhos saem relativos como o manifesto diz; quem resolve e confere que ficam dentro da raiz é a ilha.
 // Divergente sai marcado: a tela no disco pode não ser a que o catálogo descreve.

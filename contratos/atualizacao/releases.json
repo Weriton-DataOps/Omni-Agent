@@ -475,6 +475,15 @@
         "atualizar troca a versao atual e refaz os passos idempotentes sem abrir a ilha; ficam so a atual e a anterior (o caminho de volta), e pasta com processo rodando nao e tocada. verificar confere release, casa, atalhos e tarefa da versao atual. exportar e importar repassam ao executor.mjs da versao atual.",
         "O vigia-servico.vbs nao tem mais caminho chumbado: chama o vigia-servico.mjs da propria pasta com o node do OMNI_NODE ou do PATH."
       ]
+    },
+    {
+      "version": "0.34.0",
+      "changes": [
+        "As tarefas que cada agente declara no executor/agente.json viram tarefas do Agendador do Windows: runtime/tarefa-agente.mjs listar | rodar <agente> <id> roda o roteiro pelo claude -p escondido na pasta do Actions (variaveis declaradas, porta e token visita do agente quando ele serve) ou o comando pelo cmd na raiz do agente, com trava por tarefa, teto de tempo e log JSON na pasta do banco.",
+        "scripts/omni-tarefas.ps1 registra e confere essas tarefas (diaria ou a cada N, recuperando a atrasada quando o agente pede), pula a divergente e poda so a orfa do mesmo prefixo. O instalar registra pelo passo tarefas-agentes e o verificar confere pelo mesmo script.",
+        "O card apagado da ilha instala o agente: escolhe a pasta, confere o executor/agente.json, chama o instalar-agente da versao em uso e so com o aceite registra as tarefas.",
+        "A visita das 7h do Actions passa a ser a tarefa actions-visita do Oraculo. Saem da ilha os modulos do deposito (pontos, mesa, escrita, projetos, execucoes) e a visita velha (.ps1, .vbs, .md e o agendador); o scripts/omni-actions.mjs fica so com o WhatsApp (avisar, risco, aprovacao, usar, explicar, pendentes) e a ponte acorda a visita pela tarefa do Oraculo."
+      ]
     }
   ]
 }

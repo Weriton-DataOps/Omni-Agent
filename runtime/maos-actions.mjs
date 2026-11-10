@@ -7,37 +7,21 @@
 //   ambiente e o stdio herdado, e sai com o código dele;
 // - qualquer peça faltando dá {"ok":false,"erro":...} no stdout e saída 1. O token nunca aparece.
 import { spawn } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { comBancoDaCasa, pastaDoBanco } from './casa/banco.mjs'
-import { tokenDoAgente } from './casa/credenciais-agente.mjs'
+import { ErroDeAcesso as MaosError, arquivoServir, portaDoAgente, tokenVisita } from './casa/acesso-agente.mjs'
+import { comBancoDaCasa } from './casa/banco.mjs'
 import { criarPonteDpapi } from './casa/dpapi.mjs'
 import { listarServidores } from './casa/loja-nucleo.mjs'
 import { processoVivo } from './casa/sessoes-vivas.mjs'
 import { casaDoNucleo } from './nucleo.mjs'
 
+export { arquivoServir }
 export const AGENTE_ACTIONS = 'oraculo'
 export const SCRIPT_ACTIONS = join('scripts', 'actions', 'omni-actions.mjs')
 const COMANDO = /^[a-z][a-z-]{0,29}$/
-
-export const arquivoServir = (casa, env = process.env) => join(pastaDoBanco(casa, env), 'servir.json')
-
-class MaosError extends Error {}
-
-function portaDoAgente(casa, env, vivo, agente) {
-  let servir
-  try {
-    servir = JSON.parse(readFileSync(arquivoServir(casa, env), 'utf8'))
-  } catch {
-    throw new MaosError('o servir do Omni não está no ar (sem servir.json legível)')
-  }
-  if (!Number.isInteger(servir?.pid) || !vivo(servir.pid)) throw new MaosError('o servir do Omni não está no ar (o pid do servir.json morreu)')
-  const porta = Array.isArray(servir.agentes) ? servir.agentes.find((a) => a?.agente === agente)?.porta : undefined
-  if (!Number.isInteger(porta) || porta <= 0 || porta > 65535) throw new MaosError(`o ${agente} não está no ar pelo servir do Omni`)
-  return porta
-}
 
 function raizDoAgente(casa, env, agente) {
   let raiz
@@ -50,16 +34,6 @@ function raizDoAgente(casa, env, agente) {
   return raiz
 }
 
-function tokenVisita(casa, env, ponte, agente, comando) {
-  const motivo = `mãos do Actions: ${COMANDO.test(comando ?? '') ? comando : '(outro)'}`
-  try {
-    return comBancoDaCasa(casa, 'cofre', (db) => tokenDoAgente(db, ponte(), agente, 'visita', motivo), env)
-  } catch (falha) {
-    // Só o código da recusa: a mensagem do cofre não sai daqui.
-    throw new MaosError(`token visita do ${agente} indisponível (${falha?.codigo ?? falha?.name ?? 'erro'})`)
-  }
-}
-
 export async function rodarMaos(argv, {
   env = process.env, saida = process.stdout, casa = casaDoNucleo(env), ponte, iniciar = spawn, vivo = processoVivo
 } = {}) {
@@ -70,7 +44,7 @@ export async function rodarMaos(argv, {
     const porta = portaDoAgente(casa, env, vivo, AGENTE_ACTIONS)
     const script = join(raiz, SCRIPT_ACTIONS)
     if (!existsSync(script)) throw new MaosError(`${SCRIPT_ACTIONS.replaceAll('\\', '/')} não existe na raiz do ${AGENTE_ACTIONS}`)
-    const token = tokenVisita(casa, env, abrirPonte, AGENTE_ACTIONS, argv[0])
+    const token = tokenVisita(casa, env, abrirPonte, AGENTE_ACTIONS, `mãos do Actions: ${COMANDO.test(argv[0] ?? '') ? argv[0] : '(outro)'}`)
     const ambiente = { ...env, ORACULO_API: `http://127.0.0.1:${porta}/v1`, ORACULO_TOKEN: token }
     filho = iniciar(process.execPath, [script, ...argv], { cwd: raiz, env: ambiente, stdio: 'inherit', windowsHide: true })
   } catch (falha) {

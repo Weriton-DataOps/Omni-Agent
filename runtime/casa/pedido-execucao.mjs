@@ -1,5 +1,5 @@
-// Onde o trabalho do Actions mora e o pedido que a sessão recebe (F2, plano 4a, T5). Porte da ilha
-// (apps/omni-ilha/execucoes.js) com duas trocas: o ponto mora no banco do Oráculo e se lê pelas mãos do
+// Onde o trabalho do Actions mora e o pedido que a sessão recebe (F2, plano 4a, T5). Porte do módulo de
+// execuções da ilha (aposentado no plano 5c) com duas trocas: o ponto mora no banco do Oráculo e se lê pelas mãos do
 // Actions (runtime/maos-actions.mjs), e a devolução também passa por elas.
 import { resolve, sep } from 'node:path'
 
