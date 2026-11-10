@@ -393,6 +393,53 @@ function Instalar-Plugin {
   }
 }
 
+function Pasta-DadosWhatsApp {
+  if ($env:OMNI_INSTALAR_WHATSAPP_DADOS) { return $env:OMNI_INSTALAR_WHATSAPP_DADOS }
+  return (Join-Path $env:APPDATA 'omni\whatsapp')
+}
+
+# O segredo só entra pelo stdin do cofre e nada que o cofre escreve é guardado ou repassado: o ler devolve
+# o valor no stdout, e aqui só interessa a saída (0 existe, 2 não existe).
+function Rodar-Cofre([string]$cofre, [string]$acao, [string]$segredo) {
+  $argumentos = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $cofre, '-Acao', $acao, '-Nome', 'omni/whatsapp/admin')
+  $antes = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try {
+    if ($segredo) { $segredo | & powershell.exe @argumentos 2>$null | Out-Null }
+    else { & powershell.exe @argumentos 2>$null | Out-Null }
+    return $LASTEXITCODE
+  } finally { $ErrorActionPreference = $antes }
+}
+
+function Guardar-ChaveAdmin([string]$raiz, [bool]$esperar) {
+  $cofre = if ($env:OMNI_INSTALAR_COFRE) { $env:OMNI_INSTALAR_COFRE } else { Join-Path $raiz 'servicos\whatsapp\omni\cofre.ps1' }
+  if ((Rodar-Cofre $cofre 'ler' $null) -eq 0) { Passo 'chave-admin' $true 'já no cofre'; return }
+  $arquivo = Join-Path (Pasta-DadosWhatsApp) 'data\.api-key'
+  # O serviço gera a chave na primeira subida; só vale esperar se ele foi iniciado agora.
+  $espera = if ($esperar) { 180 } else { 0 }
+  $ate = (Get-Date).AddSeconds($espera)
+  while (-not (Test-Path -LiteralPath $arquivo) -and (Get-Date) -lt $ate) { Start-Sleep -Seconds 2 }
+  if (-not (Test-Path -LiteralPath $arquivo)) { Passo 'chave-admin' $false 'serviço ainda não gerou a chave'; return }
+  $codigo = Rodar-Cofre $cofre 'gravar' ([IO.File]::ReadAllText($arquivo).Trim())
+  if ($codigo -ne 0) { Falhar 'chave-admin' ('o cofre não gravou a chave (saída ' + $codigo + ')') }
+  Passo 'chave-admin' $true 'guardada no cofre do Windows'
+}
+
+function Subir-WhatsApp([string]$raiz) {
+  $r = Rodar 'powershell.exe' @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $raiz 'servicos\whatsapp\omni\iniciar.ps1')) $null
+  $ok = ($r.codigo -eq 0)
+  $detalhe = if ($ok) { 'serviço no ar' } else { 'o iniciar.ps1 saiu com ' + $r.codigo + '; detalhe em logs\iniciar.log' }
+  Passo 'whatsapp-no-ar' $ok $detalhe
+}
+
+# A ilha abre já pedindo o pareamento (OMNI_ILHA_PAREAR, main.js); o processo filho herda a variável.
+function Abrir-Ilha([string]$raiz) {
+  $env:OMNI_ILHA_PAREAR = '1'
+  $ps1 = Join-Path $raiz 'apps\omni-ilha\iniciar.ps1'
+  Start-Process -FilePath 'powershell.exe' -WindowStyle Hidden -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ('"' + $ps1 + '"'))
+  Passo 'ilha-aberta' $true 'ilha aberta pedindo o pareamento'
+}
+
 function Escrever-Atual([string]$versoes, [string]$sha, [string]$versao) {
   $arquivo = Join-Path $versoes 'atual.json'
   if (Test-Path -LiteralPath $arquivo) {
@@ -415,6 +462,11 @@ try {
       if (-not $SemWhatsApp) { Preparar-WhatsApp $raiz }
       if (-not $SemTarefas) { Registrar-Tarefas $raiz }
       if (-not $SemPlugin) { Instalar-Plugin }
+      if (-not $SemWhatsApp) {
+        if (-not $NaoAbrir) { Subir-WhatsApp $raiz }
+        Guardar-ChaveAdmin $raiz (-not $NaoAbrir)
+      }
+      if (-not $SemIlha -and -not $NaoAbrir) { Abrir-Ilha $raiz }
     }
     default { Uso ('modo ' + $Modo + ' ainda não implementado') }
   }

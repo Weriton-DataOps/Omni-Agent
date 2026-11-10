@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import { appendFileSync, existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { after, before, test } from 'node:test'
@@ -41,9 +41,38 @@ function pastaTemp(t, prefixo) {
   return pasta
 }
 
+// Cofre falso com os parâmetros do servicos/whatsapp/omni/cofre.ps1: guarda em cofre\<nome>.txt ao lado
+// dele, ler sai 2 quando não existe, e cada chamada anota a linha de comando inteira em chamadas.log
+// (para provar que o segredo nunca vai por argumento).
+const COFRE_FALSO = `param([string]$Acao, [string]$Nome)
+[IO.File]::AppendAllText((Join-Path $PSScriptRoot 'chamadas.log'), [Environment]::CommandLine + [Environment]::NewLine)
+$pasta = Join-Path $PSScriptRoot 'cofre'
+$arquivo = Join-Path $pasta (($Nome -replace '/', '_') + '.txt')
+switch ($Acao) {
+  'gravar' { $s = [Console]::In.ReadToEnd().Trim(); if (-not $s) { exit 1 }; [IO.Directory]::CreateDirectory($pasta) | Out-Null; [IO.File]::WriteAllText($arquivo, $s); 'ok' }
+  'ler' { if (-not (Test-Path -LiteralPath $arquivo)) { exit 2 }; [Console]::Out.Write([IO.File]::ReadAllText($arquivo)) }
+  'apagar' { if (Test-Path -LiteralPath $arquivo) { Remove-Item -LiteralPath $arquivo; 'ok' } else { exit 2 } }
+}
+`
+function cofreFalso(t) {
+  const pasta = pastaTemp(t, 'omni-cofre-')
+  writeFileSync(join(pasta, 'cofre.ps1'), COFRE_FALSO)
+  const admin = join(pasta, 'cofre', 'omni_whatsapp_admin.txt')
+  const log = join(pasta, 'chamadas.log')
+  return { cofre: join(pasta, 'cofre.ps1'), admin, chamadas: () => (existsSync(log) ? readFileSync(log, 'utf8') : '') }
+}
+
 function instalar(t, argumentos, { base = pastaTemp(t, 'omni-base-'), casa = pastaTemp(t, 'omni-casa-'), env = {} } = {}) {
-  const prefixo = argumentos.includes('-PrefixoTarefa') ? [] : ['-PrefixoTarefa', `${PREFIXO_TESTE}Nunca`]
-  const r = spawnSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', SCRIPT, ...argumentos, ...prefixo, '-Base', base], {
+  // E o cinto do segredo: nenhum teste lê ou grava o Gerenciador de Credenciais de verdade.
+  const cofrePadrao = env.OMNI_INSTALAR_COFRE ? {} : { OMNI_INSTALAR_COFRE: cofreFalso(t).cofre }
+  const dadosPadrao = env.OMNI_INSTALAR_WHATSAPP_DADOS ? {} : { OMNI_INSTALAR_WHATSAPP_DADOS: pastaTemp(t, 'omni-wa-') }
+  // Mesmo cinto para os atalhos: sem pasta dada, nunca a Área de Trabalho nem o Inicializar de verdade.
+  const cintos = [
+    ...(argumentos.includes('-PrefixoTarefa') ? [] : ['-PrefixoTarefa', `${PREFIXO_TESTE}Nunca`]),
+    ...(argumentos.includes('-PastaAtalhos') ? [] : ['-PastaAtalhos', pastaTemp(t, 'omni-atalhos-')]),
+    ...(argumentos.includes('-PastaInicializar') ? [] : ['-PastaInicializar', pastaTemp(t, 'omni-inicializar-')])
+  ]
+  const r = spawnSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', SCRIPT, ...argumentos, ...cintos, '-Base', base], {
     encoding: 'utf8',
     timeout: 180_000,
     env: {
@@ -52,6 +81,8 @@ function instalar(t, argumentos, { base = pastaTemp(t, 'omni-base-'), casa = pas
       OMNI_CASA_BANCO: join(casa, 'banco'),
       OMNI_INSTALAR_NODE: process.execPath,
       OMNI_INSTALAR_NODE_MINIMO: MAJOR, // o CI roda Node 22; o mínimo de produção (24) tem teste próprio abaixo
+      ...cofrePadrao,
+      ...dadosPadrao,
       ...env
     }
   })
@@ -313,6 +344,40 @@ test('plugin: install que falha para o script; claude ausente só avisa', { skip
   assert.equal(ausente.status, 0, ausente.erro)
   assert.equal(passo(ausente.json, 'plugin')?.ok, false)
   assert.match(passo(ausente.json, 'plugin').detalhe, /claude não encontrado/)
+})
+
+const SEM_WHATSAPP = BASICO.filter((a) => a !== '-SemWhatsApp')
+
+test('a chave admin vai do .api-key para o cofre só pelo stdin, uma vez, sem aparecer em lugar nenhum', { skip: !windows }, (t) => {
+  const { npm } = npmFalso(t)
+  const { cofre, admin, chamadas } = cofreFalso(t)
+  const dados = pastaTemp(t, 'omni-wa-')
+  const valor = `chave-de-teste-${randomBytes(12).toString('hex')}`
+  mkdirSync(join(dados, 'data'))
+  writeFileSync(join(dados, 'data', '.api-key'), `${valor}\n`)
+  const env = { OMNI_INSTALAR_NPM: npm, OMNI_INSTALAR_COFRE: cofre, OMNI_INSTALAR_WHATSAPP_DADOS: dados }
+  const r = instalar(t, ['instalar', '-Origem', origem.repo, '-Sha', origem.sha, ...SEM_WHATSAPP], { env })
+  assert.equal(r.status, 0, r.erro)
+  assert.equal(passo(r.json, 'chave-admin')?.ok, true, 'passo chave-admin')
+  assert.equal(readFileSync(admin, 'utf8'), valor)
+  assert.ok(!r.saida.includes(valor) && !r.erro.includes(valor), 'o valor não sai no stdout nem no stderr')
+  assert.ok(chamadas().length > 0 && !chamadas().includes(valor), 'nem na linha de comando do cofre')
+  const gravadaEm = statSync(admin).mtimeMs
+  const segunda = instalar(t, ['instalar', '-Origem', origem.repo, '-Sha', origem.sha, ...SEM_WHATSAPP], { base: r.base, casa: r.casa, env })
+  assert.equal(segunda.status, 0, segunda.erro)
+  assert.match(passo(segunda.json, 'chave-admin').detalhe, /já no cofre/)
+  assert.equal(statSync(admin).mtimeMs, gravadaEm, 'não regrava')
+  assert.ok(!segunda.saida.includes(valor) && !segunda.erro.includes(valor), 'nem quando lê o cofre para conferir')
+})
+
+test('sem .api-key o passo avisa e a instalação segue', { skip: !windows }, (t) => {
+  const { npm } = npmFalso(t)
+  const { admin } = cofreFalso(t)
+  const r = instalar(t, ['instalar', '-Origem', origem.repo, '-Sha', origem.sha, ...SEM_WHATSAPP], { env: { OMNI_INSTALAR_NPM: npm } })
+  assert.equal(r.status, 0, r.erro)
+  assert.equal(passo(r.json, 'chave-admin')?.ok, false, 'passo chave-admin')
+  assert.equal(passo(r.json, 'chave-admin').detalhe, 'serviço ainda não gerou a chave')
+  assert.equal(existsSync(admin), false)
 })
 
 test('instalar sem -Sha é uso errado', { skip: !windows }, (t) => {
